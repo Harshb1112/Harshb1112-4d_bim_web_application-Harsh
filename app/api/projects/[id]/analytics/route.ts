@@ -1,0 +1,162 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { verifyToken, getTokenFromRequest } from '@/lib/auth'
+import { differenceInDays } from 'date-fns'
+import { Task } from '@/app/generated/prisma/browser';
+
+
+
+
+interface ProgressPoint {
+  date: string
+  progress: number
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const token = getTokenFromRequest(request)
+    const user = token ? verifyToken(token) : null
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const projectId = Number(params.id)
+    if (isNaN(projectId)) {
+      return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
+    }
+
+    // Verify user access
+    const projectAccess = await prisma.projectUser.findFirst({
+      where: { projectId, userId: user.id },
+    })
+    if (!projectAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Fetch project dates
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        startDate: true,
+        endDate: true,
+      },
+    })
+
+    // Fetch tasks
+    const tasks: (Pick<
+      Task,
+      'id' | 'progress' | 'startDate' | 'endDate' | 'actualStartDate' | 'actualEndDate'
+    > & {
+      elementLinks: { id: number }[]
+    })[] = await prisma.task.findMany({
+      where: { projectId },
+      select: {
+        id: true,
+        progress: true,
+        startDate: true,
+        endDate: true,
+        actualStartDate: true,
+        actualEndDate: true,
+        elementLinks: {
+          select: { id: true },
+        },
+      },
+    })
+
+    // Models count
+    const models = await prisma.model.findMany({
+      where: { projectId },
+      select: {
+        id: true,
+        _count: { select: { elements: true } },
+      },
+    })
+
+    const totalElements = await prisma.element.count({
+      where: { model: { projectId } },
+    })
+
+    const totalLinks = await prisma.elementTaskLink.count({
+      where: { task: { projectId } },
+    })
+
+    const linkedElementsCount = await prisma.elementTaskLink.count({
+      where: { task: { projectId } },
+      distinct: ['elementId'],
+    })
+
+    // TASK ANALYTICS ---------------------------------
+
+    const totalTasks = tasks.length
+
+    const completedTasks = tasks.filter((task: typeof tasks[0]) => Number(task.progress) >= 100).length
+
+    const inProgressTasks = tasks.filter(
+      (task: typeof tasks[0]) => Number(task.progress) > 0 && Number(task.progress) < 100
+    ).length
+
+    const notStartedTasks = tasks.filter((task: typeof tasks[0]) => Number(task.progress) === 0).length
+
+    const averageTaskProgress =
+      totalTasks > 0
+        ? tasks.reduce((sum: number, task: typeof tasks[0]) => sum + Number(task.progress), 0) /
+          totalTasks
+        : 0
+
+    // PROJECT DURATION ---------------------------------
+
+    const projectDurationDays =
+      project?.startDate && project?.endDate
+        ? differenceInDays(project.endDate, project.startDate)
+        : 0
+
+    // PROGRESS OVER TIME ---------------------------------
+
+    const progressOverTime: ProgressPoint[] = []
+
+    if (project?.startDate && project?.endDate) {
+      const currentDate = new Date(project.startDate)
+
+      while (currentDate <= project.endDate) {
+        const tasksUpToDate = tasks.filter(
+          (t: typeof tasks[0]) => t.startDate && t.startDate <= currentDate
+        )
+
+        const currentProgress =
+          tasksUpToDate.length > 0
+            ? tasksUpToDate.reduce(
+                (sum: number, t: typeof tasks[0]) => sum + Number(t.progress),
+                0
+              ) / tasksUpToDate.length
+            : 0
+
+        progressOverTime.push({
+          date: currentDate.toISOString().split('T')[0],
+          progress: Number(currentProgress.toFixed(2)),
+        })
+
+        currentDate.setDate(currentDate.getDate() + 7) // weekly
+      }
+    }
+
+    return NextResponse.json({
+      totalTasks,
+      completedTasks,
+      inProgressTasks,
+      notStartedTasks,
+      averageTaskProgress: Number(averageTaskProgress.toFixed(2)),
+      totalModels: models.length,
+      totalElements,
+      totalLinks,
+      linkedElementsCount,
+      projectDurationDays,
+      progressOverTime,
+    })
+  } catch (error) {
+    console.error('Get analytics error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
