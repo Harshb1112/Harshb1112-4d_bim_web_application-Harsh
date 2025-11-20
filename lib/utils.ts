@@ -1,199 +1,337 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
-import { parseISO, differenceInDays, addDays, isBefore, isAfter } from 'date-fns'
+// lib/utils.ts
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import {
+  parseISO,
+  differenceInDays,
+  addDays,
+  isBefore,
+  isAfter,
+} from "date-fns";
+
+/* ----------------------------- Basic utilities --------------------------- */
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 export function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  const d = toDate(date);
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function formatDateTime(date: Date | string): string {
-  return new Date(date).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  const d = toDate(date);
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-export function downloadFile(blob: Blob, filename: string, p0?: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+export function downloadFile(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  // append/click/remove to trigger download
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
-export function calculateProgress(tasks: any[]): number {
-  if (!tasks.length) return 0
-  const total = tasks.reduce((sum, task) => sum + Number(task.progress), 0)
-  return Math.round(total / tasks.length)
+export function calculateProgress(tasks: Array<{ progress?: number | string }>): number {
+  if (!tasks || tasks.length === 0) return 0;
+  const total = tasks.reduce((sum, task) => sum + Number(task.progress ?? 0), 0);
+  return Math.round(total / tasks.length);
 }
 
-interface TaskForCriticalPath {
+/* ------------------------------- Date helpers ---------------------------- */
+
+/**
+ * Convert a Date|string to a Date instance.
+ * - If input is Date -> returned as-is
+ * - If input is ISO string -> parsed via parseISO
+ * - Otherwise -> new Date(input) (fallback)
+ *
+ * parseISO will often produce an "Invalid Date" for non-ISO strings;
+ * new Date(string) is used as fallback for other string formats.
+ */
+export function toDate(value: Date | string): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    try {
+      // parseISO for strict ISO strings
+      const parsed = parseISO(value);
+      if (!isNaN(parsed.getTime())) return parsed;
+    } catch {
+      // fallthrough to Date below
+    }
+    return new Date(value);
+  }
+  // If someone calls with something unexpected, fallback to epoch date creation
+  return new Date(value as unknown as string);
+}
+
+/* --------------------------- Critical Path Types ------------------------- */
+
+export interface PredecessorRef {
+  predecessor: { id: number };
+}
+
+export interface TaskForCriticalPath {
   id: number;
-  name: string;
-  startDate: Date;
-  endDate: Date;
-  durationDays: number;
-  predecessors: Array<{ predecessor: { id: number } }>;
+  name?: string;
+  // startDate and endDate may be Date or ISO string
+  startDate: Date | string;
+  endDate: Date | string;
+  // optional: duration in days; if missing it will be computed from start/end
+  durationDays?: number;
+  // simple predecessor list: [{ predecessor: { id: 3 }}, ...]
+  predecessors: PredecessorRef[];
 }
 
-interface CriticalPathResult {
+export interface TaskTiming {
+  es: Date; // earliest start
+  ef: Date; // earliest finish
+  ls: Date; // latest start
+  lf: Date; // latest finish
+  float: number; // days
+}
+
+export interface CriticalPathResult {
   criticalTasks: Set<number>;
-  taskData: Map<number, { es: Date; ef: Date; ls: Date; lf: Date; float: number }>;
+  taskData: Map<number, TaskTiming>;
 }
 
-export function calculateCriticalPath(tasks: TaskForCriticalPath[]): CriticalPathResult {
+/* ------------------------- calculateCriticalPath ------------------------- */
+
+/**
+ * Calculates the critical path using Forward and Backward passes (CPM).
+ *
+ * - Assumes Finish-to-Start (FS) predecessor relations.
+ * - If durationDays is not supplied for a task, it's computed as differenceInDays(end, start).
+ * - Returns set of critical task ids (float <= 0) and a map of timing data per task.
+ */
+export function calculateCriticalPath(tasksInput: TaskForCriticalPath[]): CriticalPathResult {
+  // Defensive copy
+  const tasks = tasksInput.map((t) => ({ ...t }));
+
   if (tasks.length === 0) {
     return { criticalTasks: new Set(), taskData: new Map() };
   }
 
-  const taskMap = new Map<number, TaskForCriticalPath>();
-  tasks.forEach(task => taskMap.set(task.id, {
-    ...task,
-    startDate: parseISO(task.startDate.toISOString()), // Ensure Date objects
-    endDate: parseISO(task.endDate.toISOString()),     // Ensure Date objects
-  }));
+  // Normalized task type used internally (all fields concrete)
+  type NormalizedTask = {
+    id: number;
+    name: string;
+    startDate: Date;
+    endDate: Date;
+    durationDays: number;
+    predecessors: PredecessorRef[];
+  };
 
-  // Step 1: Build adjacency list and in-degrees for topological sort
-  const adj: Map<number, number[]> = new Map();
-  const inDegree: Map<number, number> = new Map();
+  const taskMap = new Map<number, NormalizedTask>();
 
-  tasks.forEach(task => {
-    adj.set(task.id, []);
-    inDegree.set(task.id, 0);
-  });
-
-  tasks.forEach(task => {
-    task.predecessors.forEach(dep => {
-      const predId = dep.predecessor.id;
-      if (adj.has(predId)) {
-        adj.get(predId)?.push(task.id);
-        inDegree.set(task.id, (inDegree.get(task.id) || 0) + 1);
-      }
+  // Build normalized task map
+  tasks.forEach((t) => {
+    const start = toDate(t.startDate);
+    const end = toDate(t.endDate);
+    const computedDuration =
+      typeof t.durationDays === "number" ? t.durationDays : Math.max(0, differenceInDays(end, start));
+    taskMap.set(t.id, {
+      id: t.id,
+      name: t.name ?? "",
+      startDate: start,
+      endDate: end,
+      durationDays: computedDuration,
+      predecessors: t.predecessors ?? [],
     });
   });
 
-  // Step 2: Forward Pass (Earliest Start/Finish)
-  const queue: number[] = [];
-  const es: Map<number, Date> = new Map(); // Earliest Start
-  const ef: Map<number, Date> = new Map(); // Earliest Finish
+  // adjacency: predecessor -> [successor ids]
+  const adj = new Map<number, number[]>();
+  // inDegree: node -> number of incoming edges
+  const inDegree = new Map<number, number>();
 
-  tasks.forEach(task => {
-    if (inDegree.get(task.id) === 0) {
-      queue.push(task.id);
+  // initialize maps for every known node id
+  Array.from(taskMap.keys()).forEach((id) => {
+    adj.set(id, []);
+    inDegree.set(id, 0);
+  });
+
+  // fill adjacency & in-degree
+  taskMap.forEach((task) => {
+    task.predecessors.forEach((p) => {
+      const predId = p.predecessor.id;
+      // ensure predecessor exists as a key so adjacency works even if pred isn't in taskMap
+      if (!adj.has(predId)) adj.set(predId, []);
+      if (!inDegree.has(task.id)) inDegree.set(task.id, 0);
+      adj.get(predId)!.push(task.id);
+      inDegree.set(task.id, (inDegree.get(task.id) || 0) + 1);
+    });
+  });
+
+  // Forward pass: compute ES and EF
+  const es = new Map<number, Date>();
+  const ef = new Map<number, Date>();
+  const q: number[] = [];
+
+  // initialize queue with root tasks (no predecessors)
+  taskMap.forEach((task) => {
+    if ((inDegree.get(task.id) ?? 0) === 0) {
+      q.push(task.id);
       es.set(task.id, task.startDate);
-      ef.set(task.id, task.endDate);
+      ef.set(task.id, addDays(task.startDate, task.durationDays));
     }
   });
 
-  let head = 0;
-  while (head < queue.length) {
-    const u = queue[head++];
+  let forwardHead = 0;
+  while (forwardHead < q.length) {
+    const u = q[forwardHead++];
     const uTask = taskMap.get(u)!;
+    const uEf = ef.get(u)!;
 
-    adj.get(u)?.forEach(v => {
+    const successors = adj.get(u) ?? [];
+    for (const v of successors) {
       const vTask = taskMap.get(v)!;
-      const newEs = addDays(ef.get(uTask.id)!, 0); // FS dependency, so v starts when u finishes
-      
-      if (!es.has(v) || isBefore(es.get(v)!, newEs)) {
-        es.set(v, newEs);
-        ef.set(v, addDays(newEs, vTask.durationDays));
+      // For FS dependency: successor ES must be at least predecessor EF
+      const candidateEs = uEf;
+      const currentEs = es.get(v);
+      // choose later ES
+      if (!currentEs || isBefore(currentEs, candidateEs)) {
+        es.set(v, candidateEs);
+        ef.set(v, addDays(candidateEs, vTask.durationDays));
       }
-
-      inDegree.set(v, (inDegree.get(v)! || 0) - 1);
-      if (inDegree.get(v) === 0) {
-        queue.push(v);
+      // decrement in-degree
+      inDegree.set(v, (inDegree.get(v) || 0) - 1);
+      if ((inDegree.get(v) || 0) === 0) {
+        // fallback if ES never set
+        if (!es.has(v)) {
+          es.set(v, vTask.startDate);
+          ef.set(v, addDays(vTask.startDate, vTask.durationDays));
+        }
+        q.push(v);
       }
-    });
+    }
   }
 
-  // Step 3: Backward Pass (Latest Start/Finish)
-  const ls: Map<number, Date> = new Map(); // Latest Start
-  const lf: Map<number, Date> = new Map(); // Latest Finish
+  // Ensure ES/EF exist for tasks not visited (cycles or disconnected)
+  taskMap.forEach((task) => {
+    if (!es.has(task.id)) {
+      es.set(task.id, task.startDate);
+      ef.set(task.id, addDays(task.startDate, task.durationDays));
+    }
+  });
 
-  const projectFinishDate = new Date(Math.max(...Array.from(ef.values()).map(d => d.getTime())));
+  // project finish date is max EF
+  const efValues = Array.from(ef.values());
+  const projectFinishDate =
+    efValues.length > 0 ? new Date(Math.max(...efValues.map((d) => d.getTime()))) : new Date();
 
-  tasks.forEach(task => {
+  // Backward pass: compute LF and LS
+  const lf = new Map<number, Date>();
+  const ls = new Map<number, Date>();
+
+  // initialize LF/LS to projectFinishDate
+  taskMap.forEach((task) => {
     lf.set(task.id, projectFinishDate);
     ls.set(task.id, addDays(projectFinishDate, -task.durationDays));
   });
 
-  // Re-initialize in-degrees for reverse topological sort (or use a stack from forward pass)
-  const reverseAdj: Map<number, number[]> = new Map();
-  const outDegree: Map<number, number> = new Map();
+  // Build reverse adjacency (node -> predecessors) and out-degree (node -> number of outgoing edges)
+  const reverseAdj = new Map<number, number[]>();
+  const outDegree = new Map<number, number>();
 
-  tasks.forEach(task => {
-    reverseAdj.set(task.id, []);
-    outDegree.set(task.id, 0);
+  Array.from(taskMap.keys()).forEach((id) => {
+    reverseAdj.set(id, []);
+    outDegree.set(id, 0);
   });
 
-  tasks.forEach(task => {
-    task.predecessors.forEach(dep => {
-      const predId = dep.predecessor.id;
-      if (reverseAdj.has(task.id)) {
-        reverseAdj.get(task.id)?.push(predId);
-        outDegree.set(predId, (outDegree.get(predId) || 0) + 1);
-      }
+  taskMap.forEach((task) => {
+    task.predecessors.forEach((p) => {
+      const predId = p.predecessor.id;
+      if (!reverseAdj.has(task.id)) reverseAdj.set(task.id, []);
+      reverseAdj.get(task.id)!.push(predId);
+      outDegree.set(predId, (outDegree.get(predId) || 0) + 1);
     });
   });
 
+  // reverseQueue: nodes with no outgoing edges (sinks)
   const reverseQueue: number[] = [];
-  tasks.forEach(task => {
-    if (outDegree.get(task.id) === 0) {
+  taskMap.forEach((task) => {
+    if ((outDegree.get(task.id) ?? 0) === 0) {
       reverseQueue.push(task.id);
+      // For sinks set LF = EF (makes backward pass tighter)
+      lf.set(task.id, ef.get(task.id)!);
+      ls.set(task.id, addDays(ef.get(task.id)!, -task.durationDays));
     }
   });
 
-  let head = 0;
-  while (head < reverseQueue.length) {
-    const u = reverseQueue[head++];
+  let backwardHead = 0;
+  while (backwardHead < reverseQueue.length) {
+    const u = reverseQueue[backwardHead++];
     const uTask = taskMap.get(u)!;
+    const uLs = ls.get(u)!;
 
-    reverseAdj.get(u)?.forEach(v => {
+    const preds = reverseAdj.get(u) ?? [];
+    for (const v of preds) {
       const vTask = taskMap.get(v)!;
-      const newLf = addDays(ls.get(uTask.id)!, 0); // FS dependency, so v must finish before u starts
-      
-      if (!lf.has(v) || isBefore(newLf, lf.get(v)!)) {
-        lf.set(v, newLf);
-        ls.set(v, addDays(newLf, -vTask.durationDays));
+      // v must finish before u starts (FS) so candidate LF for v is uLs
+      const candidateLf = uLs;
+      const currentLf = lf.get(v);
+      // choose earlier LF (tighten schedule)
+      if (!currentLf || isBefore(candidateLf, currentLf)) {
+        lf.set(v, candidateLf);
+        ls.set(v, addDays(candidateLf, -vTask.durationDays));
       }
 
-      outDegree.set(v, (outDegree.get(v)! || 0) - 1);
-      if (outDegree.get(v) === 0) {
+      outDegree.set(v, (outDegree.get(v) || 0) - 1);
+      if ((outDegree.get(v) || 0) === 0) {
         reverseQueue.push(v);
       }
-    });
+    }
   }
 
-  // Step 4: Calculate Float and Identify Critical Path
+  // Ensure LF/LS exist for any remaining nodes
+  taskMap.forEach((task) => {
+    if (!lf.has(task.id)) {
+      lf.set(task.id, ef.get(task.id)!);
+      ls.set(task.id, addDays(ef.get(task.id)!, -task.durationDays));
+    }
+  });
+
+  // Step 4: Compute float and critical tasks
   const criticalTasks = new Set<number>();
-  const fullTaskData = new Map<number, { es: Date; ef: Date; ls: Date; lf: Date; float: number }>();
+  const fullTaskData = new Map<number, TaskTiming>();
 
-  tasks.forEach(task => {
-    const taskEs = es.get(task.id) || task.startDate;
-    const taskEf = ef.get(task.id) || task.endDate;
-    const taskLs = ls.get(task.id) || task.startDate;
-    const taskLf = lf.get(task.id) || task.endDate;
+  taskMap.forEach((task) => {
+    const taskEs = es.get(task.id)!;
+    const taskEf = ef.get(task.id)!;
+    const taskLs = ls.get(task.id)!;
+    const taskLf = lf.get(task.id)!;
 
-    const float = differenceInDays(taskLf, taskEf); // Total Float = LF - EF
+    // Float (total float) in days: LF - EF
+    const floatDays = differenceInDays(taskLf, taskEf);
 
-    if (float <= 0) { // Tasks with zero or negative float are critical
+    if (floatDays <= 0) {
       criticalTasks.add(task.id);
     }
-    fullTaskData.set(task.id, { es: taskEs, ef: taskEf, ls: taskLs, lf: taskLf, float });
+
+    fullTaskData.set(task.id, {
+      es: taskEs,
+      ef: taskEf,
+      ls: taskLs,
+      lf: taskLf,
+      float: floatDays,
+    });
   });
 
   return { criticalTasks, taskData: fullTaskData };
