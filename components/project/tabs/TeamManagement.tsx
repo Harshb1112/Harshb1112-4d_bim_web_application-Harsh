@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { UserPlus, Trash2, Users, ShieldCheck, Eye } from 'lucide-react'
+import { UserPlus, Trash2, Users, ShieldCheck, Eye, Crown } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface TeamManagementProps {
@@ -16,26 +16,81 @@ interface TeamManagementProps {
 
 export default function TeamManagement({ project: initialProject }: TeamManagementProps) {
   const [project, setProject] = useState(initialProject)
-  const [fullName, setFullName] = useState('') // New state for full name
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState('viewer')
+  const [memberRole, setMemberRole] = useState('member')
+  const [selectedTeamId, setSelectedTeamId] = useState(project.teamId?.toString() || '')
+  const [teams, setTeams] = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [tempPassword, setTempPassword] = useState<string | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState('')
+
+  // Fetch teams and current user role
+  useEffect(() => {
+    const fetchData = async () => {
+      const token = document.cookie.split('token=')[1]?.split(';')[0]
+      if (!token) return
+
+      // Get current user role from token
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        setCurrentUserRole(payload.role)
+      } catch (e) {
+        console.error('Failed to parse token:', e)
+      }
+
+      // Fetch teams
+      try {
+        const response = await fetch('/api/teams', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setTeams(data.teams || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch teams:', error)
+      }
+    }
+    fetchData()
+  }, [])
+
+  // Fetch team members when team is selected
+  useEffect(() => {
+    if (selectedTeamId) {
+      fetchTeamMembers(selectedTeamId)
+    }
+  }, [selectedTeamId])
+
+  const fetchTeamMembers = async (teamId: string) => {
+    const token = document.cookie.split('token=')[1]?.split(';')[0]
+    const team = teams.find(t => t.id.toString() === teamId)
+    if (team && team.members) {
+      setTeamMembers(team.members)
+    }
+  }
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!selectedTeamId) {
+      toast.error('Please select a team')
+      return
+    }
+    
     setLoading(true)
-    setTempPassword(null) // Clear previous temporary password
+    setTempPassword(null)
 
     const promise = new Promise(async (resolve, reject) => {
       try {
-        const response = await fetch(`/api/projects/${project.id}/members`, {
+        const response = await fetch(`/api/teams/${selectedTeamId}/members`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}`
           },
-          body: JSON.stringify({ fullName, email, role }), // Include fullName
+          body: JSON.stringify({ fullName, email, memberRole }),
         })
 
         const data = await response.json()
@@ -43,20 +98,18 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
           throw new Error(data.error || 'Failed to add member')
         }
 
-        setProject((prev: any) => ({
-          ...prev,
-          projectUsers: [...prev.projectUsers, data.member],
-        }))
+        // Refresh team members
+        await fetchTeamMembers(selectedTeamId)
+        
         setFullName('')
         setEmail('')
-        setRole('viewer')
+        setMemberRole('member')
 
         if (data.temporaryPassword) {
           setTempPassword(data.temporaryPassword)
-          resolve(`New user ${data.member.user.fullName} created and added. Temporary password: ${data.temporaryPassword}`)
-        } else {
-          resolve(`Successfully added ${data.member.user.fullName} to the project.`)
         }
+        
+        resolve(data.message || 'Member added successfully')
       } catch (error) {
         reject(error)
       } finally {
@@ -71,16 +124,18 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
     })
   }
 
-  const handleRemoveMember = async (projectUserId: number) => {
+  const handleRemoveMember = async (membershipId: number) => {
+    if (!selectedTeamId) return
+    
     const promise = new Promise(async (resolve, reject) => {
       try {
-        const response = await fetch(`/api/projects/${project.id}/members`, {
+        const response = await fetch(`/api/teams/${selectedTeamId}/members`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}`
           },
-          body: JSON.stringify({ projectUserId }),
+          body: JSON.stringify({ membershipId }),
         })
 
         const data = await response.json()
@@ -88,10 +143,8 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
           throw new Error(data.error || 'Failed to remove member')
         }
 
-        setProject((prev: any) => ({
-          ...prev,
-          projectUsers: prev.projectUsers.filter((pu: any) => pu.id !== projectUserId),
-        }))
+        // Refresh team members
+        await fetchTeamMembers(selectedTeamId)
         resolve('Member removed successfully.')
       } catch (error) {
         reject(error)
@@ -105,12 +158,11 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
     })
   }
 
-  const getRoleIcon = (role: string) => {
+  const getMemberRoleIcon = (role: string) => {
     switch (role) {
-      case 'admin': return <ShieldCheck className="h-5 w-5 text-red-600" />
-      case 'manager': return <Users className="h-5 w-5 text-blue-600" />
-      case 'viewer': return <Eye className="h-5 w-5 text-gray-600" />
-      default: return null
+      case 'leader': return <Crown className="h-5 w-5 text-yellow-600" />
+      case 'member': return <Users className="h-5 w-5 text-blue-600" />
+      default: return <Eye className="h-5 w-5 text-gray-600" />
     }
   }
 
@@ -121,39 +173,65 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Users className="h-5 w-5" />
-              <span>Project Team Members</span>
+              <span>Team Members</span>
             </CardTitle>
             <CardDescription>
-              Manage who has access to this project and their roles.
+              Manage team members. {currentUserRole === 'admin' || currentUserRole === 'manager' ? 'Select a team to view and manage its members.' : 'View and manage your team members.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {project.projectUsers.map((pu: any) => (
-                <div key={pu.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                  <div className="flex items-center space-x-4">
-                    <div className="flex-shrink-0">
-                      {getRoleIcon(pu.role)}
+            {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
+              <div className="mb-4">
+                <Label htmlFor="teamSelect">Select Team</Label>
+                <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id.toString()}>
+                        {team.name} ({team.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            {selectedTeamId ? (
+              <div className="space-y-4">
+                {teamMembers.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">No members in this team yet.</p>
+                ) : (
+                  teamMembers.map((member: any) => (
+                    <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-shrink-0">
+                          {getMemberRoleIcon(member.role)}
+                        </div>
+                        <div>
+                          <p className="font-medium">{member.user.fullName}</p>
+                          <p className="text-sm text-gray-500">{member.user.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-sm capitalize text-gray-600">{member.role}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                          onClick={() => handleRemoveMember(member.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{pu.user.fullName}</p>
-                      <p className="text-sm text-gray-500">{pu.user.email}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <span className="text-sm capitalize text-gray-600">{pu.role}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700"
-                      onClick={() => handleRemoveMember(pu.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <p className="text-center text-gray-500 py-8">Please select a team to view members.</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -193,15 +271,14 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select value={role} onValueChange={setRole}>
+                <Label htmlFor="memberRole">Team Role</Label>
+                <Select value={memberRole} onValueChange={setMemberRole}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="leader">Team Leader</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -1,0 +1,149 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { verifyToken, getTokenFromRequest, hashPassword, generateRandomPassword } from '@/lib/auth'
+
+// POST - Add a member to a team
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const token = getTokenFromRequest(request)
+    const user = token ? verifyToken(token) : null
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await params
+    const teamId = parseInt(id)
+    if (isNaN(teamId)) {
+      return NextResponse.json({ error: 'Invalid team ID' }, { status: 400 })
+    }
+
+    // Check permissions
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      // Team leader can only add to their own team
+      const isTeamLeader = await prisma.teamMembership.findFirst({
+        where: {
+          teamId,
+          userId: user.id,
+          role: 'leader'
+        }
+      })
+      
+      if (!isTeamLeader) {
+        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can add members' }, { status: 403 })
+      }
+    }
+
+    const { fullName, email, memberRole } = await request.json()
+    if (!fullName || !email) {
+      return NextResponse.json({ error: 'Full name and email are required' }, { status: 400 })
+    }
+
+    // Check if user exists
+    let userToAdd = await prisma.user.findUnique({ where: { email } })
+    let temporaryPassword = null
+
+    if (!userToAdd) {
+      // Create new user
+      temporaryPassword = generateRandomPassword()
+      const passwordHash = await hashPassword(temporaryPassword)
+
+      userToAdd = await prisma.user.create({
+        data: {
+          fullName,
+          email,
+          passwordHash,
+          role: 'viewer', // Default role
+        },
+      })
+    }
+
+    // Check if already a member
+    const existingMember = await prisma.teamMembership.findFirst({
+      where: { userId: userToAdd.id, teamId },
+    })
+    
+    if (existingMember) {
+      return NextResponse.json({ error: 'User is already a team member' }, { status: 409 })
+    }
+
+    // Add to team
+    const membership = await prisma.teamMembership.create({
+      data: {
+        teamId,
+        userId: userToAdd.id,
+        role: memberRole || 'member',
+      },
+      include: {
+        user: {
+          select: { 
+            id: true,
+            fullName: true, 
+            email: true, 
+            role: true 
+          },
+        },
+      },
+    })
+
+    return NextResponse.json({ 
+      member: membership, 
+      temporaryPassword,
+      message: temporaryPassword 
+        ? `User created and added to team. Temporary password: ${temporaryPassword}`
+        : 'User added to team successfully'
+    })
+  } catch (error) {
+    console.error('Add team member error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+// DELETE - Remove a member from a team
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const token = getTokenFromRequest(request)
+    const user = token ? verifyToken(token) : null
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id } = await params
+    const teamId = parseInt(id)
+    if (isNaN(teamId)) {
+      return NextResponse.json({ error: 'Invalid team ID' }, { status: 400 })
+    }
+
+    // Check permissions
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const isTeamLeader = await prisma.teamMembership.findFirst({
+        where: {
+          teamId,
+          userId: user.id,
+          role: 'leader'
+        }
+      })
+      
+      if (!isTeamLeader) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
+    const { membershipId } = await request.json()
+    if (!membershipId) {
+      return NextResponse.json({ error: 'Membership ID is required' }, { status: 400 })
+    }
+
+    await prisma.teamMembership.delete({ where: { id: membershipId } })
+
+    return NextResponse.json({ success: true, message: 'Member removed from team' })
+  } catch (error) {
+    console.error('Remove team member error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
