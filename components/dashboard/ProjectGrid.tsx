@@ -2,8 +2,9 @@
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Building2, Calendar, Users, CheckCircle2 } from 'lucide-react'
+import { Building2, Calendar, CheckCircle2 } from 'lucide-react'
 import { formatDate, calculateProgress } from '@/lib/utils'
+import CreateProjectDialog from '@/components/dashboard/CreateProjectDialog'
 
 interface Project {
   id: number
@@ -22,9 +23,10 @@ interface Project {
 
 interface ProjectGridProps {
   projects: Project[]
+  userRole?: string
 }
 
-export default function ProjectGrid({ projects }: ProjectGridProps) {
+export default function ProjectGrid({ projects, userRole }: ProjectGridProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -40,7 +42,7 @@ export default function ProjectGrid({ projects }: ProjectGridProps) {
             <p className="text-gray-500 text-center mb-4">
               Get started by creating your first 4D BIM project
             </p>
-            <Button>Create Project</Button>
+            {(userRole === 'admin' || userRole === 'manager') && <CreateProjectDialog label="Create Project" />}
           </CardContent>
         </Card>
       ) : (

@@ -4,7 +4,7 @@ import { hashPassword } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const { fullName, email, password, role = 'viewer' } = await request.json()
+    const { fullName, email, password, role = 'viewer', teamId, teamRole = 'member' } = await request.json()
 
     if (!fullName || !email || !password) {
       return NextResponse.json(
@@ -33,14 +33,32 @@ export async function POST(request: NextRequest) {
         fullName,
         email,
         passwordHash,
-        role
+        role,
+        ...(teamId && {
+          teamMemberships: {
+            create: {
+              teamId: parseInt(teamId),
+              role: teamRole
+            }
+          }
+        })
       },
       select: {
         id: true,
         fullName: true,
         email: true,
         role: true,
-        createdAt: true
+        createdAt: true,
+        teamMemberships: {
+          include: {
+            team: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        }
       }
     })
 

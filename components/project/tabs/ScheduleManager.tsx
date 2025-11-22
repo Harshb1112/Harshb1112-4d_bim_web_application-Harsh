@@ -8,7 +8,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { Calendar, Edit, Save, X, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Calendar, Edit, Save, X, RefreshCw, AlertTriangle, PlusCircle } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import GanttChart from '../GanttChart'
 import { formatDate, calculateCriticalPath } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -17,15 +26,50 @@ interface ScheduleManagerProps {
   project: any
   onTaskSelect?: (taskId: string) => void
   selectedTasks?: string[]
+  currentUserRole?: string
 }
 
-export default function ScheduleManager({ project, onTaskSelect, selectedTasks }: ScheduleManagerProps) {
+export default function ScheduleManager({ project, onTaskSelect, selectedTasks, currentUserRole }: ScheduleManagerProps) {
   const [tasks, setTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null)
   const [editedTask, setEditedTask] = useState<any | null>(null)
   const [criticalPathTasks, setCriticalPathTasks] = useState<Set<number>>(new Set())
   const [showCriticalPath, setShowCriticalPath] = useState(false)
+
+  // Create-task dialog state
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [newTaskName, setNewTaskName] = useState('')
+  const [newTaskDescription, setNewTaskDescription] = useState('')
+  const [newTaskStartDate, setNewTaskStartDate] = useState('')
+  const [newTaskEndDate, setNewTaskEndDate] = useState('')
+  const [newTaskDurationDays, setNewTaskDurationDays] = useState<string>('')
+  const [creatingTask, setCreatingTask] = useState(false)
+
+  // keep start/end/duration in sync where possible
+  const recalcDurationFromDates = (startStr: string, endStr: string) => {
+    if (!startStr || !endStr) return
+    const start = new Date(startStr)
+    const end = new Date(endStr)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return
+    if (end < start) return
+    const diffMs = end.getTime() - start.getTime()
+    const days = Math.round(diffMs / (1000 * 60 * 60 * 24))
+    setNewTaskDurationDays(days.toString())
+  }
+
+  const recalcEndFromDuration = (startStr: string, durationStr: string) => {
+    if (!startStr || !durationStr) return
+    const d = Number(durationStr)
+    if (!Number.isFinite(d) || d < 0) return
+    const start = new Date(startStr)
+    if (Number.isNaN(start.getTime())) return
+    const end = new Date(start)
+    end.setDate(end.getDate() + d)
+    setNewTaskEndDate(end.toISOString().split('T')[0])
+  }
+
+  const canEdit = currentUserRole === 'admin' || currentUserRole === 'manager'
 
   const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -48,8 +92,14 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks }
     if (tasks.length === 0) setLoading(true)
     try {
       const token = document.cookie.split('token=')[1]?.split(';')[0]
+      console.log('[ScheduleManager] Token extracted:', token ? `${token.substring(0, 20)}...` : 'NULL')
+      if (!token) {
+        console.error('No authentication token found in cookies:', document.cookie)
+        return
+      }
       const response = await fetch(`/api/projects/${project.id}/tasks`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
@@ -60,7 +110,7 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks }
         setCriticalPathTasks(newCriticalTasks);
 
       } else {
-        console.error('Failed to fetch tasks.')
+        console.error('Failed to fetch tasks. Status:', response.status)
         // toast.error('Failed to fetch tasks.'); // Avoid spamming toasts on background polls
       }
     } catch (error) {
@@ -74,6 +124,105 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks }
   const handleEdit = (task: any) => {
     setEditingTaskId(task.id)
     setEditedTask({ ...task })
+  }
+
+  const resetNewTaskForm = () => {
+    setNewTaskName('')
+    setNewTaskDescription('')
+    setNewTaskStartDate('')
+    setNewTaskEndDate('')
+    setNewTaskDurationDays('')
+  }
+
+  const handleStartDateChange = (value: string) => {
+    setNewTaskStartDate(value)
+    recalcDurationFromDates(value, newTaskEndDate)
+    if (!newTaskEndDate && newTaskDurationDays) {
+      recalcEndFromDuration(value, newTaskDurationDays)
+    }
+  }
+
+  const handleEndDateChange = (value: string) => {
+    setNewTaskEndDate(value)
+    recalcDurationFromDates(newTaskStartDate, value)
+  }
+
+  const handleDurationChange = (value: string) => {
+    setNewTaskDurationDays(value)
+    if (newTaskStartDate && value) {
+      recalcEndFromDuration(newTaskStartDate, value)
+    }
+  }
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTaskName.trim()) {
+      toast.error('Task name is required')
+      return
+    }
+
+    // front-end validation for date consistency
+    if (newTaskStartDate && newTaskEndDate) {
+      const s = new Date(newTaskStartDate)
+      const eDate = new Date(newTaskEndDate)
+      if (!Number.isNaN(s.getTime()) && !Number.isNaN(eDate.getTime()) && eDate < s) {
+        toast.error('End date cannot be before start date')
+        return
+      }
+    }
+    if (newTaskDurationDays) {
+      const d = Number(newTaskDurationDays)
+      if (!Number.isFinite(d) || d < 0) {
+        toast.error('Duration must be a non-negative number')
+        return
+      }
+    }
+
+    setCreatingTask(true)
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const token = document.cookie.split('token=')[1]?.split(';')[0]
+        if (!token) {
+          throw new Error('You must be logged in to create tasks')
+        }
+
+        const response = await fetch(`/api/projects/${project.id}/tasks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: newTaskName.trim(),
+            description: newTaskDescription.trim() || null,
+            startDate: newTaskStartDate || null,
+            endDate: newTaskEndDate || null,
+            durationDays: newTaskDurationDays ? Number(newTaskDurationDays) : null,
+          }),
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create task')
+        }
+
+        setIsCreateOpen(false)
+        resetNewTaskForm()
+        await fetchTasks()
+        resolve('Task created successfully')
+      } catch (error) {
+        reject(error)
+      } finally {
+        setCreatingTask(false)
+      }
+    })
+
+    toast.promise(promise, {
+      loading: 'Creating task...',
+      success: (message) => `${message}`,
+      error: (err: any) => `Failed to create task: ${err.message}`,
+    })
   }
 
   const handleCancelEdit = () => {
@@ -181,10 +330,12 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks }
             <div className="text-sm text-gray-600">{task.actualStartDate ? formatDate(task.actualStartDate) : '-'}</div>
             <div className="text-sm text-gray-600">{task.progress}%</div>
             <div className="flex justify-end col-span-2">
-              <Button size="sm" variant="outline" onClick={() => handleEdit(task)}>
-                <Edit className="h-4 w-4 mr-2" />
-                Update Progress
-              </Button>
+              {canEdit && (
+                <Button size="sm" variant="outline" onClick={() => handleEdit(task)}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Update Progress
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -213,6 +364,79 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks }
             <AlertTriangle className="h-4 w-4 mr-2" />
             {showCriticalPath ? 'Hide Critical Path' : 'Show Critical Path'}
           </Button>
+          {canEdit && (
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  Add Task
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[480px]">
+                <DialogHeader>
+                  <DialogTitle>Create Task</DialogTitle>
+                  <DialogDescription>
+                    Define a new task for this project schedule.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreateTask} className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="task-name">Task Name</Label>
+                    <Input
+                      id="task-name"
+                      value={newTaskName}
+                      onChange={(e) => setNewTaskName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="task-description">Description</Label>
+                    <Input
+                      id="task-description"
+                      value={newTaskDescription}
+                      onChange={(e) => setNewTaskDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="task-start">Start Date</Label>
+                      <Input
+                        id="task-start"
+                        type="date"
+                        value={newTaskStartDate}
+                        onChange={(e) => handleStartDateChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="task-end">End Date</Label>
+                      <Input
+                        id="task-end"
+                        type="date"
+                        value={newTaskEndDate}
+                        onChange={(e) => handleEndDateChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="task-duration">Duration (days)</Label>
+                      <Input
+                        id="task-duration"
+                        type="number"
+                        min={0}
+                        value={newTaskDurationDays}
+                        onChange={(e) => handleDurationChange(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button type="submit" disabled={creatingTask}>
+                      {creatingTask && <RefreshCw className="h-4 w-4 mr-2 animate-spin" />}
+                      {creatingTask ? 'Creating...' : 'Create Task'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 

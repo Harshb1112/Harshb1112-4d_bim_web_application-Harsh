@@ -16,7 +16,7 @@ async function checkProjectAdminOrManager(userId: number, projectId: number): Pr
 // GET a single project by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -28,17 +28,25 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
+    
+    const { id } = await params
+    const projectId = parseInt(id)
 
-    const projectId = parseInt(params.id)
-
+    // Team-based access control
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
-        projectUsers: {
-          some: {
-            userId: user.id
-          }
-        }
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id
+                  }
+                }
+              }
+            })
       },
       include: {
         models: {
@@ -91,7 +99,7 @@ export async function GET(
 // PUT update project details
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -100,14 +108,31 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
 
-    // Only project admins or managers can update project details
-    if (!(await checkProjectAdminOrManager(user.id, projectId))) {
-      return NextResponse.json({ error: 'Forbidden: Only project admins/managers can update project' }, { status: 403 })
+    // Only admins, managers, or team leaders can update project details
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const project = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          team: {
+            members: {
+              some: {
+                userId: user.id,
+                role: 'leader'
+              }
+            }
+          }
+        }
+      })
+      
+      if (!project) {
+        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can update project' }, { status: 403 })
+      }
     }
 
     const { name, description, startDate, endDate } = await request.json()

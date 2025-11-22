@@ -4,7 +4,7 @@ import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -13,7 +13,8 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const taskId = parseInt(params.id)
+    const { id } = await params
+    const taskId = parseInt(id)
     if (isNaN(taskId)) {
       return NextResponse.json({ error: 'Invalid task ID' }, { status: 400 })
     }
@@ -30,17 +31,25 @@ export async function PUT(
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
     }
 
-    // Verify user has manager/admin access to the project
-    const projectAccess = await prisma.projectUser.findFirst({
-      where: {
-        projectId: task.projectId,
-        userId: user.id,
-        role: { in: ['admin', 'manager'] },
-      },
-    })
-
-    if (!projectAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Verify user has access to the project (admin, manager, or team leader)
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const project = await prisma.project.findFirst({
+        where: {
+          id: task.projectId,
+          team: {
+            members: {
+              some: {
+                userId: user.id,
+                role: 'leader'
+              }
+            }
+          }
+        }
+      })
+      
+      if (!project) {
+        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can update task progress' }, { status: 403 })
+      }
     }
 
     const updatedTask = await prisma.task.update({

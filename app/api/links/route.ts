@@ -22,8 +22,13 @@ interface DeleteLinkBody {
 export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
-    if (!token || !verifyToken(token)) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const user = verifyToken(token)
+    if (!user) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
@@ -31,6 +36,28 @@ export async function GET(request: NextRequest) {
 
     if (!projectId) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 })
+    }
+
+    // Verify user has access to project based on team membership
+    const project = await prisma.project.findFirst({
+      where: {
+        id: Number(projectId),
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id
+                  }
+                }
+              }
+            })
+      }
+    })
+
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found or access denied' }, { status: 403 })
     }
 
     const links = await prisma.elementTaskLink.findMany({
@@ -58,8 +85,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
-    if (!token || !verifyToken(token)) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const user = verifyToken(token)
+    if (!user) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
     const body = (await request.json()) as CreateLinkBody
@@ -70,6 +102,36 @@ export async function POST(request: NextRequest) {
         { error: 'Element IDs (array) and Task ID are required' },
         { status: 400 }
       )
+    }
+
+    // Verify user has access to the task's project
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { project: true }
+    })
+
+    if (!task) {
+      return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+    }
+
+    // Check team-based access
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const hasAccess = await prisma.project.findFirst({
+        where: {
+          id: task.projectId,
+          team: {
+            members: {
+              some: {
+                userId: user.id
+              }
+            }
+          }
+        }
+      })
+
+      if (!hasAccess) {
+        return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+      }
     }
 
     const createData = elementIds.map((elementId: number) => ({
@@ -102,8 +164,13 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
-    if (!token || !verifyToken(token)) {
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const user = verifyToken(token)
+    if (!user) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
     const body = (await request.json()) as DeleteLinkBody
@@ -114,6 +181,11 @@ export async function DELETE(request: NextRequest) {
         { error: 'An array of link IDs is required' },
         { status: 400 }
       )
+    }
+
+    // Verify user has access to delete these links
+    if (user.role !== 'admin' && user.role !== 'manager' && user.role !== 'team_leader') {
+      return NextResponse.json({ error: 'Forbidden: insufficient permissions' }, { status: 403 })
     }
 
     await prisma.elementTaskLink.deleteMany({

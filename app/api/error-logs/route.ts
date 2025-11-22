@@ -83,16 +83,26 @@ export async function GET(request: NextRequest) {
     const limit = Number(query.limit ?? '50')
     const offset = Number(query.offset ?? '0')
 
-    // Check user access
-    const projectAccess = await prisma.projectUser.findFirst({
+    // Check user access based on team membership
+    const project = await prisma.project.findFirst({
       where: {
-        projectId: Number(query.projectId),
-        userId: user.id,
-      },
+        id: Number(query.projectId),
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id
+                  }
+                }
+              }
+            })
+      }
     })
 
-    if (!projectAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found or access denied' }, { status: 403 })
     }
 
     const whereClause: WhereClause = {

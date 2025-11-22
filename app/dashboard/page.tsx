@@ -24,69 +24,223 @@ async function getCurrentUser() {
   return user
 }
 
-async function getDashboardData(userId: number) {
-  // Get user's projects
-  const projects = await prisma.project.findMany({
-    where: {
-      projectUsers: {
-        some: {
-          userId: userId
-        }
-      }
-    },
-    include: {
-      _count: {
-        select: {
-          tasks: true,
-          models: true
-        }
-      },
-      tasks: {
-        select: {
-          progress: true
-        }
-      }
-    },
-    orderBy: {
-      createdAt: 'desc'
-    }
-  })
+async function getDashboardData(userId: number, userRole: string) {
+  let projects
+  let activities
 
-  // Get recent activity
-  const activities = await prisma.activityLog.findMany({
-    where: {
-      project: {
-        projectUsers: {
-          some: {
-            userId: userId
+  if (userRole === 'admin' || userRole === 'manager') {
+    // Admin and Manager see all projects
+    projects = await prisma.project.findMany({
+      include: {
+        _count: {
+          select: {
+            tasks: true,
+            models: true
+          }
+        },
+        tasks: {
+          select: {
+            progress: true
+          }
+        },
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        teamLeader: {
+          select: {
+            id: true,
+            fullName: true
           }
         }
+      },
+      orderBy: {
+        createdAt: 'desc'
       }
-    },
-    include: {
-      user: {
-        select: {
-          fullName: true
+    })
+
+    // Get all activity
+    activities = await prisma.activityLog.findMany({
+      include: {
+        user: {
+          select: {
+            fullName: true
+          }
+        },
+        project: {
+          select: {
+            name: true
+          }
         }
       },
-      project: {
-        select: {
-          name: true
+      orderBy: {
+        timestamp: 'desc'
+      },
+      take: 10
+    })
+  } else if (userRole === 'team_leader') {
+    // Team Leader sees only their team's projects
+    projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          {
+            team: {
+              members: {
+                some: {
+                  userId: userId,
+                  role: 'leader'
+                }
+              }
+            }
+          },
+          {
+            teamLeaderId: userId
+          }
+        ]
+      },
+      include: {
+        _count: {
+          select: {
+            tasks: true,
+            models: true
+          }
+        },
+        tasks: {
+          select: {
+            progress: true
+          }
+        },
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
         }
+      },
+      orderBy: {
+        createdAt: 'desc'
       }
-    },
-    orderBy: {
-      timestamp: 'desc'
-    },
-    take: 10
-  })
+    })
+
+    // Get team activity
+    const teamMemberships = await prisma.teamMembership.findMany({
+      where: {
+        userId: userId,
+        role: 'leader'
+      },
+      select: {
+        teamId: true
+      }
+    })
+    const teamIds = teamMemberships.map(m => m.teamId)
+
+    activities = await prisma.activityLog.findMany({
+      where: {
+        project: {
+          teamId: {
+            in: teamIds
+          }
+        }
+      },
+      include: {
+        user: {
+          select: {
+            fullName: true
+          }
+        },
+        project: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        timestamp: 'desc'
+      },
+      take: 10
+    })
+  } else {
+    // Viewer sees only their team's projects
+    projects = await prisma.project.findMany({
+      where: {
+        team: {
+          members: {
+            some: {
+              userId: userId
+            }
+          }
+        }
+      },
+      include: {
+        _count: {
+          select: {
+            tasks: true,
+            models: true
+          }
+        },
+        tasks: {
+          select: {
+            progress: true
+          }
+        },
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+
+    // Get team activity
+    const teamMemberships = await prisma.teamMembership.findMany({
+      where: {
+        userId: userId
+      },
+      select: {
+        teamId: true
+      }
+    })
+    const teamIds = teamMemberships.map(m => m.teamId)
+
+    activities = await prisma.activityLog.findMany({
+      where: {
+        project: {
+          teamId: {
+            in: teamIds
+          }
+        }
+      },
+      include: {
+        user: {
+          select: {
+            fullName: true
+          }
+        },
+        project: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        timestamp: 'desc'
+      },
+      take: 10
+    })
+  }
 
   return { projects, activities }
 }
 
 export default async function DashboardPage() {
   const user = await getCurrentUser()
-  const { projects, activities } = await getDashboardData(user.id)
+  const { projects, activities } = await getDashboardData(user.id, user.role)
 
   // Calculate stats
   const totalProjects = projects.length
@@ -125,7 +279,7 @@ export default async function DashboardPage() {
 
           <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-3">
             <div className="xl:col-span-2">
-              <ProjectGrid projects={projects} />
+              <ProjectGrid projects={projects} userRole={user.role} />
             </div>
             <div>
               <RecentActivity activities={activities} />

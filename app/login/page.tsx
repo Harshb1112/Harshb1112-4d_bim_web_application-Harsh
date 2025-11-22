@@ -36,7 +36,7 @@ export default function LoginPage() {
       }
 
       // Store token in cookie
-      document.cookie = `token=${data.token}; path=/; max-age=${7 * 24 * 60 * 60}`
+      document.cookie = `token=${data.token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`
       toast.success('Login successful!', {
         description: `Welcome back, ${data.user.fullName}.`,
       })

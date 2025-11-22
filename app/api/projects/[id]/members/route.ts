@@ -2,20 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest, hashPassword, generateRandomPassword } from '@/lib/auth'
 
-async function checkAdminAccess(userId: number, projectId: number): Promise<boolean> {
-  const projectUser = await prisma.projectUser.findFirst({
-    where: {
-      userId,
-      projectId,
-    },
-  })
-  return projectUser?.role === 'admin'
-}
-
 // POST - Add a new member to a project
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -24,13 +14,31 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
 
-    if (!(await checkAdminAccess(user.id, projectId))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Check if user has permission (admin, manager, or team leader of this project's team)
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const project = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          team: {
+            members: {
+              some: {
+                userId: user.id,
+                role: 'leader'
+              }
+            }
+          }
+        }
+      })
+      
+      if (!project) {
+        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can add members' }, { status: 403 })
+      }
     }
 
     const { fullName, email, role } = await request.json()
@@ -105,7 +113,7 @@ export async function POST(
 // DELETE - Remove a member from a project
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -114,13 +122,32 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
 
-    if (!(await checkAdminAccess(user.id, projectId))) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })    }
+    // Check if user has permission (admin, manager, or team leader of this project's team)
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      const project = await prisma.project.findFirst({
+        where: {
+          id: projectId,
+          team: {
+            members: {
+              some: {
+                userId: user.id,
+                role: 'leader'
+              }
+            }
+          }
+        }
+      })
+      
+      if (!project) {
+        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can remove members' }, { status: 403 })
+      }
+    }
 
     const { projectUserId } = await request.json()
     if (!projectUserId) {

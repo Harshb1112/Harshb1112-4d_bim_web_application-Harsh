@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
- 
-import { Building2, LogOut, Plus, User, Settings } from 'lucide-react'
+import { Building2, LogOut, User } from 'lucide-react'
 import Link from 'next/link'
+import CreateProjectDialog from '@/components/dashboard/CreateProjectDialog'
 
 interface DashboardHeaderProps {
   user: {
@@ -19,7 +18,6 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({ user }: DashboardHeaderProps) {
   const router = useRouter()
-  const [showCreateProject, setShowCreateProject] = useState(false) // This state is not used here, but kept for consistency if a modal is added later
 
   const handleLogout = () => {
     document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
@@ -38,11 +36,8 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
           </div>
 
           <div className="flex items-center space-x-4">
-            <Button onClick={() => setShowCreateProject(true)} disabled> {/* Placeholder for New Project Modal */}
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Button>
-            
+            {(user.role === 'admin' || user.role === 'manager') && <CreateProjectDialog />}
+
             <Link href="/profile">
               <Button variant="ghost" size="sm">
                 <User className="h-4 w-4 mr-2" />

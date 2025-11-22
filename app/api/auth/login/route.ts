@@ -13,9 +13,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find user
+    // Find user with team memberships
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      include: {
+        teamMemberships: {
+          include: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+                code: true
+              }
+            }
+          }
+        }
+      }
     })
 
     if (!user) {
@@ -48,7 +61,13 @@ export async function POST(request: NextRequest) {
         id: user.id,
         fullName: user.fullName,
         email: user.email,
-        role: user.role
+        role: user.role,
+        teams: user.teamMemberships.map(tm => ({
+          id: tm.team.id,
+          name: tm.team.name,
+          code: tm.team.code,
+          role: tm.role
+        }))
       }
     })
   } catch (error) {

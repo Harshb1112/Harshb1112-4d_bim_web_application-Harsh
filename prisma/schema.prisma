@@ -1,12 +1,16 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
 generator client {
-  provider = "prisma-client-js"
+     provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -25,17 +29,27 @@ model User {
   activityLogs    ActivityLog[]
   errorLogs       ErrorLog[]     @relation("ErrorReporter")
 
+  // NEW: team & role management
+  teamLeadProjects Project[]        @relation("TeamLeadProjects")
+  teamMemberships  TeamMembership[]
+  roleRequests     RoleRequest[]
+  assignedTasks    Task[]
+
   @@map("users")
 }
 
 model Project {
-  id          Int      @id @default(autoincrement())
-  name        String
-  description String?
-  startDate   DateTime? @map("start_date")
-  endDate     DateTime? @map("end_date")
-  createdById Int?     @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           Int      @id @default(autoincrement())
+  name         String
+  description  String?
+  startDate    DateTime? @map("start_date")
+  endDate      DateTime? @map("end_date")
+  createdById  Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // NEW: team assignment
+  teamId       Int?     @map("team_id")
+  teamLeaderId Int?     @map("team_leader_id")
 
   // Relations
   createdBy     User?           @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -44,6 +58,9 @@ model Project {
   tasks         Task[]
   activityLogs  ActivityLog[]
   errorLogs     ErrorLog[]
+
+  team          Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  teamLeader    User?           @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id], onDelete: SetNull)
 
   @@map("projects")
 }
@@ -128,6 +145,12 @@ model Task {
   resource        String?
   createdAt       DateTime @default(now()) @map("created_at")
 
+  // NEW: team + assignee
+  teamId      Int?    @map("team_id")
+  assigneeId  Int?    @map("assignee_id")
+  status      String  @default("todo")
+  priority    String?
+
   // Relations
   project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent          Task?             @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
@@ -137,6 +160,9 @@ model Task {
   elementLinks    ElementTaskLink[]
   progressLogs    ProgressLog[]
   elementStatus   ElementStatus[]
+
+  team            Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  assignee        User?             @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@map("tasks")
 }
@@ -232,4 +258,48 @@ model ErrorLog {
   project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@map("error_logs")
+}
+
+model Team {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  code      String?  @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  members      TeamMembership[]
+  projects     Project[]
+  tasks        Task[]
+  roleRequests RoleRequest[]
+
+  @@map("teams")
+}
+
+model TeamMembership {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  teamId    Int      @map("team_id")
+  role      String   @default("member")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_memberships")
+}
+
+model RoleRequest {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  role      String
+  teamId    Int?     @map("team_id")
+  status    String   @default("pending")
+  createdAt DateTime @default(now()) @map("created_at")
+  decidedAt DateTime? @map("decided_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@map("role_requests")
 }

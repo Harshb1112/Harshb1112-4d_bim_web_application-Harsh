@@ -4,7 +4,7 @@ import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -17,18 +17,29 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
 
-    // Verify user has access to project
-    const projectAccess = await prisma.projectUser.findFirst({
+    // Verify user has access to project based on team membership
+    const project = await prisma.project.findFirst({
       where: {
-        projectId,
-        userId: user.id
+        id: projectId,
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id
+                  }
+                }
+              }
+            })
       }
     })
 
-    if (!projectAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found or access denied' }, { status: 403 })
     }
 
     const tasks = await prisma.task.findMany({
@@ -85,7 +96,7 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -98,18 +109,34 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
 
-    // Verify user has access to project
-    const projectAccess = await prisma.projectUser.findFirst({
+    // Verify user has admin/manager/team_leader access to project
+    if (user.role !== 'admin' && user.role !== 'manager' && user.role !== 'team_leader') {
+      return NextResponse.json({ error: 'Forbidden: only admins, managers, or team leaders can create tasks' }, { status: 403 })
+    }
+
+    const project = await prisma.project.findFirst({
       where: {
-        projectId,
-        userId: user.id
+        id: projectId,
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id,
+                    role: 'leader'
+                  }
+                }
+              }
+            })
       }
     })
 
-    if (!projectAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found or access denied' }, { status: 403 })
     }
 
     const {

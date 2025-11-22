@@ -14,7 +14,7 @@ interface ProgressPoint {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -23,21 +23,36 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const projectId = Number(params.id)
+    const { id } = await params
+    const projectId = Number(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
 
-    // Verify user access
-    const projectAccess = await prisma.projectUser.findFirst({
-      where: { projectId, userId: user.id },
+    // Verify user access based on team membership
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(user.role === 'admin' || user.role === 'manager'
+          ? {}
+          : {
+              team: {
+                members: {
+                  some: {
+                    userId: user.id
+                  }
+                }
+              }
+            })
+      }
     })
-    if (!projectAccess) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found or access denied' }, { status: 403 })
     }
 
-    // Fetch project dates
-    const project = await prisma.project.findUnique({
+    // Fetch project dates (reuse the project we already fetched)
+    const projectDates = await prisma.project.findUnique({
       where: { id: projectId },
       select: {
         startDate: true,
@@ -83,10 +98,13 @@ export async function GET(
       where: { task: { projectId } },
     })
 
-    const linkedElementsCount = await prisma.elementTaskLink.count({
+    // Get unique linked elements count
+    const linkedElements = await prisma.elementTaskLink.findMany({
       where: { task: { projectId } },
+      select: { elementId: true },
       distinct: ['elementId'],
     })
+    const linkedElementsCount = linkedElements.length
 
     // TASK ANALYTICS ---------------------------------
 
@@ -109,18 +127,18 @@ export async function GET(
     // PROJECT DURATION ---------------------------------
 
     const projectDurationDays =
-      project?.startDate && project?.endDate
-        ? differenceInDays(project.endDate, project.startDate)
+      projectDates?.startDate && projectDates?.endDate
+        ? differenceInDays(projectDates.endDate, projectDates.startDate)
         : 0
 
     // PROGRESS OVER TIME ---------------------------------
 
     const progressOverTime: ProgressPoint[] = []
 
-    if (project?.startDate && project?.endDate) {
-      const currentDate = new Date(project.startDate)
+    if (projectDates?.startDate && projectDates?.endDate) {
+      const currentDate = new Date(projectDates.startDate)
 
-      while (currentDate <= project.endDate) {
+      while (currentDate <= projectDates.endDate) {
         const tasksUpToDate = tasks.filter(
           (t: typeof tasks[0]) => t.startDate && t.startDate <= currentDate
         )

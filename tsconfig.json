@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "esnext",
     "lib": [
       "dom",
       "dom.iterable",
@@ -17,10 +17,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
+    "types": [
+      "node",
+      "jest",
+      "@testing-library/jest-dom"
     ],
     "baseUrl": ".",
     "paths": {
@@ -28,11 +28,10 @@
         "./*"
       ]
     },
-    // ✅ FIX: Cypress types removed
-    "types": [
-      "jest",
-      "node",
-      "@testing-library/jest-dom"
+    "plugins": [
+      {
+        "name": "next"
+      }
     ]
   },
   "include": [
@@ -43,7 +42,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "cypress"
+    "node_modules"
   ]
 }
