@@ -28,7 +28,7 @@ export function generateToken(user: User): string {
       role: user.role 
     },
     JWT_SECRET,
-    { expiresIn: '7d', algorithm: 'HS256' }
+    { expiresIn: '30d', algorithm: 'HS256' }
   )
 }
 
