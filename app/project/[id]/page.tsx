@@ -168,7 +168,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const project = await getProject(id, user.id, user.role)
  
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" suppressHydrationWarning>
       <ProjectHeader project={project} user={user} />
       <ProjectTabs project={project} currentUserRole={user.role} />
     </div>
