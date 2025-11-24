@@ -61,6 +61,19 @@ export async function POST(request: NextRequest) {
     const inviteToken = crypto.randomBytes(32).toString('hex')
     const inviteExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
 
+    // If Team Leader, create a team with their name
+    let assignedTeamId = teamId ? parseInt(teamId) : null
+    
+    if (role === 'team_leader' && !assignedTeamId) {
+      const team = await prisma.team.create({
+        data: {
+          name: `${fullName}'s Team`,
+          code: fullName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+        }
+      })
+      assignedTeamId = team.id
+    }
+    
     // Create placeholder user with invite
     const invitedUser = await prisma.user.create({
       data: {
@@ -72,10 +85,10 @@ export async function POST(request: NextRequest) {
         inviteExpiry,
         invitedBy: currentUser.id,
         isEmailVerified: false,
-        ...(teamId && {
+        ...(assignedTeamId && {
           teamMemberships: {
             create: {
-              teamId: parseInt(teamId),
+              teamId: assignedTeamId,
               role: role === 'team_leader' ? 'leader' : 'member'
             }
           }

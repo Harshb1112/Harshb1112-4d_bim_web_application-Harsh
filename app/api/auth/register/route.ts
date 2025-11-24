@@ -48,23 +48,39 @@ export async function POST(request: NextRequest) {
     const emailVerifyToken = crypto.randomBytes(32).toString('hex')
     const emailVerifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
-    // Hash password and create user
+    // Hash password
     const passwordHash = await hashPassword(password)
     
+    const userRole = inviteData?.role || role
+    
+    // If Team Leader, create a team with their name
+    let createdTeamId = teamId ? parseInt(teamId) : null
+    
+    if (userRole === 'team_leader' && !createdTeamId) {
+      const team = await prisma.team.create({
+        data: {
+          name: `${fullName}'s Team`,
+          code: fullName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+        }
+      })
+      createdTeamId = team.id
+    }
+    
+    // Create user
     const user = await prisma.user.create({
       data: {
         fullName,
         email,
         passwordHash,
-        role: inviteData?.role || role,
+        role: userRole,
         emailVerifyToken,
         emailVerifyExpiry,
         invitedBy: inviteData?.invitedBy,
-        ...(teamId && {
+        ...(createdTeamId && {
           teamMemberships: {
             create: {
-              teamId: parseInt(teamId),
-              role: teamRole
+              teamId: createdTeamId,
+              role: userRole === 'team_leader' ? 'leader' : teamRole
             }
           }
         })
