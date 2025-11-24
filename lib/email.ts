@@ -1,5 +1,5 @@
 // Email service for sending verification and invite emails
-// Using Nodemailer (you can switch to SendGrid, Resend, etc.)
+import nodemailer from 'nodemailer'
 
 interface EmailOptions {
   to: string
@@ -8,18 +8,47 @@ interface EmailOptions {
 }
 
 export async function sendEmail({ to, subject, html }: EmailOptions) {
-  // For now, just log (you'll need to configure actual email service)
-  console.log('📧 Email would be sent:')
-  console.log('To:', to)
-  console.log('Subject:', subject)
-  console.log('HTML:', html)
+  // Check if email is configured
+  const emailHost = process.env.EMAIL_HOST
+  const emailUser = process.env.EMAIL_USER
+  const emailPassword = process.env.EMAIL_PASSWORD
   
-  // TODO: Configure actual email service
-  // Example with Nodemailer:
-  // const transporter = nodemailer.createTransport({...})
-  // await transporter.sendMail({ from: 'noreply@yourdomain.com', to, subject, html })
+  if (!emailHost || !emailUser || !emailPassword) {
+    // If not configured, just log to console
+    console.log('📧 Email would be sent (Email service not configured):')
+    console.log('To:', to)
+    console.log('Subject:', subject)
+    console.log('Verification link:', html.match(/href="([^"]+)"/)?.[1])
+    return { success: true }
+  }
   
-  return { success: true }
+  try {
+    // Create transporter
+    const transporter = nodemailer.createTransport({
+      host: emailHost,
+      port: parseInt(process.env.EMAIL_PORT || '587'),
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: emailUser,
+        pass: emailPassword
+      }
+    })
+    
+    // Send email
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || emailUser,
+      to,
+      subject,
+      html
+    })
+    
+    console.log('✅ Email sent successfully to:', to)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Email sending failed:', error)
+    // Still return success so registration doesn't fail
+    return { success: false, error }
+  }
 }
 
 export function generateVerificationEmail(name: string, token: string, baseUrl: string) {
