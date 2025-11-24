@@ -14,12 +14,18 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  fullName     String   @map("full_name")
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  role         String   @default("viewer")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id                Int      @id @default(autoincrement())
+  fullName          String   @map("full_name")
+  email             String   @unique
+  passwordHash      String   @map("password_hash")
+  role              String   @default("member")
+  isEmailVerified   Boolean  @default(false) @map("is_email_verified")
+  emailVerifyToken  String?  @unique @map("email_verify_token")
+  emailVerifyExpiry DateTime? @map("email_verify_expiry")
+  inviteToken       String?  @unique @map("invite_token")
+  inviteExpiry      DateTime? @map("invite_expiry")
+  invitedBy         Int?     @map("invited_by")
+  createdAt         DateTime @default(now()) @map("created_at")
 
   // Relations
   createdProjects Project[]      @relation("ProjectCreator")
