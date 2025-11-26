@@ -457,13 +457,73 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
             controls.update();
           }
         },
-        isolateObjects: (ids: string[]) => {
-          // Highlight selected objects (simple implementation)
-          console.log('Isolate objects:', ids);
+        isolateObjects: (ids: string[], _unused1?: any, _unused2?: any, ghost: boolean = true) => {
+          console.log(`🔒 Isolating ${ids.length} objects, ghost=${ghost}`)
+          
+          // If ghost=true, make all other objects semi-transparent
+          // If ghost=false, hide all other objects
+          scene.children.forEach((child: any) => {
+            if (child.type === 'Mesh' || child.type === 'Group') {
+              const processObject = (obj: any) => {
+                const matchesId = ids.includes(obj.uuid) || 
+                                 ids.includes(obj.name) || 
+                                 ids.includes(obj.userData?.speckleId)
+                
+                if (!matchesId && obj.material) {
+                  if (ghost) {
+                    // Ghost mode: make semi-transparent
+                    if (!obj.material.userData?.isCloned) {
+                      obj.material = obj.material.clone()
+                      obj.material.userData = { isCloned: true }
+                    }
+                    obj.material.opacity = 0.2
+                    obj.material.transparent = true
+                    obj.material.needsUpdate = true
+                  } else {
+                    // Hide mode: make invisible
+                    obj.visible = false
+                  }
+                }
+                
+                if (obj.children) {
+                  obj.children.forEach(processObject)
+                }
+              }
+              processObject(child)
+            }
+          })
         },
-        unIsolateObjects: () => {
-          // Remove highlight (simple implementation)
-          console.log('Un-isolate objects');
+        unIsolateObjects: (ids?: string[]) => {
+          console.log('🔓 Un-isolating objects')
+          
+          // If ids provided, only un-isolate those
+          // If no ids, un-isolate all
+          scene.children.forEach((child: any) => {
+            if (child.type === 'Mesh' || child.type === 'Group') {
+              const processObject = (obj: any) => {
+                const shouldUnIsolate = !ids || ids.length === 0 || 
+                                       ids.includes(obj.uuid) || 
+                                       ids.includes(obj.name) || 
+                                       ids.includes(obj.userData?.speckleId)
+                
+                if (shouldUnIsolate && obj.material) {
+                  if (!obj.material.userData?.isCloned) {
+                    obj.material = obj.material.clone()
+                    obj.material.userData = { isCloned: true }
+                  }
+                  obj.material.opacity = 1.0
+                  obj.material.transparent = false
+                  obj.material.needsUpdate = true
+                  obj.visible = true
+                }
+                
+                if (obj.children) {
+                  obj.children.forEach(processObject)
+                }
+              }
+              processObject(child)
+            }
+          })
         },
         hideObjects: (ids: string[]) => {
           // Hide objects by making them invisible
@@ -538,6 +598,29 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
         },
         setColorFilter: (filter: any) => {
           console.log('🎨 setColorFilter called with:', filter)
+          console.log('📦 Scene children count:', scene.children.length)
+          
+          // List all objects in scene for debugging
+          const allObjects: any[] = []
+          scene.children.forEach((child: any) => {
+            if (child.type === 'Mesh' || child.type === 'Group') {
+              const collectObjects = (obj: any) => {
+                if (obj.type === 'Mesh') {
+                  allObjects.push({
+                    name: obj.name,
+                    uuid: obj.uuid.substring(0, 8),
+                    speckleId: obj.userData?.speckleId,
+                    hasMaterial: !!obj.material
+                  })
+                }
+                if (obj.children) {
+                  obj.children.forEach(collectObjects)
+                }
+              }
+              collectObjects(child)
+            }
+          })
+          console.log('🔍 Available objects:', allObjects.slice(0, 10))
           
           // Apply color filters to objects
           if (filter.multiple && Array.isArray(filter.multiple)) {
@@ -561,9 +644,15 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                   if (child.type === 'Mesh' || child.type === 'Group') {
                     const applyColor = (obj: any) => {
                       // Match by UUID, name, or Speckle ID
+                      // Also try partial match for GUIDs
                       const matchesId = obj.uuid === targetId || 
                                        obj.name === targetId || 
-                                       obj.userData?.speckleId === targetId
+                                       obj.userData?.speckleId === targetId ||
+                                       obj.name?.includes(targetId) ||
+                                       targetId?.includes(obj.name) ||
+                                       obj.userData?.speckleId?.includes(targetId) ||
+                                       targetId?.includes(obj.userData?.speckleId)
+                      
                       if (matchesId) {
                         if (obj.material) {
                           // Clone material if shared to avoid affecting other objects
@@ -579,6 +668,7 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                           matchCount++
                           
                           console.log(`    ✅ Applied color to: ${obj.name || obj.uuid.substring(0, 8)}`)
+                          console.log(`       Matched with targetId: ${targetId}`)
                         }
                       }
                       if (obj.children) {
@@ -613,7 +703,9 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                     const targetId = cf.property?.value
                     return obj.uuid === targetId || 
                            obj.name === targetId || 
-                           obj.userData?.speckleId === targetId
+                           obj.userData?.speckleId === targetId ||
+                           obj.name?.includes(targetId) ||
+                           targetId?.includes(obj.name)
                   })
                   if (!isColored && obj.material) {
                     // Clone material if shared
@@ -640,6 +732,40 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
           }
           
           console.log('✨ Color filter application complete')
+          
+          // FALLBACK: If no colors were applied at all, apply first color to all visible objects
+          if (filter.multiple && filter.multiple.length > 0) {
+            const totalMeshes = allObjects.length
+            if (totalMeshes > 0) {
+              console.log(`⚠️ FALLBACK: Applying first color to all ${totalMeshes} objects for visibility`)
+              const firstColor = filter.multiple[0].color
+              const hexColor = firstColor.startsWith('#') ? firstColor.substring(1) : firstColor
+              const colorNumber = parseInt(hexColor, 16)
+              
+              scene.children.forEach((child: any) => {
+                if (child.type === 'Mesh' || child.type === 'Group') {
+                  const applyFallback = (obj: any) => {
+                    if (obj.material && obj.type === 'Mesh') {
+                      if (!obj.material.userData?.isCloned) {
+                        obj.material = obj.material.clone()
+                        obj.material.userData = { isCloned: true }
+                      }
+                      obj.material.color.setHex(colorNumber)
+                      obj.material.opacity = 1.0
+                      obj.material.transparent = false
+                      obj.material.needsUpdate = true
+                      obj.visible = true
+                    }
+                    if (obj.children) {
+                      obj.children.forEach(applyFallback)
+                    }
+                  }
+                  applyFallback(child)
+                }
+              })
+              console.log(`  ✅ Fallback applied - all objects should now be colored`)
+            }
+          }
         },
         applyFilter: (filter: any) => {
           console.log('Apply filter:', filter);
