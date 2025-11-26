@@ -537,15 +537,26 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
           })
         },
         setColorFilter: (filter: any) => {
+          console.log('🎨 setColorFilter called with:', filter)
+          
           // Apply color filters to objects
           if (filter.multiple && Array.isArray(filter.multiple)) {
+            console.log(`📊 Applying ${filter.multiple.length} color filters`)
+            
             // Apply multiple color filters
-            filter.multiple.forEach((colorFilter: any) => {
+            filter.multiple.forEach((colorFilter: any, index: number) => {
               const targetId = colorFilter.property?.value
               const color = colorFilter.color
               const opacity = colorFilter.opacity !== undefined ? colorFilter.opacity : 1.0
               
               if (targetId && color) {
+                // Convert hex color to number correctly
+                const hexColor = color.startsWith('#') ? color.substring(1) : color
+                const colorNumber = parseInt(hexColor, 16)
+                
+                console.log(`  Filter ${index}: ID=${targetId.substring(0, 8)}..., Color=${color} (${colorNumber}), Opacity=${opacity}`)
+                
+                let matchCount = 0
                 scene.children.forEach((child: any) => {
                   if (child.type === 'Mesh' || child.type === 'Group') {
                     const applyColor = (obj: any) => {
@@ -555,9 +566,19 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                                        obj.userData?.speckleId === targetId
                       if (matchesId) {
                         if (obj.material) {
-                          obj.material.color.setHex(parseInt(color.replace('#', '0x')))
+                          // Clone material if shared to avoid affecting other objects
+                          if (!obj.material.userData?.isCloned) {
+                            obj.material = obj.material.clone()
+                            obj.material.userData = { isCloned: true }
+                          }
+                          
+                          obj.material.color.setHex(colorNumber)
                           obj.material.opacity = opacity
                           obj.material.transparent = opacity < 1.0
+                          obj.material.needsUpdate = true
+                          matchCount++
+                          
+                          console.log(`    ✅ Applied color to: ${obj.name || obj.uuid.substring(0, 8)}`)
                         }
                       }
                       if (obj.children) {
@@ -567,6 +588,10 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                     applyColor(child)
                   }
                 })
+                
+                if (matchCount === 0) {
+                  console.warn(`    ⚠️ No matches found for ID: ${targetId}`)
+                }
               }
             })
           }
@@ -574,6 +599,12 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
           // Apply default color to unmatched objects
           if (filter.default_color) {
             const defaultColor = filter.default_color
+            const hexColor = defaultColor.startsWith('#') ? defaultColor.substring(1) : defaultColor
+            const colorNumber = parseInt(hexColor, 16)
+            
+            console.log(`🔘 Applying default color: ${defaultColor} (${colorNumber})`)
+            
+            let defaultCount = 0
             scene.children.forEach((child: any) => {
               if (child.type === 'Mesh' || child.type === 'Group') {
                 const applyDefault = (obj: any) => {
@@ -585,9 +616,17 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                            obj.userData?.speckleId === targetId
                   })
                   if (!isColored && obj.material) {
-                    obj.material.color.setHex(parseInt(defaultColor.replace('#', '0x')))
+                    // Clone material if shared
+                    if (!obj.material.userData?.isCloned) {
+                      obj.material = obj.material.clone()
+                      obj.material.userData = { isCloned: true }
+                    }
+                    
+                    obj.material.color.setHex(colorNumber)
                     obj.material.opacity = 0.3 // Ghost unmatched elements
                     obj.material.transparent = true
+                    obj.material.needsUpdate = true
+                    defaultCount++
                   }
                   if (obj.children) {
                     obj.children.forEach(applyDefault)
@@ -596,7 +635,11 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                 applyDefault(child)
               }
             })
+            
+            console.log(`  ✅ Applied default color to ${defaultCount} objects`)
           }
+          
+          console.log('✨ Color filter application complete')
         },
         applyFilter: (filter: any) => {
           console.log('Apply filter:', filter);

@@ -498,9 +498,19 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     setActiveTasks(tasksWithCounts)
 
     // Apply visibility and colors to viewer
+    console.log('🎬 Applying visualization:', {
+      mode: visualizationMode,
+      visibleCount: visibleGuids.length,
+      totalElements: allElementGuids.length,
+      colorFilters: colorFilters.length,
+      activeTasks: currentActiveTasks.length
+    })
+
     if (visualizationMode === 'element-count') {
       // For element count mode: hide elements not in visibleGuids
       const hiddenGuids = allElementGuids.filter(guid => !visibleGuids.includes(guid))
+      
+      console.log(`  👁️ Visibility: ${visibleGuids.length} visible, ${hiddenGuids.length} hidden`)
       
       if (hiddenGuids.length > 0) {
         viewerRef.current.hideObjects(hiddenGuids)
@@ -511,8 +521,16 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       }
     } else {
       // For opacity and gradient modes: show all elements
+      console.log(`  👁️ Showing all ${allElementGuids.length} elements`)
       viewerRef.current.showObjects(allElementGuids)
     }
+
+    // Log color filters being applied
+    console.log('🎨 Color filters to apply:', colorFilters.slice(0, 5).map(cf => ({
+      id: cf.property?.value?.substring(0, 8) + '...',
+      color: cf.color,
+      opacity: cf.opacity
+    })))
 
     // Apply color filters
     viewerRef.current.setColorFilter({
