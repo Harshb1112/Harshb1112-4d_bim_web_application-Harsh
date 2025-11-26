@@ -69,6 +69,7 @@ prisma/dev.db
 .env.development
 .env.production
 .env.test
+!.env.example
 
 # Database files
 *.db
