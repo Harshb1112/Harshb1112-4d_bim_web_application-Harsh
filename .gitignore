@@ -43,3 +43,20 @@ next-env.d.ts
 /app/generated/prisma
 
 /generated/prisma
+
+# Uploaded files
+/uploads
+/uploads/ifc
+/uploads/autodesk
+/public/uploads/models/*
+!/public/uploads/models/.gitkeep
+
+# SQLite database files (not used - using PostgreSQL)
+*.db
+*.db-journal
+dev.db
+prisma/dev.db
+
+# Backups
+/backups
+*.backup

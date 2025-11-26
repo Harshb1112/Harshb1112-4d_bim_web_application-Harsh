@@ -26,7 +26,8 @@ import {
   Plus,
   Trash2,
   Lightbulb,
-  Loader2
+  Loader2,
+  Eye
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
@@ -125,9 +126,8 @@ export default function LinkingPanel({
 
   const loadLinksData = async () => {
     try {
-      const token = document.cookie.split('token=')[1]?.split(';')[0]
       const response = await fetch(`/api/links?projectId=${project.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
@@ -146,7 +146,7 @@ export default function LinkingPanel({
       if (project.models && project.models.length > 0) {
         const modelId = project.models[0].id
         const response = await fetch(`/api/models/${modelId}/elements`, {
-          headers: { 'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}` }
+          credentials: 'include'
         })
         if (response.ok) {
           const data = await response.json()
@@ -161,7 +161,7 @@ export default function LinkingPanel({
   const loadTasks = async () => {
     try {
       const response = await fetch(`/api/projects/${project.id}/tasks`, {
-        headers: { 'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}` }
+        credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
@@ -201,9 +201,9 @@ export default function LinkingPanel({
           const response = await fetch('/api/links', {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}`
+              'Content-Type': 'application/json'
             },
+            credentials: 'include',
             body: JSON.stringify({
               elementIds: elementsToLink,
               taskId,
@@ -243,9 +243,9 @@ export default function LinkingPanel({
         const response = await fetch('/api/links', {
           method: 'DELETE',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({ linkIds })
         })
         if (!response.ok) throw new Error('Failed to remove links')
@@ -305,9 +305,9 @@ export default function LinkingPanel({
         const response = await fetch('/api/ai/suggest-links', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({
             projectId: project.id,
             elementSearchTerm: aiElementSearch,
@@ -454,7 +454,29 @@ export default function LinkingPanel({
                             <Badge variant="outline" className="text-xs" style={{ borderColor: link.task.color }}>{link.linkType}</Badge>
                           </div>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => removeLinks([link.id])} className="text-red-600 hover:text-red-700"><Unlink className="h-4 w-4" /></Button>
+                        <div className="flex items-center space-x-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => {
+                              toast.info('Link Details', {
+                                description: `Element: ${link.element.category} (${link.element.guid})\nTask: ${link.task.name}\nType: ${link.linkType}\nStatus: ${link.status}\nStart: ${link.startDate ? formatDate(link.startDate) : 'N/A'}\nEnd: ${link.endDate ? formatDate(link.endDate) : 'N/A'}`,
+                                duration: 5000
+                              })
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => removeLinks([link.id])} 
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))

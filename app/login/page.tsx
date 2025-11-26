@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Building2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { clearAllAuthTokens } from '@/lib/clear-auth'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -19,6 +20,9 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+
+    // Clear any old cached tokens first
+    clearAllAuthTokens()
 
     try {
       const response = await fetch('/api/auth/login', {

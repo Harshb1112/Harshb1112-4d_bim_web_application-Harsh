@@ -21,6 +21,29 @@ async function getCurrentUser() {
   return user
 }
 
+async function getUserSeniority(userId: number, projectId: number) {
+  // Get user's team membership for this project
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { teamId: true }
+  })
+
+  if (!project?.teamId) return null
+
+  const membership = await prisma.teamMembership.findFirst({
+    where: {
+      userId: userId,
+      teamId: project.teamId,
+      role: 'leader'
+    },
+    select: {
+      seniority: true
+    }
+  })
+
+  return membership?.seniority || null
+}
+
 async function getProject(projectId: string, userId: number, userRole: string) {
   const projectIdInt = parseInt(projectId)
   
@@ -166,11 +189,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const { id } = await params
   const user = await getCurrentUser()
   const project = await getProject(id, user.id, user.role)
+  const seniority = await getUserSeniority(user.id, project.id)
  
   return (
     <div className="min-h-screen bg-gray-50" suppressHydrationWarning>
       <ProjectHeader project={project} user={user} />
-      <ProjectTabs project={project} currentUserRole={user.role} />
+      <ProjectTabs 
+        project={project} 
+        currentUserRole={user.role} 
+        currentUserId={user.id}
+        userSeniority={seniority}
+      />
     </div>
   )
 }

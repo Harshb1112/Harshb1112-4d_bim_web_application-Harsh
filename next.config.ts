@@ -21,6 +21,13 @@ const nextConfig = {
     ignoreDuringBuilds: false,
   },
 
+  // File upload configuration
+  api: {
+    bodyParser: {
+      sizeLimit: '100mb',
+    },
+  },
+
   webpack: (config: { resolve: { alias: any; }; }, { isServer }: any) => {
     // Fix for Speckle packages using #lodash subpath imports
     config.resolve.alias = {

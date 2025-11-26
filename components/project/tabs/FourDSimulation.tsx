@@ -5,11 +5,13 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import SpeckleViewer, { SpeckleViewerRef } from '../SpeckleViewer'
 import SimulationControl from './SimulationControl'
+import TaskInformationPanel from './TaskInformationPanel'
 import { parseISO, isBefore, isAfter, addDays } from 'date-fns'
 import { formatDate, downloadFile, calculateCriticalPath } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Camera, Video, StopCircle, Share2, Loader2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Camera, Video, StopCircle, Share2, Loader2, RefreshCw, AlertTriangle, Info, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 import html2canvas from 'html2canvas'
 import { VideoRecorder } from '@/lib/video-recorder'
@@ -39,6 +41,7 @@ const STATUS_COLORS = {
   PLANNED: {
     NOT_STARTED: '#CCCCCC', // Light Grey (Ghosted)
     IN_PROGRESS: '#3B82F6', // Blue
+    IN_PROGRESS_PARTIAL: '#60A5FA', // Lighter Blue for partial progress
     COMPLETED: '#16A34A',   // Green
     CRITICAL: '#DC2626',    // Red for critical path
   },
@@ -47,10 +50,38 @@ const STATUS_COLORS = {
     ON_TIME: '#16A34A',    // Green (completed on or near planned end)
     BEHIND: '#F97316',     // Orange (completed after planned end)
     IN_PROGRESS: '#3B82F6', // Blue
+    IN_PROGRESS_PARTIAL: '#60A5FA', // Lighter Blue for partial progress
     NOT_STARTED: '#CCCCCC', // Light Grey (Ghosted)
     COMPLETED_GHOST: '#6B7280', // Darker Grey for completed elements not in focus
     CRITICAL: '#DC2626',    // Red for critical path
   },
+}
+
+// Visualization modes for progress representation
+type ProgressVisualizationMode = 'element-count' | 'opacity' | 'color-gradient'
+
+// Helper function to interpolate between two hex colors
+function interpolateColor(color1: string, color2: string, ratio: number): string {
+  // Convert hex to RGB
+  const hex2rgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : { r: 0, g: 0, b: 0 }
+  }
+  
+  const rgb1 = hex2rgb(color1)
+  const rgb2 = hex2rgb(color2)
+  
+  // Interpolate
+  const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * ratio)
+  const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * ratio)
+  const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * ratio)
+  
+  // Convert back to hex
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
 }
 
 export default function FourDSimulation({ project }: FourDSimulationProps) {
@@ -69,7 +100,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   const [loadingData, setLoadingData] = useState(true)
   const [criticalPathTasks, setCriticalPathTasks] = useState<Set<number>>(new Set())
   const [showCriticalPath, setShowCriticalPath] = useState(false)
-
+  const [visualizationMode, setVisualizationMode] = useState<ProgressVisualizationMode>('element-count')
 
   const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -77,10 +108,9 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     // Only show loading spinner on initial load or explicit refresh
     if (links.length === 0 && tasks.length === 0) setLoadingData(true)
     try {
-      const token = document.cookie.split('token=')[1]?.split(';')[0]
       const [linksRes, tasksRes] = await Promise.all([
-        fetch(`/api/links?projectId=${project.id}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`/api/projects/${project.id}/tasks`, { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch(`/api/links?projectId=${project.id}`, { credentials: 'include' }),
+        fetch(`/api/projects/${project.id}/tasks`, { credentials: 'include' })
       ])
       if (linksRes.ok) {
         const data = await linksRes.json()
@@ -168,6 +198,10 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       .sort((a, b) => a.date.getTime() - b.date.getTime())
   }, [tasks])
 
+  // Track active tasks for the task information panel
+  const [activeTasks, setActiveTasks] = useState<any[]>([])
+  const [selectedTask, setSelectedTask] = useState<any | null>(null)
+
   useEffect(() => {
     if (!viewerRef.current || links.length === 0) return
 
@@ -176,57 +210,318 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
 
     const colorFilters: any[] = []
     const visibleGuids: string[] = []
-
+    const currentActiveTasks: any[] = []
+    const taskElementMap = new Map<number, string[]>() // Track elements per task
+    
+    // Group links by task to calculate progress-based visibility
+    const linksByTask = new Map<number, typeof links>()
     links.forEach(link => {
-      // Prioritize link-specific dates, fall back to task dates
-      const plannedStart = link.startDate ? parseISO(link.startDate) : parseISO(link.task.startDate)
-      const plannedEnd = link.endDate ? parseISO(link.endDate) : parseISO(link.task.endDate)
-      const actualStart = link.task.actualStartDate ? parseISO(link.task.actualStartDate) : null
-      const actualEnd = link.task.actualEndDate ? parseISO(link.task.actualEndDate) : null
-      const isTaskCritical = criticalPathTasks.has(link.task.id) && showCriticalPath;
-
-      let elementColor = STATUS_COLORS.PLANNED.NOT_STARTED // Default ghosted
-
-      if (mode === 'planned') {
-        if (isAfter(currentDate, plannedEnd)) { // Completed (Planned)
-          visibleGuids.push(link.element.guid)
-          elementColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
-        } else if (!isBefore(currentDate, plannedStart) && !isAfter(currentDate, plannedEnd)) { // In Progress (Planned)
-          visibleGuids.push(link.element.guid)
-          elementColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.IN_PROGRESS
-        }
-      } else { // mode === 'actual'
-        if (actualEnd && isAfter(currentDate, actualEnd)) { // Completed (Actual)
-          visibleGuids.push(link.element.guid)
-          if (isBefore(actualEnd, plannedEnd)) {
-            elementColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.AHEAD
-          } else if (isAfter(actualEnd, plannedEnd)) {
-            elementColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.BEHIND
-          } else {
-            elementColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.ON_TIME
-          }
-        } else if (actualStart && !isBefore(currentDate, actualStart) && (!actualEnd || !isAfter(currentDate, actualEnd))) { // In Progress (Actual)
-          visibleGuids.push(link.element.guid)
-          elementColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.IN_PROGRESS
-        } else if (!actualStart && isAfter(currentDate, plannedEnd)) { // Planned completed, but no actual start/end
-          visibleGuids.push(link.element.guid)
-          elementColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.COMPLETED_GHOST // Indicate planned completion but no actual data
-        }
+      if (!linksByTask.has(link.task.id)) {
+        linksByTask.set(link.task.id, [])
       }
-      colorFilters.push({ property: { key: 'id', value: link.element.guid }, color: elementColor })
+      linksByTask.get(link.task.id)!.push(link)
     })
 
-    if (visibleGuids.length > 0) {
-      viewerRef.current.unIsolateObjects(visibleGuids)
+    // Process each task's elements with progress-based visibility
+    linksByTask.forEach((taskLinks, taskId) => {
+      const firstLink = taskLinks[0]
+      const task = firstLink.task
+      
+      // Prioritize link-specific dates, fall back to task dates
+      const plannedStart = firstLink.startDate ? parseISO(firstLink.startDate) : parseISO(task.startDate)
+      const plannedEnd = firstLink.endDate ? parseISO(firstLink.endDate) : parseISO(task.endDate)
+      const actualStart = task.actualStartDate ? parseISO(task.actualStartDate) : null
+      const actualEnd = task.actualEndDate ? parseISO(task.actualEndDate) : null
+      const isTaskCritical = criticalPathTasks.has(task.id) && showCriticalPath
+
+      if (mode === 'planned') {
+        const taskProgress = Number(task.progress || 0)
+        const isTaskCompleted = taskProgress >= 100 || 
+                               task.status === 'completed' || 
+                               task.status === 'done'
+        
+        // Calculate if task should be visible based on date
+        const taskDuration = (plannedEnd.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24)
+        const daysPassed = (currentDate.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24)
+        const expectedProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
+        
+        let shouldShowTask = false
+        let taskColor = STATUS_COLORS.PLANNED.NOT_STARTED
+        
+        if (isBefore(currentDate, plannedStart)) {
+          // Task hasn't started yet - hide all elements
+          shouldShowTask = false
+        } else if (!isAfter(currentDate, plannedEnd)) { 
+          // Date within task range - show based on progress
+          if (taskProgress > 0) {
+            shouldShowTask = true
+            
+            // Determine color based on progress
+            if (taskProgress >= 100) {
+              taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
+            } else if (taskProgress >= expectedProgress) {
+              taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.IN_PROGRESS
+            } else {
+              taskColor = '#F97316' // Orange - behind schedule
+            }
+            
+            // Track active task
+            if (!taskElementMap.has(task.id)) {
+              taskElementMap.set(task.id, [])
+              currentActiveTasks.push(task)
+            }
+          }
+        } else if (isAfter(currentDate, plannedEnd)) {
+          // Date passed task end
+          if (isTaskCompleted) {
+            shouldShowTask = true
+            taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
+          } else if (taskProgress > 0) {
+            shouldShowTask = true
+            taskColor = '#F97316' // Orange - delayed
+          }
+        }
+        
+        // **ENHANCED: Multiple visualization modes for progress**
+        if (shouldShowTask && taskProgress > 0) {
+          const totalElements = taskLinks.length
+          const sortedLinks = [...taskLinks].sort((a, b) => 
+            a.element.guid.localeCompare(b.element.guid)
+          )
+          
+          if (visualizationMode === 'element-count') {
+            // MODE 1: Show only percentage of elements (current implementation)
+            const elementsToShow = Math.ceil((taskProgress / 100) * totalElements)
+            
+            sortedLinks.forEach((link, index) => {
+              if (index < elementsToShow) {
+                visibleGuids.push(link.element.guid)
+                colorFilters.push({ 
+                  property: { key: 'id', value: link.element.guid }, 
+                  color: taskColor 
+                })
+                
+                if (taskElementMap.has(task.id)) {
+                  taskElementMap.get(task.id)!.push(link.element.guid)
+                }
+              } else {
+                colorFilters.push({ 
+                  property: { key: 'id', value: link.element.guid }, 
+                  color: STATUS_COLORS.PLANNED.NOT_STARTED 
+                })
+              }
+            })
+          } else if (visualizationMode === 'opacity') {
+            // MODE 2: Show all elements with opacity based on progress
+            // Elements fade in as progress increases
+            sortedLinks.forEach((link, index) => {
+              visibleGuids.push(link.element.guid)
+              
+              // Calculate opacity: 0.3 (ghosted) to 1.0 (full)
+              const opacity = 0.3 + (taskProgress / 100) * 0.7
+              
+              // Use lighter color for partial progress
+              const progressColor = taskProgress < 100 
+                ? STATUS_COLORS.PLANNED.IN_PROGRESS_PARTIAL 
+                : taskColor
+              
+              colorFilters.push({ 
+                property: { key: 'id', value: link.element.guid }, 
+                color: progressColor,
+                opacity: opacity
+              })
+              
+              if (taskElementMap.has(task.id)) {
+                taskElementMap.get(task.id)!.push(link.element.guid)
+              }
+            })
+          } else if (visualizationMode === 'color-gradient') {
+            // MODE 3: Color gradient from grey to full color based on progress
+            sortedLinks.forEach((link, index) => {
+              visibleGuids.push(link.element.guid)
+              
+              // Interpolate between grey and task color
+              const greyColor = STATUS_COLORS.PLANNED.NOT_STARTED
+              const progressRatio = taskProgress / 100
+              
+              // Simple color interpolation (grey to task color)
+              const interpolatedColor = interpolateColor(greyColor, taskColor, progressRatio)
+              
+              colorFilters.push({ 
+                property: { key: 'id', value: link.element.guid }, 
+                color: interpolatedColor
+              })
+              
+              if (taskElementMap.has(task.id)) {
+                taskElementMap.get(task.id)!.push(link.element.guid)
+              }
+            })
+          }
+        } else {
+          // Task not visible - ghost all elements
+          taskLinks.forEach(link => {
+            colorFilters.push({ 
+              property: { key: 'id', value: link.element.guid }, 
+              color: STATUS_COLORS.PLANNED.NOT_STARTED 
+            })
+          })
+        }
+      } else { // mode === 'actual'
+        const taskProgress = Number(task.progress || 0)
+        const isTaskCompleted = taskProgress >= 100 || 
+                               task.status === 'completed' || 
+                               task.status === 'done'
+        
+        let shouldShowTask = false
+        let taskColor = STATUS_COLORS.ACTUAL.NOT_STARTED
+        
+        if (actualStart && !isBefore(currentDate, actualStart)) {
+          if (actualEnd && isAfter(currentDate, actualEnd)) {
+            // Task completed (actual)
+            if (isTaskCompleted) {
+              shouldShowTask = true
+              if (isBefore(actualEnd, plannedEnd)) {
+                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.AHEAD
+              } else if (isAfter(actualEnd, plannedEnd)) {
+                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.BEHIND
+              } else {
+                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.ON_TIME
+              }
+            }
+          } else {
+            // Task in progress (actual)
+            if (taskProgress > 0) {
+              shouldShowTask = true
+              taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.IN_PROGRESS
+              
+              // Track active task
+              if (!taskElementMap.has(task.id)) {
+                taskElementMap.set(task.id, [])
+                currentActiveTasks.push(task)
+              }
+            }
+          }
+        } else if (!actualStart && isAfter(currentDate, plannedEnd)) {
+          // No actual start but planned date passed
+          if (taskProgress > 0) {
+            shouldShowTask = true
+            taskColor = '#F97316' // Orange - delayed/not started
+          }
+        }
+        
+        // **ENHANCED: Multiple visualization modes for progress (Actual mode)**
+        if (shouldShowTask && taskProgress > 0) {
+          const totalElements = taskLinks.length
+          const sortedLinks = [...taskLinks].sort((a, b) => 
+            a.element.guid.localeCompare(b.element.guid)
+          )
+          
+          if (visualizationMode === 'element-count') {
+            // MODE 1: Show only percentage of elements
+            const elementsToShow = Math.ceil((taskProgress / 100) * totalElements)
+            
+            sortedLinks.forEach((link, index) => {
+              if (index < elementsToShow) {
+                visibleGuids.push(link.element.guid)
+                colorFilters.push({ 
+                  property: { key: 'id', value: link.element.guid }, 
+                  color: taskColor 
+                })
+                
+                if (taskElementMap.has(task.id)) {
+                  taskElementMap.get(task.id)!.push(link.element.guid)
+                }
+              } else {
+                colorFilters.push({ 
+                  property: { key: 'id', value: link.element.guid }, 
+                  color: STATUS_COLORS.ACTUAL.NOT_STARTED 
+                })
+              }
+            })
+          } else if (visualizationMode === 'opacity') {
+            // MODE 2: Show all elements with opacity
+            sortedLinks.forEach((link) => {
+              visibleGuids.push(link.element.guid)
+              
+              const opacity = 0.3 + (taskProgress / 100) * 0.7
+              const progressColor = taskProgress < 100 
+                ? STATUS_COLORS.ACTUAL.IN_PROGRESS_PARTIAL 
+                : taskColor
+              
+              colorFilters.push({ 
+                property: { key: 'id', value: link.element.guid }, 
+                color: progressColor,
+                opacity: opacity
+              })
+              
+              if (taskElementMap.has(task.id)) {
+                taskElementMap.get(task.id)!.push(link.element.guid)
+              }
+            })
+          } else if (visualizationMode === 'color-gradient') {
+            // MODE 3: Color gradient
+            sortedLinks.forEach((link) => {
+              visibleGuids.push(link.element.guid)
+              
+              const greyColor = STATUS_COLORS.ACTUAL.NOT_STARTED
+              const progressRatio = taskProgress / 100
+              const interpolatedColor = interpolateColor(greyColor, taskColor, progressRatio)
+              
+              colorFilters.push({ 
+                property: { key: 'id', value: link.element.guid }, 
+                color: interpolatedColor
+              })
+              
+              if (taskElementMap.has(task.id)) {
+                taskElementMap.get(task.id)!.push(link.element.guid)
+              }
+            })
+          }
+        } else {
+          taskLinks.forEach(link => {
+            colorFilters.push({ 
+              property: { key: 'id', value: link.element.guid }, 
+              color: STATUS_COLORS.ACTUAL.NOT_STARTED 
+            })
+          })
+        }
+      }
+    })
+
+
+
+    // Update active tasks with element counts
+    const tasksWithCounts = currentActiveTasks.map(task => ({
+      ...task,
+      elementCount: taskElementMap.get(task.id)?.length || 0
+    }))
+    setActiveTasks(tasksWithCounts)
+
+    // Apply visibility and colors to viewer
+    if (visualizationMode === 'element-count') {
+      // For element count mode: hide elements not in visibleGuids
+      const hiddenGuids = allElementGuids.filter(guid => !visibleGuids.includes(guid))
+      
+      if (hiddenGuids.length > 0) {
+        viewerRef.current.hideObjects(hiddenGuids)
+      }
+      
+      if (visibleGuids.length > 0) {
+        viewerRef.current.showObjects(visibleGuids)
+      }
+    } else {
+      // For opacity and gradient modes: show all elements
+      viewerRef.current.showObjects(allElementGuids)
     }
 
+    // Apply color filters
     viewerRef.current.setColorFilter({
       property: 'id',
       multiple: colorFilters,
-      default_color: STATUS_COLORS.PLANNED.NOT_STARTED, // Elements not in any filter will be ghosted grey
+      default_color: STATUS_COLORS.PLANNED.NOT_STARTED,
     })
 
-  }, [currentDate, links, mode, criticalPathTasks, showCriticalPath])
+  }, [currentDate, links, mode, criticalPathTasks, showCriticalPath, visualizationMode])
 
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -308,9 +603,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         const token = document.cookie.split('token=')[1]?.split(';')[0]
         const response = await fetch('/api/video-export', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
+          credentials: 'include',
           body: formData,
         })
 
@@ -318,7 +611,16 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         if (!response.ok) {
           throw new Error(data.error || 'Failed to export video to server')
         }
-        resolve(data.message + (data.downloadUrl ? ` Download: ${data.downloadUrl}` : ''))
+        
+        // If download URL is provided, trigger download
+        if (data.downloadUrl) {
+          const downloadLink = document.createElement('a')
+          downloadLink.href = `/api${data.downloadUrl}`
+          downloadLink.download = data.fileName
+          downloadLink.click()
+        }
+        
+        resolve(data.message)
       } catch (error) {
         reject(error)
       } finally {
@@ -359,6 +661,37 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
           <p className="text-sm text-gray-500">Visualize construction progress over time</p>
         </div>
         <div className="flex items-center space-x-2">
+          {/* Visualization Mode Selector */}
+          <div className="flex items-center space-x-2 border rounded-md p-1 bg-white">
+            <Button 
+              variant={visualizationMode === 'element-count' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setVisualizationMode('element-count')}
+              className="h-8 px-3"
+            >
+              <Layers className="h-3 w-3 mr-1" />
+              Count
+            </Button>
+            <Button 
+              variant={visualizationMode === 'opacity' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setVisualizationMode('opacity')}
+              className="h-8 px-3"
+            >
+              <Info className="h-3 w-3 mr-1" />
+              Opacity
+            </Button>
+            <Button 
+              variant={visualizationMode === 'color-gradient' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setVisualizationMode('color-gradient')}
+              className="h-8 px-3"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Gradient
+            </Button>
+          </div>
+          
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loadingData}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loadingData ? 'animate-spin' : ''}`} />
             Refresh Data
@@ -375,15 +708,84 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 relative">
-          <SpeckleViewer ref={viewerRef} project={project} viewerCanvasRef={viewerCanvasRef} />
-          {/* Date/Time Overlay */}
-          <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 text-white text-sm px-3 py-1 rounded-md pointer-events-none">
-            {formatDate(currentDate)}
+      {/* Visualization Mode Info */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start space-x-3">
+            <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-1">
+                Progress Visualization: {
+                  visualizationMode === 'element-count' ? 'Element Count' :
+                  visualizationMode === 'opacity' ? 'Opacity Mode' :
+                  'Color Gradient'
+                }
+              </h3>
+              <p className="text-xs text-blue-800">
+                {visualizationMode === 'element-count' && 
+                  'Shows only the percentage of elements matching task progress. 20% progress = 2 out of 10 elements visible.'}
+                {visualizationMode === 'opacity' && 
+                  'All elements visible with opacity based on progress. 20% progress = all elements at 30-50% opacity.'}
+                {visualizationMode === 'color-gradient' && 
+                  'All elements visible with color transitioning from grey to full color based on progress.'}
+              </p>
+            </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* 3D Viewer - Takes 2 columns */}
+        <div className="lg:col-span-2 relative">
+          <Card className="h-[700px]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-sm">
+                <span>3D Model Viewer</span>
+                {/* Date/Time Display in Header */}
+                <div className="flex items-center space-x-2 text-xs bg-blue-100 text-blue-900 px-3 py-1 rounded-md">
+                  <span className="font-semibold">{formatDate(currentDate)}</span>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[calc(100%-60px)]">
+              <div className="relative h-full">
+                <SpeckleViewer ref={viewerRef} project={project} viewerCanvasRef={viewerCanvasRef} />
+                {/* Legend Overlay */}
+                <div className="absolute bottom-4 left-4 bg-white bg-opacity-95 p-3 rounded-lg shadow-lg text-xs">
+                  <div className="font-semibold text-gray-900 mb-2">Color Legend</div>
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: STATUS_COLORS.PLANNED.NOT_STARTED }}></div>
+                      <span>Not Started</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: STATUS_COLORS.PLANNED.IN_PROGRESS }}></div>
+                      <span>In Progress</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: STATUS_COLORS.PLANNED.COMPLETED }}></div>
+                      <span>Completed</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 rounded bg-orange-500"></div>
+                      <span>Behind/Delayed</span>
+                    </div>
+                    {showCriticalPath && (
+                      <div className="flex items-center space-x-2">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: STATUS_COLORS.PLANNED.CRITICAL }}></div>
+                        <span>Critical Path</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-        <div>
+
+        {/* Right Panel - Controls and Task Info */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Simulation Controls */}
           <SimulationControl
             currentDate={currentDate}
             setCurrentDate={setCurrentDate}
@@ -397,39 +799,47 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
             setPlaybackSpeed={setPlaybackSpeed}
             milestones={milestones}
           />
-          <Card className="mt-6">
+
+          {/* Task Information Panel */}
+          <TaskInformationPanel
+            activeTasks={activeTasks}
+            selectedTask={selectedTask}
+            onTaskSelect={setSelectedTask}
+            currentDate={currentDate}
+            mode={mode}
+          />
+
+          {/* Export & Capture */}
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Video className="h-5 w-5" />
+              <CardTitle className="flex items-center space-x-2 text-sm">
+                <Video className="h-4 w-4" />
                 <span>Export & Capture</span>
               </CardTitle>
-              <CardDescription>Record simulation videos or take screenshots.</CardDescription>
+              <CardDescription className="text-xs">Record simulation videos or take screenshots</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Button onClick={takeScreenshot} className="w-full" disabled={isRecording || !viewerCanvasRef.current}>
+            <CardContent className="space-y-3">
+              <Button onClick={takeScreenshot} className="w-full" size="sm" disabled={isRecording || !viewerCanvasRef.current}>
                 <Camera className="h-4 w-4 mr-2" />
                 Take Screenshot
               </Button>
               {!isRecording ? (
                 <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={startRecording} className="w-full" disabled={!viewerCanvasRef.current}>
+                  <Button onClick={startRecording} size="sm" className="w-full" disabled={!viewerCanvasRef.current}>
                     <Video className="h-4 w-4 mr-2" />
-                    Record Video (Local)
+                    Record Video
                   </Button>
-                  <Button onClick={startRecordingForServerExport} className="w-full" disabled={!viewerCanvasRef.current || isExportingVideo}>
+                  <Button onClick={startRecordingForServerExport} size="sm" variant="outline" className="w-full" disabled={!viewerCanvasRef.current || isExportingVideo}>
                     {isExportingVideo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Share2 className="h-4 w-4 mr-2" />}
-                    {isExportingVideo ? 'Exporting...' : 'Export to Server (Conceptual)'}
+                    Export
                   </Button>
                 </div>
               ) : (
-                <Button onClick={stopRecording} className="w-full bg-red-600 hover:bg-red-700" disabled={!viewerCanvasRef.current}>
+                <Button onClick={stopRecording} size="sm" className="w-full bg-red-600 hover:bg-red-700" disabled={!viewerCanvasRef.current}>
                   <StopCircle className="h-4 w-4 mr-2" />
                   Stop Recording
                 </Button>
               )}
-              <p className="text-xs text-gray-500 mt-2">
-                Note: Server export is conceptual in this environment. Actual video encoding requires a dedicated backend service with FFmpeg.
-              </p>
             </CardContent>
           </Card>
         </div>

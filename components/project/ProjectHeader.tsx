@@ -1,96 +1,88 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-"use client"
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { ArrowLeft, Users, Calendar, Settings } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
-import ProjectSettingsDialog from './ProjectSettingsDialog' // Import the new dialog
+import { ArrowLeft, Users, Calendar } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import ProjectSettingsDialog from './ProjectSettingsDialog';
+import { useState } from 'react';
 
 interface ProjectHeaderProps {
-  project: {
-    id: number
-    name: string
-    description?: string
-    startDate?: Date
-    endDate?: Date
-    projectUsers: Array<{
-      user: {
-        fullName: string
-        email: string
-        role: string
-      }
-    }>
-  }
-  user: {
-    id: number
-    fullName: string
-    email: string
-    role: string
-  }
+  project: any;
+  user?: any;
 }
 
 export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
-  const router = useRouter()
-  const [currentProject, setCurrentProject] = useState(project)
+  const router = useRouter();
+  const [currentProject, setCurrentProject] = useState(project);
 
-  const handleProjectUpdate = (updatedProject: any) => {
-    setCurrentProject(prev => ({ ...prev, ...updatedProject }))
-    // Optionally, re-fetch full project data or update local state more deeply if needed
-  }
+  if (!currentProject) return null;
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-500';
+      case 'completed': return 'bg-blue-500';
+      case 'on_hold': return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push('/dashboard')}
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </Button>
-              <div className="h-6 border-l border-gray-300" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  {currentProject.name}
-                </h1>
-                {currentProject.description && (
-                  <p className="mt-1 text-sm text-gray-500">
-                    {currentProject.description}
-                  </p>
-                )}
-              </div>
-            </div>
+    <div className="bg-white border-b px-6 py-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push('/dashboard')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Dashboard
+          </Button>
 
-            <div className="flex items-center space-x-4">
-              <ProjectSettingsDialog project={currentProject} onProjectUpdate={handleProjectUpdate} />
-            </div>
-          </div>
+          <div className="h-8 w-px bg-gray-300" />
 
-          <div className="mt-4 flex items-center space-x-6 text-sm text-gray-500">
-            {(currentProject.startDate || currentProject.endDate) && (
-              <div className="flex items-center space-x-1">
-                <Calendar className="h-4 w-4" />
-                <span>
-                  {currentProject.startDate && formatDate(currentProject.startDate)}
-                  {currentProject.startDate && currentProject.endDate && ' - '}
-                  {currentProject.endDate && formatDate(currentProject.endDate)}
-                </span>
-              </div>
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">
+                {currentProject.name}
+              </h1>
+              <Badge className={getStatusColor(currentProject.status)}>
+                {currentProject.status}
+              </Badge>
+            </div>
+            {currentProject.description && (
+              <p className="text-sm text-gray-600 mt-1">
+                {currentProject.description}
+              </p>
             )}
-            <div className="flex items-center space-x-1">
-              <Users className="h-4 w-4" />
-              <span>{currentProject.projectUsers.length} team members</span>
-            </div>
           </div>
         </div>
+
+        <div className="flex items-center gap-4">
+          {/* Project Stats */}
+          <div className="flex items-center gap-6 text-sm">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-600">
+                {new Date(currentProject.startDate).toLocaleDateString()} - {new Date(currentProject.endDate).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-600">
+                {currentProject.team?.name || 'No Team'}
+              </span>
+            </div>
+          </div>
+
+          <ProjectSettingsDialog 
+            project={currentProject} 
+            onProjectUpdate={setCurrentProject}
+            userRole={user?.role}
+          />
+        </div>
       </div>
-    </header>
-  )
+    </div>
+  );
 }

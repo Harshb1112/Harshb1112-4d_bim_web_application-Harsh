@@ -10,33 +10,28 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Building2 } from 'lucide-react'
 
-interface Team {
-  id: number
-  name: string
-  code: string
-}
-
 export default function RegisterPage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('viewer')
-  const [teamId, setTeamId] = useState('')
-  const [teams, setTeams] = useState<Team[]>([])
+  const [teamLeaderId, setTeamLeaderId] = useState('')
+  const [teamLeaders, setTeamLeaders] = useState<Array<{ id: number; fullName: string; email: string; teamId: number | null; teamName: string | null }>>([])
+  const [newTeamName, setNewTeamName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
 
   useEffect(() => {
-    // Fetch teams for selection
-    fetch('/api/teams/public')
+    // Fetch team leaders for Team Member selection
+    fetch('/api/users/team-leaders')
       .then(res => res.json())
       .then(data => {
-        if (data.teams) {
-          setTeams(data.teams)
+        if (data.teamLeaders) {
+          setTeamLeaders(data.teamLeaders)
         }
       })
-      .catch(err => console.error('Failed to load teams:', err))
+      .catch(err => console.error('Failed to load team leaders:', err))
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,10 +42,19 @@ export default function RegisterPage() {
     try {
       const requestBody: any = { fullName, email, password, role }
       
-      // Add team if selected
-      if (teamId) {
-        requestBody.teamId = parseInt(teamId)
-        requestBody.teamRole = role === 'team_leader' ? 'leader' : 'member'
+      // Team Leader creates new team
+      if (role === 'team_leader' && newTeamName) {
+        requestBody.newTeamName = newTeamName.trim()
+      }
+      // Team Member joins team leader's team
+      else if (role === 'viewer' && teamLeaderId) {
+        const selectedLeader = teamLeaders.find(l => l.id === parseInt(teamLeaderId))
+        if (selectedLeader?.teamId) {
+          requestBody.teamId = selectedLeader.teamId
+          requestBody.teamRole = 'member'
+        } else {
+          throw new Error('Selected team leader does not have a team yet')
+        }
       }
 
       const response = await fetch('/api/auth/register', {
@@ -136,23 +140,49 @@ export default function RegisterPage() {
                 </SelectContent>
               </Select>
             </div>
-            {(role === 'viewer' || role === 'team_leader') && teams.length > 0 && (
+            {role === 'team_leader' && (
               <div className="space-y-2">
-                <Label htmlFor="team">Select Team</Label>
-                <Select value={teamId} onValueChange={setTeamId}>
+                <Label htmlFor="newTeamName">Team Name</Label>
+                <Input
+                  id="newTeamName"
+                  type="text"
+                  placeholder="Enter your team name (e.g., Team Alpha)"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-gray-500">
+                  A new team will be created with you as the leader
+                </p>
+              </div>
+            )}
+            {role === 'viewer' && teamLeaders.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="teamLeader">Select Team Leader</Label>
+                <Select value={teamLeaderId} onValueChange={setTeamLeaderId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose your team" />
+                    <SelectValue placeholder="Choose your team leader" />
                   </SelectTrigger>
                   <SelectContent>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id.toString()}>
-                        {team.name}
+                    {teamLeaders.map((leader) => (
+                      <SelectItem key={leader.id} value={leader.id.toString()}>
+                        {leader.fullName} ({leader.email})
+                        {leader.teamName && ` - ${leader.teamName}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-500">
+                  You will join this team leader&apos;s team as a member
+                </p>
               </div>
             )}
+            {role === 'viewer' && teamLeaders.length === 0 && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-md">
+                No team leaders available yet. Please contact your administrator.
+              </div>
+            )}
+
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
                 {error}

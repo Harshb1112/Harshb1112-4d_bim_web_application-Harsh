@@ -40,6 +40,7 @@ model User {
   teamMemberships  TeamMembership[]
   roleRequests     RoleRequest[]
   assignedTasks    Task[]
+  taskComments     TaskComment[]
 
   @@map("users")
 }
@@ -56,6 +57,9 @@ model Project {
   // NEW: team assignment
   teamId       Int?     @map("team_id")
   teamLeaderId Int?     @map("team_leader_id")
+  
+  // Speckle integration
+  speckleUrl   String?  @map("speckle_url")
 
   // Relations
   createdBy     User?           @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -88,9 +92,20 @@ model Model {
   id         Int      @id @default(autoincrement())
   projectId  Int      @map("project_id")
   name       String?
-  filePath   String?  @map("file_path")
-  format     String?
+  
+  // Source information
+  source     String   @default("speckle") // 'speckle', 'local_ifc', 'autodesk_acc', 'autodesk_drive'
+  sourceUrl  String?  @map("source_url") // Speckle URL, ACC URL, Drive URL
+  sourceId   String?  @map("source_id") // Speckle stream ID, ACC file ID, Drive file ID
+  
+  // File information
+  filePath   String?  @map("file_path") // For local uploads
+  fileSize   Int?     @map("file_size") // File size in bytes
+  format     String? // 'speckle', 'ifc', 'rvt', etc.
+  
+  // Metadata
   version    Int      @default(1)
+  metadata   Json? // Source-specific metadata
   uploadedBy Int?     @map("uploaded_by")
   uploadedAt DateTime @default(now()) @map("uploaded_at")
 
@@ -146,7 +161,7 @@ model Task {
   actualStartDate DateTime? @map("actual_start_date")
   actualEndDate   DateTime? @map("actual_end_date")
   durationDays    Int?     @map("duration_days")
-  progress        Decimal  @default(0.0) @db.Decimal(5, 2)
+  progress        Float    @default(0.0)
   color           String?
   resource        String?
   createdAt       DateTime @default(now()) @map("created_at")
@@ -166,11 +181,27 @@ model Task {
   elementLinks    ElementTaskLink[]
   progressLogs    ProgressLog[]
   elementStatus   ElementStatus[]
+  comments        TaskComment[]
 
   team            Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
   assignee        User?             @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
 
   @@map("tasks")
+}
+
+model TaskComment {
+  id          Int      @id @default(autoincrement())
+  taskId      Int      @map("task_id")
+  userId      Int      @map("user_id")
+  comment     String
+  attachments String?  // JSON array of file URLs
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("task_comments")
 }
 
 model Dependency {
@@ -206,7 +237,7 @@ model ProgressLog {
   id              Int      @id @default(autoincrement())
   taskId          Int      @map("task_id")
   reportDate      DateTime @map("report_date")
-  percentComplete Decimal? @map("percent_complete") @db.Decimal(5, 2)
+  percentComplete Float?   @map("percent_complete")
   updatedBy       Int?     @map("updated_by")
   note            String?
   createdAt       DateTime @default(now()) @map("created_at")
@@ -224,7 +255,7 @@ model ElementStatus {
   taskId      Int?      @map("task_id")
   actualStart DateTime? @map("actual_start")
   actualFinish DateTime? @map("actual_finish")
-  progress    Decimal   @default(0.0) @db.Decimal(5, 2)
+  progress    Float     @default(0.0)
   lastUpdated DateTime  @default(now()) @map("last_updated")
 
   // Relations
@@ -285,7 +316,9 @@ model TeamMembership {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
   teamId    Int      @map("team_id")
+  projectId Int?     @map("project_id")
   role      String   @default("member")
+  seniority String?  // "senior" or "junior" for team leaders (null for first leader)
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

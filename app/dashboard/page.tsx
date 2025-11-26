@@ -264,6 +264,11 @@ export default async function DashboardPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {user.fullName}
+              <span className="ml-3 text-lg font-medium text-blue-600">
+                ({user.role === 'admin' ? 'Admin' : 
+                  user.role === 'manager' ? 'Manager' : 
+                  user.role === 'team_leader' ? 'Team Leader' : 'Member'})
+              </span>
             </h1>
             <p className="mt-1 text-sm text-gray-500">
               Here&apos;s what&apos;s happening with your projects today.

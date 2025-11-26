@@ -4,7 +4,7 @@ import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -17,7 +17,8 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const modelId = parseInt(params.id)
+    const { id } = await params
+    const modelId = parseInt(id)
 
     const elements = await prisma.element.findMany({
       where: {

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useDropzone } from 'react-dropzone'
+import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { UploadCloud, FileText, X } from 'lucide-react'
+import MSProjectImportDialog from '../MSProjectImportDialog'
 import { toast } from 'sonner'
 
 interface ImportExportProps {
@@ -14,108 +14,174 @@ interface ImportExportProps {
 }
 
 export default function ImportExport({ project, onImportSuccess }: ImportExportProps) {
-  const [file, setFile] = useState<File | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingMSProject, setExportingMSProject] = useState(false)
+  const [exportingPDF, setExportingPDF] = useState(false)
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      setFile(acceptedFiles[0])
-    }
-  }, [])
+  const handleExportExcel = async () => {
+    setExportingExcel(true)
+    try {
+      const response = await fetch(`/api/projects/${project.id}/export-excel`, {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'application/xml': ['.xml'],
-      'text/xml': ['.xml'],
-    },
-    maxFiles: 1,
-  })
-
-  const handleImport = async () => {
-    if (!file) {
-      toast.error('No file selected', { description: 'Please select an MS Project XML file to import.' })
-      return
-    }
-
-    setLoading(true)
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const promise = new Promise(async (resolve, reject) => {
-      try {
-        const response = await fetch(`/api/projects/${project.id}/import-msproject`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${document.cookie.split('token=')[1]?.split(';')[0]}`
-          },
-          body: formData,
-        })
-
+      if (!response.ok) {
         const data = await response.json()
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to import schedule')
-        }
-        
-        onImportSuccess()
-        setFile(null)
-        resolve(data.message)
-      } catch (error) {
-        reject(error)
-      } finally {
-        setLoading(false)
+        throw new Error(data.error || 'Failed to export to Excel')
       }
-    })
 
-    toast.promise(promise, {
-      loading: 'Importing schedule...',
-      success: (message) => `Import successful: ${message}`,
-      error: (err) => `Import failed: ${err.message}`,
-    })
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.name}_schedule.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      toast.success('Excel file downloaded successfully!')
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to export to Excel')
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
+  const handleExportMSProject = async () => {
+    setExportingMSProject(true)
+    try {
+      const response = await fetch(`/api/projects/${project.id}/export-msproject`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to export to MS Project')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.name}_schedule.xml`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      toast.success('MS Project XML file downloaded successfully!')
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to export to MS Project')
+    } finally {
+      setExportingMSProject(false)
+    }
+  }
+
+  const handleExportPDF = async () => {
+    setExportingPDF(true)
+    try {
+      const response = await fetch(`/api/projects/${project.id}/export-pdf`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to export to PDF')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.name}_schedule.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      toast.success('PDF file downloaded successfully!')
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to export to PDF')
+    } finally {
+      setExportingPDF(false)
+    }
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Import Schedule</CardTitle>
-        <CardDescription>
-          Import tasks and dependencies from a Microsoft Project XML file. This will replace the existing schedule.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div
-          {...getRootProps()}
-          className={`p-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors
-            ${isDragActive ? 'border-blue-600 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}
-        >
-          <input {...getInputProps()} />
-          <UploadCloud className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-          {isDragActive ? (
-            <p className="text-blue-600">Drop the file here...</p>
-          ) : (
-            <p className="text-gray-500">Drag & drop an MS Project XML file here, or click to select</p>
-          )}
-        </div>
+    <div className="space-y-6">
+      {/* Import Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Import Schedule</CardTitle>
+          <CardDescription>
+            Import tasks and dependencies from a Microsoft Project XML file. This will replace the existing schedule.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MSProjectImportDialog 
+            projectId={project.id} 
+            onImportSuccess={onImportSuccess}
+          />
+        </CardContent>
+      </Card>
 
-        {file && (
-          <div className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-            <div className="flex items-center space-x-3">
-              <FileText className="h-5 w-5 text-gray-600" />
-              <div>
-                <p className="font-medium text-sm">{file.name}</p>
-                <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-
-        <Button onClick={handleImport} disabled={!file || loading} className="w-full">
-          {loading ? 'Importing...' : 'Import Schedule'}
-        </Button>
-      </CardContent>
-    </Card>
+      {/* Export Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Export Schedule</CardTitle>
+          <CardDescription>
+            Export your project schedule to various formats for use in other applications.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button 
+            variant="outline" 
+            className="w-full justify-start" 
+            onClick={handleExportExcel}
+            disabled={exportingExcel}
+          >
+            {exportingExcel ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+            )}
+            {exportingExcel ? 'Exporting...' : 'Export to Excel'}
+          </Button>
+          <Button 
+            variant="outline" 
+            className="w-full justify-start"
+            onClick={handleExportMSProject}
+            disabled={exportingMSProject}
+          >
+            {exportingMSProject ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            {exportingMSProject ? 'Exporting...' : 'Export to MS Project XML'}
+          </Button>
+          <Button 
+            variant="outline" 
+            className="w-full justify-start"
+            onClick={handleExportPDF}
+            disabled={exportingPDF}
+          >
+            {exportingPDF ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            {exportingPDF ? 'Exporting...' : 'Export to PDF'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

@@ -20,23 +20,26 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid team ID' }, { status: 400 })
     }
 
-    // Check permissions
+    // RBAC: Only Admin and Manager can add members
     if (user.role !== 'admin' && user.role !== 'manager') {
-      // Team leader can only add to their own team
-      const isTeamLeader = await prisma.teamMembership.findFirst({
-        where: {
-          teamId,
-          userId: user.id,
-          role: 'leader'
-        }
-      })
-      
-      if (!isTeamLeader) {
-        return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can add members' }, { status: 403 })
-      }
+      return NextResponse.json({ 
+        error: 'Insufficient permissions. Only Admin and Manager can add team members.' 
+      }, { status: 403 })
     }
 
     const { fullName, email, memberRole } = await request.json()
+    
+    // RBAC: Check if user can create this role
+    const requestedRole = memberRole === 'leader' ? 'team_leader' : 
+                         memberRole === 'member' ? 'viewer' :
+                         memberRole // admin or manager
+
+    // Manager cannot create Admin or Manager
+    if (user.role === 'manager' && (requestedRole === 'admin' || requestedRole === 'manager')) {
+      return NextResponse.json({ 
+        error: 'Managers cannot create Admin or Manager accounts. Only Team Leaders and Members allowed.' 
+      }, { status: 403 })
+    }
     if (!fullName || !email) {
       return NextResponse.json({ error: 'Full name and email are required' }, { status: 400 })
     }
@@ -54,8 +57,8 @@ export async function POST(
         data: {
           fullName,
           email,
-          passwordHash,
-          role: 'viewer', // Default role
+          passwordHash: passwordHash,
+          role: requestedRole, // Use requested role with RBAC validation
         },
       })
     }
@@ -69,12 +72,19 @@ export async function POST(
       return NextResponse.json({ error: 'User is already a team member' }, { status: 409 })
     }
 
+    // No automatic promotion - seniority will be set manually by Admin/Manager
+
+    // New members always start with no seniority (Normal)
+    // Admin/Manager can manually promote them later
+    const newMemberSeniority = null
+
     // Add to team
     const membership = await prisma.teamMembership.create({
       data: {
         teamId,
         userId: userToAdd.id,
         role: memberRole || 'member',
+        seniority: newMemberSeniority
       },
       include: {
         user: {
@@ -119,19 +129,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Invalid team ID' }, { status: 400 })
     }
 
-    // Check permissions
+    // RBAC: Only Admin and Manager can remove members
     if (user.role !== 'admin' && user.role !== 'manager') {
-      const isTeamLeader = await prisma.teamMembership.findFirst({
-        where: {
-          teamId,
-          userId: user.id,
-          role: 'leader'
-        }
-      })
-      
-      if (!isTeamLeader) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-      }
+      return NextResponse.json({ 
+        error: 'Insufficient permissions' 
+      }, { status: 403 })
     }
 
     const { membershipId } = await request.json()

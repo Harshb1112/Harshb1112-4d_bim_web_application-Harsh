@@ -2,11 +2,15 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { clearAllAuthTokens } from '@/lib/clear-auth'
 
 export default function LogoutPage() {
   const router = useRouter()
 
   useEffect(() => {
+    // Clear all cached tokens
+    clearAllAuthTokens()
+    
     // Clear the token cookie
     document.cookie = 'token=; path=/; max-age=0'
     

@@ -5,50 +5,50 @@
 import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Box, Calendar, Play, Link2, Users, UploadCloud, BarChart3, Bug } from 'lucide-react'
-// Temporarily disable Speckle components due to dependency issues
-// import ModelViewer from './tabs/ModelViewer'
-import ScheduleManager from './tabs/ScheduleManager'
-// import FourDSimulation from './tabs/FourDSimulation'
+import UnifiedModelViewer from './UnifiedModelViewer'
+import EnhancedScheduleManager from './tabs/EnhancedScheduleManager'
+import FourDSimulation from './tabs/FourDSimulation'
 import LinkingPanel from './LinkingPanel'
 import TeamManagement from './tabs/TeamManagement'
 import ImportExport from './tabs/ImportExport'
 import AnalyticsDashboard from './tabs/AnalyticsDashboard'
-import ErrorLogViewer from './tabs/ErrorLogViewer' // Import new component
+import ErrorLogViewer from './tabs/ErrorLogViewer'
 
 interface ProjectTabsProps {
   project: any
   currentUserRole: string
+  currentUserId?: number
+  userSeniority?: string | null
 }
 
-export default function ProjectTabs({ project, currentUserRole }: ProjectTabsProps) {
+export default function ProjectTabs({ project, currentUserRole, currentUserId, userSeniority }: ProjectTabsProps) {
   const [selectedElements, setSelectedElements] = useState<string[]>([])
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
-  const [, setSpeckleElements] = useState<any[]>([])
-  const [ ,setSpeckleConnected] = useState(false)
   const [activeTab, setActiveTab] = useState('models')
-
-
-  const handleTaskSelect = (taskId: string) => {
-    setSelectedTasks(prev => 
-      prev.includes(taskId) 
-        ? prev.filter(id => id !== taskId) 
-        : [...prev, taskId]
-    )
-  }
 
   const handleImportSuccess = () => {
     // Potentially refresh data or switch tabs
     setActiveTab('schedule')
   }
 
-  function handleElementSelection(_elementId: string, _element: any): void {
-    throw new Error('Function not implemented.')
+  function handleElementSelection(elementId: string, element: any): void {
+    // Handle element selection from Speckle viewer
+    setSelectedElements(prev => 
+      prev.includes(elementId) 
+        ? prev.filter(id => id !== elementId) 
+        : [...prev, elementId]
+    )
+    console.log('Element selected:', elementId, element)
   }
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-8 max-w-full"> {/* Increased grid columns for new tab */}
+        <TabsList className={`grid w-full max-w-full ${
+          currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader' 
+            ? 'grid-cols-8' 
+            : 'grid-cols-7'
+        }`}>
           <TabsTrigger value="models" className="flex items-center space-x-2">
             <Box className="h-4 w-4" />
             <span>3D Models</span>
@@ -69,34 +69,35 @@ export default function ProjectTabs({ project, currentUserRole }: ProjectTabsPro
             <BarChart3 className="h-4 w-4" />
             <span>Analytics</span>
           </TabsTrigger>
-          <TabsTrigger value="team" className="flex items-center space-x-2">
-            <Users className="h-4 w-4" />
-            <span>Team</span>
-          </TabsTrigger>
+          {(currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader') && (
+            <TabsTrigger value="team" className="flex items-center space-x-2">
+              <Users className="h-4 w-4" />
+              <span>Team</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="import" className="flex items-center space-x-2">
             <UploadCloud className="h-4 w-4" />
             <span>Import/Export</span>
           </TabsTrigger>
-          <TabsTrigger value="errors" className="flex items-center space-x-2"> {/* New Error Logs Tab */}
+          <TabsTrigger value="errors" className="flex items-center space-x-2">
             <Bug className="h-4 w-4" />
             <span>Error Logs</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="models" className="space-y-6">
-          <div className="p-8 text-center bg-white rounded-lg border">
-            <Box className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-semibold mb-2">3D Model Viewer</h3>
-            <p className="text-gray-600">3D viewer temporarily disabled. Core team management features are fully functional.</p>
-          </div>
+          <UnifiedModelViewer 
+            project={project}
+            onElementSelect={handleElementSelection}
+          />
         </TabsContent>
 
         <TabsContent value="schedule" className="space-y-6">
-          <ScheduleManager 
+          <EnhancedScheduleManager 
             project={project} 
-            onTaskSelect={handleTaskSelect}
-            selectedTasks={selectedTasks}
             currentUserRole={currentUserRole}
+            currentUserId={currentUserId}
+            userSeniority={userSeniority}
           />
         </TabsContent>
 
@@ -111,20 +112,20 @@ export default function ProjectTabs({ project, currentUserRole }: ProjectTabsPro
         </TabsContent>
 
         <TabsContent value="simulation" className="space-y-6">
-          <div className="p-8 text-center bg-white rounded-lg border">
-            <Play className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <h3 className="text-lg font-semibold mb-2">4D Simulation</h3>
-            <p className="text-gray-600">4D simulation temporarily disabled. Core team management features are fully functional.</p>
-          </div>
+          <FourDSimulation 
+            project={project}
+          />
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-6">
           <AnalyticsDashboard project={project} />
         </TabsContent>
 
-        <TabsContent value="team" className="space-y-6">
-          <TeamManagement project={project} />
-        </TabsContent>
+        {(currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader') && (
+          <TabsContent value="team" className="space-y-6">
+            <TeamManagement project={project} />
+          </TabsContent>
+        )}
 
         <TabsContent value="import" className="space-y-6">
           <ImportExport project={project} onImportSuccess={handleImportSuccess} />

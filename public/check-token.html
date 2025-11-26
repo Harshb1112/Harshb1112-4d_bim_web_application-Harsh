@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Token Checker</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    .result {
+      background: #2d2d2d;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #4CAF50;
+    }
+    .error {
+      border-left-color: #f44336;
+    }
+    .success {
+      color: #4CAF50;
+    }
+    .warning {
+      color: #ff9800;
+    }
+    .error-text {
+      color: #f44336;
+    }
+    button {
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    button:hover {
+      background: #005a9e;
+    }
+    pre {
+      background: #1e1e1e;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 Token Verification Tool</h1>
+  <p>Click the button to check your authentication token:</p>
+  
+  <button onclick="checkToken()">Check My Token</button>
+  
+  <div id="result"></div>
+
+  <script>
+    function checkToken() {
+      const resultDiv = document.getElementById('result')
+      
+      try {
+        // Get token from cookie
+        const token = document.cookie.split(';').find(c => c.includes('token'))?.split('=')[1]
+        
+        if (!token) {
+          resultDiv.innerHTML = `
+            <div class="result error">
+              <h2 class="error-text">❌ No Token Found</h2>
+              <p>Please login first at <a href="/login" style="color: #007acc">/login</a></p>
+            </div>
+          `
+          return
+        }
+
+        // Decode token
+        const parts = token.split('.')
+        if (parts.length !== 3) {
+          throw new Error('Invalid JWT format')
+        }
+
+        const header = JSON.parse(atob(parts[0]))
+        const payload = JSON.parse(atob(parts[1]))
+        
+        // Check expiration
+        const now = Date.now() / 1000
+        const isExpired = payload.exp < now
+        const isCorrectAlg = header.alg === 'HS256'
+
+        // Build result HTML
+        let html = `
+          <div class="result ${isCorrectAlg && !isExpired ? '' : 'error'}">
+            <h2>📋 Token Analysis</h2>
+            <pre>
+Algorithm: ${header.alg} ${isCorrectAlg ? '<span class="success">✅</span>' : '<span class="error-text">❌ Should be HS256</span>'}
+Type: ${header.typ || 'JWT'}
+
+Payload:
+  User ID: ${payload.userId}
+  Email: ${payload.email}
+  Role: ${payload.role}
+  Issued: ${new Date(payload.iat * 1000).toLocaleString()}
+  Expires: ${new Date(payload.exp * 1000).toLocaleString()}
+            </pre>
+
+            <h3>${isExpired ? '<span class="error-text">⚠️ Token is EXPIRED</span>' : '<span class="success">✅ Token is Valid</span>'}</h3>
+            <h3>${isCorrectAlg ? '<span class="success">✅ Using HS256 (correct)</span>' : '<span class="error-text">❌ Using ' + header.alg + ' (should be HS256)</span>'}</h3>
+
+            ${!isCorrectAlg || isExpired ? `
+              <div style="margin-top: 20px; padding: 15px; background: #3d2a00; border-radius: 4px;">
+                <strong class="warning">⚠️ Action Required:</strong>
+                <ol style="margin: 10px 0;">
+                  <li>Clear browser cookies and storage</li>
+                  <li><a href="/logout" style="color: #007acc">Logout</a></li>
+                  <li><a href="/login" style="color: #007acc">Login again</a></li>
+                </ol>
+              </div>
+            ` : ''}
+          </div>
+        `
+
+        resultDiv.innerHTML = html
+
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="result error">
+            <h2 class="error-text">❌ Error</h2>
+            <p>${error.message}</p>
+          </div>
+        `
+      }
+    }
+
+    // Auto-check on page load
+    window.addEventListener('load', () => {
+      setTimeout(checkToken, 500)
+    })
+  </script>
+</body>
+</html>

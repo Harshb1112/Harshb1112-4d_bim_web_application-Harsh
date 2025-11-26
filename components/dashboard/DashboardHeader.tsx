@@ -3,7 +3,7 @@
 
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Building2, LogOut, User } from 'lucide-react'
+import { Building2, LogOut, User, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import CreateProjectDialog from '@/components/dashboard/CreateProjectDialog'
 
@@ -36,6 +36,13 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
           </div>
 
           <div className="flex items-center space-x-4">
+            <Link href="/dashboard/gantt">
+              <Button variant="outline" size="sm">
+                <Calendar className="h-4 w-4 mr-2" />
+                Gantt Chart
+              </Button>
+            </Link>
+
             {(user.role === 'admin' || user.role === 'manager') && <CreateProjectDialog />}
 
             <Link href="/profile">

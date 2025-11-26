@@ -21,6 +21,7 @@ import {
 import GanttChart from '../GanttChart'
 import { formatDate, calculateCriticalPath } from '@/lib/utils'
 import { toast } from 'sonner'
+import TaskCommentSection from '../TaskCommentSection'
 
 interface ScheduleManagerProps {
   project: any
@@ -36,6 +37,8 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
   const [editedTask, setEditedTask] = useState<any | null>(null)
   const [criticalPathTasks, setCriticalPathTasks] = useState<Set<number>>(new Set())
   const [showCriticalPath, setShowCriticalPath] = useState(false)
+  const [timeFilter, setTimeFilter] = useState<string>('all')
+  const [selectedTaskForComments, setSelectedTaskForComments] = useState<any | null>(null)
 
   // Create-task dialog state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -98,7 +101,6 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
         return
       }
       const response = await fetch(`/api/projects/${project.id}/tasks`, {
-        headers: { 'Authorization': `Bearer ${token}` },
         credentials: 'include'
       })
       if (response.ok) {
@@ -190,9 +192,9 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
         const response = await fetch(`/api/projects/${project.id}/tasks`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({
             name: newTaskName.trim(),
             description: newTaskDescription.trim() || null,
@@ -239,9 +241,9 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
         const response = await fetch(`/api/tasks/${editedTask.id}/progress`, {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({
             progress: editedTask.progress,
             actualStartDate: editedTask.actualStartDate,
@@ -322,7 +324,13 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
           </div>
         ) : (
           <div className="grid grid-cols-6 items-center gap-4">
-            <div className="col-span-2 font-medium cursor-pointer flex items-center" onClick={() => onTaskSelect && onTaskSelect(String(task.id))}>
+            <div 
+              className="col-span-2 font-medium cursor-pointer flex items-center hover:text-blue-600" 
+              onClick={() => {
+                setSelectedTaskForComments(task)
+                onTaskSelect && onTaskSelect(String(task.id))
+              }}
+            >
               {isCritical && showCriticalPath && (<AlertTriangle className="h-4 w-4 text-red-600 mr-2"><title>Critical Task</title></AlertTriangle>)}
               {task.name}
             </div>
@@ -442,14 +450,73 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2"><Calendar className="h-5 w-5" /><span>Project Timeline</span></CardTitle>
-          <CardDescription>Interactive Gantt chart showing task dependencies and progress</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center space-x-2"><Calendar className="h-5 w-5" /><span>Project Timeline</span></CardTitle>
+              <CardDescription>Interactive Gantt chart showing task dependencies and progress</CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="timeFilter" className="text-sm text-gray-600">View:</Label>
+              <select
+                id="timeFilter"
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value)}
+                className="px-3 py-1 border rounded-md text-sm"
+              >
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="quarter">This Quarter</option>
+                <option value="year">This Year</option>
+                <option value="2years">2 Years</option>
+                <option value="all">All Time</option>
+              </select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
           ) : (
-            <GanttChart tasks={tasks} criticalPathTasks={showCriticalPath ? criticalPathTasks : undefined} />
+            <>
+              <div className="mb-4 text-sm text-gray-600">
+                Showing {(() => {
+                  const now = new Date()
+                  const filtered = tasks.filter(task => {
+                    if (!task.startDate) return true
+                    const taskDate = new Date(task.startDate)
+                    const daysDiff = Math.floor((taskDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                    
+                    switch(timeFilter) {
+                      case 'week': return Math.abs(daysDiff) <= 7
+                      case 'month': return Math.abs(daysDiff) <= 30
+                      case 'quarter': return Math.abs(daysDiff) <= 90
+                      case 'year': return Math.abs(daysDiff) <= 365
+                      case '2years': return Math.abs(daysDiff) <= 730
+                      default: return true
+                    }
+                  })
+                  return filtered.length
+                })()} of {tasks.length} tasks
+              </div>
+              <GanttChart 
+                tasks={tasks.filter(task => {
+                  if (timeFilter === 'all' || !task.startDate) return true
+                  const now = new Date()
+                  const taskDate = new Date(task.startDate)
+                  const daysDiff = Math.floor((taskDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+                  
+                  switch(timeFilter) {
+                    case 'week': return Math.abs(daysDiff) <= 7
+                    case 'month': return Math.abs(daysDiff) <= 30
+                    case 'quarter': return Math.abs(daysDiff) <= 90
+                    case 'year': return Math.abs(daysDiff) <= 365
+                    case '2years': return Math.abs(daysDiff) <= 730
+                    default: return true
+                  }
+                })} 
+                criticalPathTasks={showCriticalPath ? criticalPathTasks : undefined} 
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -472,6 +539,24 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
           </div>
         </CardContent>
       </Card>
+
+      {/* Task Comment Section */}
+      {selectedTaskForComments && (
+        <div className="relative">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="absolute top-2 right-2 z-10"
+            onClick={() => setSelectedTaskForComments(null)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <TaskCommentSection
+            taskId={selectedTaskForComments.id}
+            taskName={selectedTaskForComments.name}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -10,6 +10,7 @@ export default function proxy(request: NextRequest) {
     '/register',
     '/api/auth/login',
     '/api/auth/register',
+    '/api/users/team-leaders',
   ]
 
   if (publicRoutes.some(route => pathname.startsWith(route))) {
@@ -28,7 +29,7 @@ export default function proxy(request: NextRequest) {
 
     if (!token || !verifyToken(token)) {
       if (pathname.startsWith('/api/')) {
-        return new NextResponse('Unauthorized', { status: 401 })
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       return NextResponse.redirect(new URL('/login', request.url))
     }

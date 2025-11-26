@@ -16,22 +16,29 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Settings, Loader2 } from 'lucide-react'
+import { Settings, Loader2, Trash2, AlertTriangle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 
 interface ProjectSettingsDialogProps {
   project: any
   onProjectUpdate: (updatedProject: any) => void
+  userRole?: string
 }
 
-export default function ProjectSettingsDialog({ project, onProjectUpdate }: ProjectSettingsDialogProps) {
+export default function ProjectSettingsDialog({ project, onProjectUpdate, userRole }: ProjectSettingsDialogProps) {
+  const router = useRouter()
+  const canDelete = userRole === 'admin' || userRole === 'manager'
   const [name, setName] = useState(project.name)
   const [description, setDescription] = useState(project.description || '')
   const [startDate, setStartDate] = useState(project.startDate ? project.startDate.split('T')[0] : '')
   const [endDate, setEndDate] = useState(project.endDate ? project.endDate.split('T')[0] : '')
   const [loading, setLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (project) {
@@ -52,9 +59,9 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate }: Proj
         const response = await fetch(`/api/projects/${project.id}`, {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({
             name,
             description,
@@ -85,15 +92,54 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate }: Proj
     })
   }
 
+  const handleDelete = async () => {
+    if (deleteConfirmText !== project.name) {
+      toast.error('Project name does not match')
+      return
+    }
+
+    setDeleting(true)
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const response = await fetch(`/api/projects/${project.id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete project')
+        }
+
+        // Redirect to dashboard after successful deletion
+        setTimeout(() => {
+          router.push('/dashboard')
+        }, 1000)
+        
+        resolve(data.message)
+      } catch (error) {
+        reject(error)
+      } finally {
+        setDeleting(false)
+      }
+    })
+
+    toast.promise(promise, {
+      loading: 'Deleting project...',
+      success: (message) => `${message}`,
+      error: (err) => `Failed to delete project: ${err.message}`,
+    })
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+      <DialogTrigger asChild suppressHydrationWarning>
+        <Button variant="outline" size="sm" suppressHydrationWarning>
           <Settings className="h-4 w-4 mr-2" />
           Settings
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" suppressHydrationWarning>
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Settings className="h-5 w-5" />
@@ -142,13 +188,75 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate }: Proj
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex justify-between items-center">
+            {canDelete && (
+              <Button 
+                type="button" 
+                variant="destructive" 
+                onClick={() => setShowDeleteConfirm(true)}
+                className="mr-auto"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Project
+              </Button>
+            )}
             <Button type="submit" disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {loading ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </form>
+
+        {/* Delete Confirmation Dialog */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-lg">
+            <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+                <h3 className="text-lg font-semibold">Delete Project</h3>
+              </div>
+              
+              <p className="text-sm text-gray-600 mb-4">
+                This action cannot be undone. This will permanently delete the project, 
+                all tasks, models, and associated data.
+              </p>
+
+              <div className="mb-4">
+                <Label htmlFor="confirmDelete" className="text-sm font-medium">
+                  Type <span className="font-bold">{project.name}</span> to confirm:
+                </Label>
+                <Input
+                  id="confirmDelete"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Enter project name"
+                  className="mt-2"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteConfirm(false)
+                    setDeleteConfirmText('')
+                  }}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={deleting || deleteConfirmText !== project.name}
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  {deleting ? 'Deleting...' : 'Delete Project'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

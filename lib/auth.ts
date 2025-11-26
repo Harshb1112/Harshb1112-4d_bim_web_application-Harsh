@@ -34,16 +34,22 @@ export function generateToken(user: User): string {
 
 export function verifyToken(token: string): User | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any
-    console.log('[Auth] Token verified successfully for user:', decoded.email)
+    // Decode without verification first to see what's in the token
+    const decoded = jwt.decode(token) as any
+    console.log('[Auth] Token decoded (unverified):', decoded ? `User: ${decoded.email}, Alg: ${decoded.alg}` : 'Invalid token format')
+    
+    // Now verify with HS256
+    const verified = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any
+    console.log('[Auth] Token verified successfully for user:', verified.email)
     return {
-      id: decoded.id,
-      fullName: decoded.fullName || '',
-      email: decoded.email,
-      role: decoded.role
+      id: verified.id,
+      fullName: verified.fullName || '',
+      email: verified.email,
+      role: verified.role
     }
   } catch (error) {
     console.log('[Auth] Token verification failed:', error instanceof Error ? error.message : 'Unknown error')
+    console.log('[Auth] Token (first 20 chars):', token.substring(0, 20))
     return null
   }
 }

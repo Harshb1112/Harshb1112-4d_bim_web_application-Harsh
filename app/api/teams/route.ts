@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     let teams
 
     if (user.role === 'admin' || user.role === 'manager') {
-      // Admin and Manager see all teams
+      // Admin and Manager see all teams with all users (including admins/managers)
       teams = await prisma.team.findMany({
         include: {
           members: {
@@ -51,8 +51,43 @@ export async function GET(request: NextRequest) {
           }
         }
       })
+
+      // Add all admins and managers to each team's member list (for display purposes)
+      const allAdminsManagers = await prisma.user.findMany({
+        where: {
+          role: {
+            in: ['admin', 'manager']
+          }
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true
+        }
+      })
+
+      // Augment each team with admin/manager users
+      teams = teams.map(team => {
+        const existingMemberIds = team.members.map(m => m.user.id)
+        const additionalMembers = allAdminsManagers
+          .filter(u => !existingMemberIds.includes(u.id))
+          .map(u => ({
+            id: -u.id, // Negative ID to indicate virtual membership
+            teamId: team.id,
+            userId: u.id,
+            role: u.role === 'admin' ? 'admin' : 'manager',
+            createdAt: new Date(),
+            user: u
+          }))
+        
+        return {
+          ...team,
+          members: [...team.members, ...additionalMembers]
+        }
+      })
     } else if (user.role === 'team_leader') {
-      // Team Leader sees only their team
+      // Team Leader sees only their team with all users
       teams = await prisma.team.findMany({
         where: {
           members: {
@@ -91,6 +126,40 @@ export async function GET(request: NextRequest) {
               tasks: true
             }
           }
+        }
+      })
+
+      // Add all admins and managers to team leader's team list
+      const allAdminsManagers = await prisma.user.findMany({
+        where: {
+          role: {
+            in: ['admin', 'manager']
+          }
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true
+        }
+      })
+
+      teams = teams.map(team => {
+        const existingMemberIds = team.members.map(m => m.user.id)
+        const additionalMembers = allAdminsManagers
+          .filter(u => !existingMemberIds.includes(u.id))
+          .map(u => ({
+            id: -u.id,
+            teamId: team.id,
+            userId: u.id,
+            role: u.role === 'admin' ? 'admin' : 'manager',
+            createdAt: new Date(),
+            user: u
+          }))
+        
+        return {
+          ...team,
+          members: [...team.members, ...additionalMembers]
         }
       })
     } else {

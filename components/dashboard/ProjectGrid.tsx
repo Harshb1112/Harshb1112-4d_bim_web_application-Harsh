@@ -31,7 +31,10 @@ export default function ProjectGrid({ projects, userRole }: ProjectGridProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900">Your Projects</h2>
-        <span className="text-sm text-gray-500">{projects.length} projects</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-gray-500">{projects.length} projects</span>
+          {(userRole === 'admin' || userRole === 'manager') && <CreateProjectDialog label="New Project" />}
+        </div>
       </div>
 
       {projects.length === 0 ? (

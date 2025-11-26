@@ -35,9 +35,9 @@ export default function UserProfileForm({ user, isPasswordForm = false }: UserPr
         const response = await fetch('/api/users/me', {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({ fullName, email }),
         })
 
@@ -77,9 +77,9 @@ export default function UserProfileForm({ user, isPasswordForm = false }: UserPr
         const response = await fetch('/api/users/me/password', {
           method: 'PUT',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify({ currentPassword, newPassword }),
         })
 

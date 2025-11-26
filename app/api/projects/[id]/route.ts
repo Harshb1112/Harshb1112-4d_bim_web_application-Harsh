@@ -173,3 +173,69 @@ export async function PUT(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+
+// DELETE project (Admin and Manager only)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const token = getTokenFromRequest(request)
+    const user = token ? verifyToken(token) : null
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Only Admin and Manager can delete projects
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      return NextResponse.json({ 
+        error: 'Forbidden: Only Admin and Manager can delete projects' 
+      }, { status: 403 })
+    }
+
+    const { id } = await params
+    const projectId = parseInt(id)
+    if (isNaN(projectId)) {
+      return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
+    }
+
+    // Check if project exists
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true }
+    })
+
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+    }
+
+    // Log activity BEFORE deleting project
+    await prisma.activityLog.create({
+      data: {
+        userId: user.id,
+        projectId: projectId,
+        action: 'PROJECT_DELETED',
+        details: { 
+          projectName: project.name,
+          deletedBy: user.fullName
+        },
+      },
+    })
+
+    // Delete project (cascade will handle related records)
+    await prisma.project.delete({
+      where: { id: projectId }
+    })
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Project deleted successfully' 
+    })
+  } catch (error) {
+    console.error('Delete project error:', error)
+    return NextResponse.json({ 
+      error: 'Failed to delete project' 
+    }, { status: 500 })
+  }
+}

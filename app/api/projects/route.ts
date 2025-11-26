@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
+import { writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+import { existsSync } from 'fs'
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +20,6 @@ export async function GET(request: NextRequest) {
     let projects
 
     if (user.role === 'admin' || user.role === 'manager') {
-      // Admin and Manager see all projects
       projects = await prisma.project.findMany({
         include: {
           _count: {
@@ -53,7 +55,6 @@ export async function GET(request: NextRequest) {
         }
       })
     } else if (user.role === 'team_leader') {
-      // Team Leader sees only their team's projects
       projects = await prisma.project.findMany({
         where: {
           OR: [
@@ -99,7 +100,6 @@ export async function GET(request: NextRequest) {
         }
       })
     } else {
-      // Viewer and team members see only their team's projects
       projects = await prisma.project.findMany({
         where: {
           team: {
@@ -153,25 +153,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    // Only admin and manager can create projects
     if (user.role !== 'admin' && user.role !== 'manager') {
       return NextResponse.json({ error: 'Only admin and manager can create projects' }, { status: 403 })
     }
 
-    const { name, description, startDate, endDate, teamId, teamLeaderId } = await request.json()
+    const contentType = request.headers.get('content-type') || ''
+    let projectData: any
+    let uploadedFile: File | null = null
+
+    // Handle FormData (file upload)
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData()
+      const file = formData.get('file') as File
+      const projectDataStr = formData.get('projectData') as string
+      
+      if (file) {
+        uploadedFile = file
+      }
+      
+      if (projectDataStr) {
+        projectData = JSON.parse(projectDataStr)
+      }
+    } else {
+      // Handle JSON
+      projectData = await request.json()
+    }
+
+    const { 
+      name, 
+      description, 
+      startDate, 
+      endDate, 
+      teamId, 
+      teamLeaderId, 
+      bimSource,
+      speckleUrl,
+      autodeskUrn,
+      autodeskFileUrl
+    } = projectData
 
     if (!name) {
-      return NextResponse.json(
-        { error: 'Project name is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
     }
 
     if (!teamId) {
-      return NextResponse.json(
-        { error: 'Team assignment is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Team assignment is required' }, { status: 400 })
     }
 
     // Verify team exists
@@ -183,7 +209,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Team not found' }, { status: 404 })
     }
 
-    // If teamLeaderId provided, verify they are a leader of that team
+    // Verify team leader
     if (teamLeaderId) {
       const leaderMembership = await prisma.teamMembership.findFirst({
         where: {
@@ -198,6 +224,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Create project
     const project = await prisma.project.create({
       data: {
         name,
@@ -206,7 +233,8 @@ export async function POST(request: NextRequest) {
         endDate: endDate ? new Date(endDate) : null,
         createdById: user.id,
         teamId,
-        teamLeaderId
+        teamLeaderId,
+        speckleUrl: bimSource === 'speckle' ? speckleUrl : null
       },
       include: {
         _count: {
@@ -232,13 +260,64 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // Handle different BIM sources
+    if (bimSource && bimSource !== 'none') {
+      let modelData: any = {
+        projectId: project.id,
+        name: `${name} - Model`,
+        uploadedBy: user.id,
+        source: bimSource
+      }
+
+      if (bimSource === 'speckle') {
+        modelData.sourceUrl = speckleUrl
+        modelData.format = 'speckle'
+      } 
+      else if (bimSource === 'local' && uploadedFile) {
+        // Save file to disk
+        const uploadsDir = join(process.cwd(), 'public', 'uploads', 'models')
+        
+        if (!existsSync(uploadsDir)) {
+          await mkdir(uploadsDir, { recursive: true })
+        }
+
+        const fileName = `${Date.now()}-${uploadedFile.name}`
+        const filePath = join(uploadsDir, fileName)
+        
+        const bytes = await uploadedFile.arrayBuffer()
+        const buffer = Buffer.from(bytes)
+        await writeFile(filePath, buffer)
+
+        modelData.filePath = `/uploads/models/${fileName}`
+        modelData.fileSize = uploadedFile.size
+        modelData.format = 'ifc'
+      }
+      else if (bimSource === 'acc' || bimSource === 'drive') {
+        // Store Autodesk URN and file URL
+        modelData.sourceId = autodeskUrn
+        modelData.sourceUrl = autodeskFileUrl || null
+        modelData.source = bimSource === 'acc' ? 'autodesk_construction_cloud' : 'autodesk_drive'
+        modelData.format = 'autodesk'
+      }
+
+      // Create model record
+      await prisma.model.create({
+        data: modelData
+      })
+    }
+
     // Log activity
     await prisma.activityLog.create({
       data: {
         userId: user.id,
         projectId: project.id,
         action: 'PROJECT_CREATED',
-        details: { projectName: name, teamId, teamLeaderId }
+        details: { 
+          projectName: name, 
+          teamId, 
+          teamLeaderId,
+          bimSource 
+        }
       }
     })
 

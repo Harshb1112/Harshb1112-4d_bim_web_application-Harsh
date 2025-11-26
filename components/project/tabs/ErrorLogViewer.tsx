@@ -64,9 +64,8 @@ export default function ErrorLogViewer({ projectId }: ErrorLogViewerProps) {
   const fetchErrorLogs = async () => {
     setLoading(true)
     try {
-      const token = document.cookie.split('token=')[1]?.split(';')[0]
       const response = await fetch(`/api/error-logs?projectId=${projectId}&level=${filterLevel}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()

@@ -19,6 +19,9 @@ interface SimulationControlProps {
   projectEndDate: Date
   mode: 'planned' | 'actual'
   setMode: (mode: 'planned' | 'actual') => void
+  playbackSpeed: number
+  setPlaybackSpeed: (speed: number) => void
+  milestones?: Array<{ id: number; name: string; date: Date }>
 }
 
 export default function SimulationControl({
@@ -30,9 +33,13 @@ export default function SimulationControl({
   projectEndDate,
   mode,
   setMode,
+  playbackSpeed,
+  setPlaybackSpeed,
+  milestones = [],
 }: SimulationControlProps) {
   const totalDays = differenceInDays(projectEndDate, projectStartDate)
   const currentDay = differenceInDays(currentDate, projectStartDate)
+  const progressPercentage = totalDays > 0 ? (currentDay / totalDays) * 100 : 0
 
   const handleSliderChange = (value: number[]) => {
     const newDate = addDays(projectStartDate, value[0])
@@ -53,6 +60,13 @@ export default function SimulationControl({
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+    })
+  }
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
     })
   }
 
@@ -92,23 +106,73 @@ export default function SimulationControl({
           </div>
         </div>
 
-        <div className="text-center">
-          <p className="text-sm text-gray-500">Current Date</p>
-          <p className="text-lg font-semibold text-gray-900">{formatDate(currentDate)}</p>
+        <div className="text-center bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg">
+          <p className="text-xs text-gray-500 mb-1">Current Simulation Date</p>
+          <p className="text-2xl font-bold text-gray-900">{formatDate(currentDate)}</p>
+          <p className="text-xs text-gray-500 mt-1">{formatTime(currentDate)}</p>
+          <div className="mt-2 flex items-center justify-center space-x-2 text-xs text-gray-600">
+            <span>Day {currentDay + 1} of {totalDays + 1}</span>
+            <span>•</span>
+            <span>{progressPercentage.toFixed(1)}% Complete</span>
+          </div>
         </div>
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>{formatDate(projectStartDate)}</span>
-            <span>{formatDate(projectEndDate)}</span>
+
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <Label className="text-xs text-gray-600">Timeline</Label>
+            <span className="text-xs text-gray-500">{totalDays + 1} days</span>
+          </div>
+          <div className="space-y-2">
+            <Slider
+              value={[currentDay]}
+              onValueChange={handleSliderChange}
+              max={totalDays > 0 ? totalDays : 1}
+              step={1}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>{formatDate(projectStartDate)}</span>
+              <span>{formatDate(projectEndDate)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <Label className="text-xs text-gray-600">Playback Speed</Label>
+            <span className="text-xs font-semibold text-gray-900">{playbackSpeed}x</span>
           </div>
           <Slider
-            value={[currentDay]}
-            onValueChange={handleSliderChange}
-            max={totalDays > 0 ? totalDays : 1}
-            step={1}
+            value={[playbackSpeed]}
+            onValueChange={(value) => setPlaybackSpeed(value[0])}
+            min={0.5}
+            max={5}
+            step={0.5}
             className="w-full"
           />
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>0.5x (Slow)</span>
+            <span>5x (Fast)</span>
+          </div>
         </div>
+
+        {milestones.length > 0 && (
+          <div className="space-y-2">
+            <Label className="text-xs text-gray-600">Milestones</Label>
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {milestones.slice(0, 5).map((milestone) => (
+                <button
+                  key={milestone.id}
+                  onClick={() => setCurrentDate(milestone.date)}
+                  className="w-full text-left p-2 text-xs bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition-colors"
+                >
+                  <div className="font-medium text-gray-900 truncate">{milestone.name}</div>
+                  <div className="text-gray-500">{formatDate(milestone.date)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

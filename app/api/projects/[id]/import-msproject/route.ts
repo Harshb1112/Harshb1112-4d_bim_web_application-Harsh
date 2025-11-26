@@ -6,7 +6,7 @@ import { parseMSProjectXML } from '@/lib/msproject-parser'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -15,7 +15,8 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const projectId = parseInt(params.id)
+    const { id } = await params
+    const projectId = parseInt(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
@@ -47,9 +48,26 @@ export async function POST(
     }
 
     // Use a transaction to import all tasks and dependencies
-    const result = await prisma.$transaction(async (tx: { dependency: { deleteMany: (arg0: { where: { predecessor: { projectId: number } } }) => never; createMany: (arg0: { data: { predecessorId: number; successorId: number; type: string }[] }) => any }; task: { deleteMany: (arg0: { where: { projectId: number } }) => any; create: (arg0: { data: { projectId: number; name: string; startDate: Date; endDate: Date; durationDays: number } }) => any; update: (arg0: { where: { id: number }; data: { parentId: number } }) => any } }) => {
+    const result = await prisma.$transaction(async (tx) => {
+      // Clear existing dependencies first
+      const existingTasks = await tx.task.findMany({
+        where: { projectId },
+        select: { id: true }
+      })
+      const taskIds = existingTasks.map(t => t.id)
+      
+      if (taskIds.length > 0) {
+        await tx.dependency.deleteMany({ 
+          where: { 
+            OR: [
+              { predecessorId: { in: taskIds } },
+              { successorId: { in: taskIds } }
+            ]
+          } 
+        })
+      }
+      
       // Clear existing tasks for this project
-      await tx.dependency.deleteMany({ where: { predecessor: { projectId } } })
       await tx.task.deleteMany({ where: { projectId } })
 
       // Create tasks and store their original UIDs
@@ -62,6 +80,9 @@ export async function POST(
             startDate: taskData.startDate,
             endDate: taskData.endDate,
             durationDays: taskData.durationDays,
+            status: 'todo',
+            priority: 'medium',
+            progress: 0,
           },
         })
         uidToDbIdMap.set(taskData.uid, createdTask.id)
@@ -82,11 +103,20 @@ export async function POST(
       }
 
       // Create dependencies
-      const dependencyData = dependencies.map(dep => ({
-        predecessorId: uidToDbIdMap.get(dep.predecessorUID)!,
-        successorId: uidToDbIdMap.get(dep.successorUID)!,
-        type: dep.type,
-      })).filter(d => d.predecessorId && d.successorId)
+      const dependencyData = dependencies
+        .map(dep => {
+          const predecessorId = uidToDbIdMap.get(dep.predecessorUID)
+          const successorId = uidToDbIdMap.get(dep.successorUID)
+          if (predecessorId && successorId) {
+            return {
+              predecessorId,
+              successorId,
+              type: dep.type || 'FS',
+            }
+          }
+          return null
+        })
+        .filter((d): d is NonNullable<typeof d> => d !== null)
 
       if (dependencyData.length > 0) {
         await tx.dependency.createMany({

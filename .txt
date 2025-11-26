@@ -1,1 +1,17 @@
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+
+speker = " 78d6ba5bbbae5e70b4bf4e6c63981a9ae67d033a69 "
+
+
+
+fetch('/api/teams', {credentials: 'include'})
+  .then(r => r.json())
+  .then(data => {
+    console.log('API Response:', data)
+    console.log('Teams:', data.teams?.length)
+    console.log('First team members:', data.teams?.[0]?.members?.length)
+  })
+
+
+   npm run backup

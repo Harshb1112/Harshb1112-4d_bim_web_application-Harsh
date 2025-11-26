@@ -1,5 +1,8 @@
 /**
  * Client-side authentication utilities
+ * 
+ * NOTE: We use cookie-based authentication with credentials: 'include'
+ * DO NOT send Authorization header - it can cause conflicts with old cached tokens
  */
 
 export function getClientToken(): string | null {
@@ -15,26 +18,23 @@ export function getClientToken(): string | null {
   return null
 }
 
+/**
+ * @deprecated Use authenticatedFetch instead - it uses cookies automatically
+ * DO NOT use Authorization header to avoid conflicts with old tokens
+ */
 export function getAuthHeaders(): HeadersInit {
-  const token = getClientToken()
-  if (!token) {
-    console.warn('[Client Auth] No token found in cookies')
-    return {}
-  }
-  return {
-    'Authorization': `Bearer ${token}`
-  }
+  console.warn('[Client Auth] getAuthHeaders is deprecated - use cookies with credentials: include')
+  return {}
 }
 
 export async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const headers = {
-    ...getAuthHeaders(),
-    ...options.headers
-  }
-  
+  // Use cookies only - no Authorization header
   return fetch(url, {
     ...options,
-    headers,
+    headers: {
+      ...options.headers
+      // DO NOT add Authorization header - cookies are sent automatically
+    },
     credentials: 'include'
   })
 }

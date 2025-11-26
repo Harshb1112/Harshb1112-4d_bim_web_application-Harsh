@@ -6,7 +6,7 @@ import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
   try {
-    const { fullName, email, password, role = 'member', teamId, teamRole = 'member', inviteToken } = await request.json()
+    const { fullName, email, password, role = 'viewer', teamId, teamRole = 'member', inviteToken, newTeamName } = await request.json()
 
     if (!fullName || !email || !password) {
       return NextResponse.json(
@@ -53,17 +53,21 @@ export async function POST(request: NextRequest) {
     
     const userRole = inviteData?.role || role
     
-    // If Team Leader, create a team with their name
+    // If Team Leader, create a team with provided name or their name
     let createdTeamId = teamId ? parseInt(teamId) : null
     
     if (userRole === 'team_leader' && !createdTeamId) {
+      const teamName = newTeamName?.trim() || `${fullName}'s Team`
+      const teamCode = teamName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+      
       const team = await prisma.team.create({
         data: {
-          name: `${fullName}'s Team`,
-          code: fullName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+          name: teamName,
+          code: teamCode
         }
       })
       createdTeamId = team.id
+      console.log(`✅ Auto-created team: ${teamName} (${teamCode}) for Team Leader: ${fullName}`)
     }
     
     // Create user
