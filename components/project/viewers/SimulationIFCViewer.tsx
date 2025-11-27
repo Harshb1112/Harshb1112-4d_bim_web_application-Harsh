@@ -1,0 +1,470 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client'
+
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AlertCircle, Loader2 } from 'lucide-react'
+
+export interface SimulationViewerRef {
+  isolateObjects: (guids: string[], ghost?: boolean) => void
+  hideObjects: (guids: string[]) => void
+  showObjects: (guids: string[]) => void
+  setColorFilter: (filter: {
+    property: string
+    multiple?: Array<{ property: { key: string; value: string }; color: string; opacity?: number }>
+    default_color?: string
+  }) => void
+  getCanvas: () => HTMLCanvasElement | null
+}
+
+interface SimulationIFCViewerProps {
+  model: any
+  onElementSelect?: (elementId: string, element: any) => void
+  viewerCanvasRef?: React.MutableRefObject<HTMLCanvasElement | null>
+}
+
+const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerProps>(
+  ({ model, onElementSelect, viewerCanvasRef }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null)
+    const sceneRef = useRef<any>(null)
+    const rendererRef = useRef<any>(null)
+    const meshMapRef = useRef<Map<string, any>>(new Map())
+    const originalMaterialsRef = useRef<Map<string, any>>(new Map())
+    const onElementSelectRef = useRef(onElementSelect)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    const [progress, setProgress] = useState(0)
+    const [selectedElement, setSelectedElement] = useState<string | null>(null)
+    const [selectedElementInfo, setSelectedElementInfo] = useState<{ type: string; id: number } | null>(null)
+
+    useEffect(() => {
+      onElementSelectRef.current = onElementSelect
+    }, [onElementSelect])
+
+    const fileUrl = model?.fileUrl || model?.filePath || model?.sourceUrl
+
+    // Expose imperative methods for simulation control
+    useImperativeHandle(ref, () => ({
+      isolateObjects: (guids: string[], ghost = true) => {
+        meshMapRef.current.forEach((mesh, guid) => {
+          if (guids.includes(guid)) {
+            mesh.visible = true
+            if (mesh.material) {
+              mesh.material.transparent = false
+              mesh.material.opacity = 1
+            }
+          } else if (ghost) {
+            mesh.visible = true
+            if (mesh.material) {
+              mesh.material.transparent = true
+              mesh.material.opacity = 0.1
+            }
+          } else {
+            mesh.visible = false
+          }
+        })
+      },
+
+      hideObjects: (guids: string[]) => {
+        guids.forEach(guid => {
+          const mesh = meshMapRef.current.get(guid)
+          if (mesh) {
+            mesh.visible = false
+          }
+        })
+      },
+
+      showObjects: (guids: string[]) => {
+        guids.forEach(guid => {
+          const mesh = meshMapRef.current.get(guid)
+          if (mesh) {
+            mesh.visible = true
+            if (mesh.material) {
+              mesh.material.transparent = false
+              mesh.material.opacity = 1
+            }
+          }
+        })
+      },
+
+      setColorFilter: (filter) => {
+        if (!filter.multiple) return
+        
+        // Import THREE dynamically for color conversion
+        import('three').then(THREE => {
+          filter.multiple?.forEach(({ property, color, opacity }) => {
+            const guid = property.value
+            const mesh = meshMapRef.current.get(guid)
+            if (mesh && mesh.material) {
+              // Store original material if not stored
+              if (!originalMaterialsRef.current.has(guid)) {
+                originalMaterialsRef.current.set(guid, mesh.material.clone())
+              }
+              
+              // Apply new color
+              mesh.material.color = new THREE.Color(color)
+              
+              // Apply opacity if specified
+              if (opacity !== undefined) {
+                mesh.material.transparent = opacity < 1
+                mesh.material.opacity = opacity
+              }
+            }
+          })
+        })
+      },
+
+      getCanvas: () => rendererRef.current?.domElement || null
+    }))
+
+
+    useEffect(() => {
+      if (!fileUrl) {
+        setError('No IFC file URL provided')
+        setLoading(false)
+        return
+      }
+
+      if (!containerRef.current) return
+
+      let disposed = false
+      let animationId: number
+
+      const initViewer = async () => {
+        try {
+          setProgress(10)
+          const THREE = await import('three')
+          const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js')
+          
+          setProgress(20)
+
+          const container = containerRef.current
+          if (!container || disposed) return
+
+          // Scene setup - Dark professional background like Speckle
+          const scene = new THREE.Scene()
+          scene.background = new THREE.Color(0x2d2d2d)
+          sceneRef.current = scene
+
+          // Camera
+          const camera = new THREE.PerspectiveCamera(
+            60,
+            container.clientWidth / container.clientHeight,
+            0.1,
+            10000
+          )
+          camera.position.set(50, 50, 50)
+
+          // Renderer
+          const renderer = new THREE.WebGLRenderer({ antialias: true })
+          renderer.setSize(container.clientWidth, container.clientHeight)
+          renderer.setPixelRatio(window.devicePixelRatio)
+          renderer.shadowMap.enabled = true
+          container.appendChild(renderer.domElement)
+          rendererRef.current = renderer
+
+          // Set canvas ref for video recording
+          if (viewerCanvasRef) {
+            viewerCanvasRef.current = renderer.domElement
+          }
+
+          // Controls
+          const controls = new OrbitControls(camera, renderer.domElement)
+          controls.enableDamping = true
+          controls.dampingFactor = 0.05
+
+          // Lights
+          const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+          scene.add(ambientLight)
+
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+          directionalLight.position.set(100, 100, 50)
+          directionalLight.castShadow = true
+          scene.add(directionalLight)
+
+          // Grid - dark style like Speckle
+          const gridHelper = new THREE.GridHelper(200, 40, 0x555555, 0x3a3a3a)
+          gridHelper.name = 'grid'
+          scene.add(gridHelper)
+
+          setProgress(40)
+
+          // Raycaster for selection
+          const raycaster = new THREE.Raycaster()
+          const mouse = new THREE.Vector2()
+          let selectedObject: any = null
+
+          // Load IFC file
+          console.log('[SimulationIFCViewer] Loading IFC file:', fileUrl)
+          
+          try {
+            const response = await fetch(fileUrl)
+            if (!response.ok) throw new Error(`Failed to fetch IFC file: ${response.status}`)
+            
+            setProgress(60)
+            const arrayBuffer = await response.arrayBuffer()
+            
+            setProgress(70)
+            
+            const WebIFC = await import('web-ifc')
+            const ifcApi = new WebIFC.IfcAPI()
+            
+            ifcApi.SetWasmPath('/wasm/', true)
+            await ifcApi.Init((path: string) => `/wasm/${path}`)
+            
+            setProgress(80)
+            
+            const modelID = ifcApi.OpenModel(new Uint8Array(arrayBuffer))
+            
+            const allTypes = [
+              WebIFC.IFCWALL, WebIFC.IFCWALLSTANDARDCASE,
+              WebIFC.IFCSLAB, WebIFC.IFCCOLUMN, WebIFC.IFCBEAM,
+              WebIFC.IFCDOOR, WebIFC.IFCWINDOW, WebIFC.IFCROOF,
+              WebIFC.IFCSTAIR, WebIFC.IFCRAILING,
+              WebIFC.IFCFURNISHINGELEMENT, WebIFC.IFCBUILDINGELEMENTPROXY
+            ]
+            
+            const elementsGroup = new THREE.Group()
+            elementsGroup.name = 'IFC_Elements'
+            
+            for (const ifcType of allTypes) {
+              try {
+                const ids = ifcApi.GetLineIDsWithType(modelID, ifcType)
+                
+                for (let i = 0; i < ids.size(); i++) {
+                  const expressID = ids.get(i)
+                  
+                  try {
+                    const flatMesh = ifcApi.GetFlatMesh(modelID, expressID)
+                    
+                    for (let j = 0; j < flatMesh.geometries.size(); j++) {
+                      const placedGeometry = flatMesh.geometries.get(j)
+                      const geometry = ifcApi.GetGeometry(modelID, placedGeometry.geometryExpressID)
+                      
+                      const vertices = ifcApi.GetVertexArray(
+                        geometry.GetVertexData(),
+                        geometry.GetVertexDataSize()
+                      )
+                      const indices = ifcApi.GetIndexArray(
+                        geometry.GetIndexData(),
+                        geometry.GetIndexDataSize()
+                      )
+                      
+                      const bufferGeometry = new THREE.BufferGeometry()
+                      bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+                      bufferGeometry.setIndex(Array.from(indices))
+                      bufferGeometry.computeVertexNormals()
+                      
+                      let color = 0xcccccc
+                      if (ifcType === WebIFC.IFCWALL || ifcType === WebIFC.IFCWALLSTANDARDCASE) color = 0xe8e8e8
+                      else if (ifcType === WebIFC.IFCSLAB) color = 0xd0d0d0
+                      else if (ifcType === WebIFC.IFCCOLUMN) color = 0xb0b0b0
+                      else if (ifcType === WebIFC.IFCBEAM) color = 0xa0a0a0
+                      else if (ifcType === WebIFC.IFCDOOR) color = 0x8b4513
+                      else if (ifcType === WebIFC.IFCWINDOW) color = 0x87ceeb
+                      
+                      const material = new THREE.MeshPhongMaterial({
+                        color,
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.9
+                      })
+                      
+                      const mesh = new THREE.Mesh(bufferGeometry, material)
+                      
+                      const matrix = new THREE.Matrix4()
+                      matrix.fromArray(placedGeometry.flatTransformation)
+                      mesh.applyMatrix4(matrix)
+                      
+                      const elementGuid = `IFC_${expressID}`
+                      mesh.userData = { expressID, ifcType, guid: elementGuid }
+                      mesh.name = elementGuid
+                      
+                      // Store mesh reference for simulation control
+                      meshMapRef.current.set(elementGuid, mesh)
+                      
+                      elementsGroup.add(mesh)
+                    }
+                  } catch (e) { /* skip */ }
+                }
+              } catch (e) { /* skip */ }
+            }
+            
+            scene.add(elementsGroup)
+            
+            // Center camera and grid on model
+            const box = new THREE.Box3().setFromObject(elementsGroup)
+            if (!box.isEmpty()) {
+              const center = box.getCenter(new THREE.Vector3())
+              const size = box.getSize(new THREE.Vector3())
+              const maxDim = Math.max(size.x, size.y, size.z)
+              
+              // Position camera
+              camera.position.set(
+                center.x + maxDim * 1.5,
+                center.y + maxDim * 0.8,
+                center.z + maxDim * 1.5
+              )
+              camera.lookAt(center)
+              controls.target.copy(center)
+              
+              // Reposition grid to model center - dark style
+              const gridSize = Math.max(maxDim * 2, 100)
+              scene.remove(gridHelper)
+              const newGrid = new THREE.GridHelper(gridSize, 40, 0x555555, 0x3a3a3a)
+              newGrid.position.set(center.x, box.min.y - 0.1, center.z)
+              newGrid.name = 'grid'
+              scene.add(newGrid)
+            }
+            
+            ifcApi.CloseModel(modelID)
+            
+            setProgress(100)
+            setLoading(false)
+            console.log('[SimulationIFCViewer] Loaded', meshMapRef.current.size, 'elements')
+            
+          } catch (ifcError: any) {
+            console.warn('[SimulationIFCViewer] IFC loading failed:', ifcError.message)
+            setError(`IFC loading failed: ${ifcError.message}`)
+            setLoading(false)
+          }
+
+          // Click handler
+          const onClick = (event: MouseEvent) => {
+            const rect = renderer.domElement.getBoundingClientRect()
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+            raycaster.setFromCamera(mouse, camera)
+            const intersects = raycaster.intersectObjects(scene.children, true)
+
+            if (selectedObject && originalMaterialsRef.current.has(selectedObject.userData.guid)) {
+              selectedObject.material = originalMaterialsRef.current.get(selectedObject.userData.guid)
+            }
+
+            for (const intersect of intersects) {
+              if (intersect.object instanceof THREE.Mesh && intersect.object.userData.expressID) {
+                selectedObject = intersect.object
+                
+                if (!originalMaterialsRef.current.has(selectedObject.userData.guid)) {
+                  originalMaterialsRef.current.set(selectedObject.userData.guid, selectedObject.material.clone())
+                }
+                
+                selectedObject.material = new THREE.MeshPhongMaterial({
+                  color: 0x00ff00,
+                  emissive: 0x003300,
+                  side: THREE.DoubleSide
+                })
+                
+                const elementId = selectedObject.userData.guid
+                setSelectedElement(elementId)
+                setSelectedElementInfo({
+                  type: selectedObject.userData.typeName || 'Element',
+                  id: selectedObject.userData.expressID
+                })
+                
+                if (onElementSelectRef.current) {
+                  onElementSelectRef.current(elementId, {
+                    id: elementId,
+                    expressID: selectedObject.userData.expressID,
+                    type: selectedObject.userData.typeName,
+                    name: selectedObject.name,
+                    userData: selectedObject.userData
+                  })
+                }
+                break
+              }
+            }
+          }
+
+          renderer.domElement.addEventListener('click', onClick)
+
+          // Animation loop
+          const animate = () => {
+            if (disposed) return
+            animationId = requestAnimationFrame(animate)
+            controls.update()
+            renderer.render(scene, camera)
+          }
+          animate()
+
+          // Resize handler
+          const handleResize = () => {
+            if (!container || disposed) return
+            camera.aspect = container.clientWidth / container.clientHeight
+            camera.updateProjectionMatrix()
+            renderer.setSize(container.clientWidth, container.clientHeight)
+          }
+          window.addEventListener('resize', handleResize)
+
+          return () => {
+            window.removeEventListener('resize', handleResize)
+            renderer.domElement.removeEventListener('click', onClick)
+            controls.dispose()
+            renderer.dispose()
+            if (container.contains(renderer.domElement)) {
+              container.removeChild(renderer.domElement)
+            }
+          }
+
+        } catch (err: any) {
+          console.error('[SimulationIFCViewer] Error:', err)
+          setError(`Failed to load IFC: ${err.message}`)
+          setLoading(false)
+        }
+      }
+
+      initViewer()
+
+      return () => {
+        disposed = true
+        if (animationId) cancelAnimationFrame(animationId)
+      }
+    }, [fileUrl])
+
+    if (error) {
+      return (
+        <div className="flex items-center justify-center h-full bg-[#2d2d2d] rounded-lg border border-gray-700">
+          <Alert className="max-w-md bg-gray-800 border-red-500/50">
+            <AlertCircle className="h-4 w-4 text-red-400" />
+            <AlertDescription className="text-gray-300">{error}</AlertDescription>
+          </Alert>
+        </div>
+      )
+    }
+
+    return (
+      <div className="h-full w-full rounded-lg border border-gray-700 overflow-hidden bg-[#2d2d2d]">
+        <div ref={containerRef} className="h-full w-full relative" style={{ minHeight: '450px' }}>
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#2d2d2d] z-10">
+              <div className="text-center bg-gray-800/90 p-6 rounded-xl border border-gray-700">
+                <Loader2 className="h-10 w-10 animate-spin text-blue-400 mx-auto mb-3" />
+                <p className="text-white font-medium">Loading IFC Model</p>
+                <div className="w-48 bg-gray-700 rounded-full h-2 mt-4 mx-auto overflow-hidden">
+                  <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                </div>
+                <p className="text-gray-500 text-xs mt-2">{progress}%</p>
+              </div>
+            </div>
+          )}
+          
+          {selectedElement && selectedElementInfo && (
+            <div className="absolute top-3 left-3 bg-gray-800/95 backdrop-blur-sm text-white px-3 py-2 rounded-lg text-sm z-10 border border-gray-600">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-medium">
+                  {selectedElementInfo.type}
+                </span>
+                <span className="text-gray-400">#{selectedElementInfo.id}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+)
+
+SimulationIFCViewer.displayName = 'SimulationIFCViewer'
+
+export default SimulationIFCViewer

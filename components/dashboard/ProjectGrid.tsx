@@ -9,9 +9,9 @@ import CreateProjectDialog from '@/components/dashboard/CreateProjectDialog'
 interface Project {
   id: number
   name: string
-  description?: string
-  startDate?: Date
-  endDate?: Date
+  description?: string | null
+  startDate?: Date | null
+  endDate?: Date | null
   _count: {
     tasks: number
     models: number

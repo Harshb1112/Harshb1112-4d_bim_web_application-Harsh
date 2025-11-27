@@ -11,6 +11,10 @@ const nextConfig = {
         '#lodash': 'lodash-es',
       },
     },
+    serverActions: {
+      bodySizeLimit: '100mb',
+    },
+    middlewareClientMaxBodySize: '100mb',
   },
 
   typescript: {

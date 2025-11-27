@@ -2,20 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Calendar, 
-  CheckCircle2, 
   Clock, 
-  Cube, 
-  List, 
-  Play, 
-  Plus,
-  ChevronRight,
-  ChevronDown
-} from 'lucide-react';
+  Box} from 'lucide-react';
+import ModelViewer from '@/components/project/ModelViewer';
+import ProjectHeader from '@/components/project/ProjectHeader';
+import ScheduleView from '@/components/project/ScheduleView';
+import TaskDetailsPanel from '@/components/project/TaskDetailsPanel';
+import TasksSidebar from '@/components/project/TasksSidebar';
+import TimelineView from '@/components/project/TimelineView';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -84,7 +81,7 @@ export default function ProjectWorkspacePage() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="w-full justify-start border-b rounded-none bg-white px-4">
               <TabsTrigger value="overview" className="gap-2">
-                <Cube className="w-4 h-4" />
+                <Box className="w-4 h-4" />
                 3D Model
               </TabsTrigger>
               <TabsTrigger value="schedule" className="gap-2">
@@ -109,7 +106,7 @@ export default function ProjectWorkspacePage() {
             </TabsContent>
 
             <TabsContent value="timeline" className="flex-1 m-0 p-4">
-              <TimelineView tasks={tasks} />
+              <TimelineView tasks={tasks} projectId={0} />
             </TabsContent>
           </Tabs>
         </div>

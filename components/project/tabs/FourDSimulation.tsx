@@ -3,7 +3,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import SpeckleViewer, { SpeckleViewerRef } from '../SpeckleViewer'
+import UnifiedSimulationViewer, { UnifiedSimulationViewerRef } from '../viewers/UnifiedSimulationViewer'
 import SimulationControl from './SimulationControl'
 import TaskInformationPanel from './TaskInformationPanel'
 import { parseISO, isBefore, isAfter, addDays } from 'date-fns'
@@ -24,6 +24,8 @@ interface Link {
   id: number
   element: { guid: string }
   task: {
+    progress: number
+    status: string
     id: number
     name: string
     startDate: string
@@ -85,7 +87,7 @@ function interpolateColor(color1: string, color2: string, ratio: number): string
 }
 
 export default function FourDSimulation({ project }: FourDSimulationProps) {
-  const viewerRef = useRef<SpeckleViewerRef>(null)
+  const viewerRef = useRef<UnifiedSimulationViewerRef>(null)
   const viewerCanvasRef = useRef<HTMLCanvasElement | null>(null) // Ref to the viewer's canvas
   const videoRecorderRef = useRef<VideoRecorder | null>(null)
 
@@ -498,19 +500,9 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     setActiveTasks(tasksWithCounts)
 
     // Apply visibility and colors to viewer
-    console.log('🎬 Applying visualization:', {
-      mode: visualizationMode,
-      visibleCount: visibleGuids.length,
-      totalElements: allElementGuids.length,
-      colorFilters: colorFilters.length,
-      activeTasks: currentActiveTasks.length
-    })
-
     if (visualizationMode === 'element-count') {
       // For element count mode: hide elements not in visibleGuids
       const hiddenGuids = allElementGuids.filter(guid => !visibleGuids.includes(guid))
-      
-      console.log(`  👁️ Visibility: ${visibleGuids.length} visible, ${hiddenGuids.length} hidden`)
       
       if (hiddenGuids.length > 0) {
         viewerRef.current.hideObjects(hiddenGuids)
@@ -521,16 +513,8 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       }
     } else {
       // For opacity and gradient modes: show all elements
-      console.log(`  👁️ Showing all ${allElementGuids.length} elements`)
       viewerRef.current.showObjects(allElementGuids)
     }
-
-    // Log color filters being applied
-    console.log('🎨 Color filters to apply:', colorFilters.slice(0, 5).map(cf => ({
-      id: cf.property?.value?.substring(0, 8) + '...',
-      color: cf.color,
-      opacity: cf.opacity
-    })))
 
     // Apply color filters
     viewerRef.current.setColorFilter({
@@ -767,7 +751,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
             </CardHeader>
             <CardContent className="p-0 h-[calc(100%-60px)]">
               <div className="relative h-full">
-                <SpeckleViewer ref={viewerRef} project={project} viewerCanvasRef={viewerCanvasRef} />
+                <UnifiedSimulationViewer ref={viewerRef} project={project} viewerCanvasRef={viewerCanvasRef} />
                 {/* Legend Overlay */}
                 <div className="absolute bottom-4 left-4 bg-white bg-opacity-95 p-3 rounded-lg shadow-lg text-xs">
                   <div className="font-semibold text-gray-900 mb-2">Color Legend</div>
@@ -802,7 +786,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         </div>
 
         {/* Right Panel - Controls and Task Info */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4">
           {/* Simulation Controls */}
           <SimulationControl
             currentDate={currentDate}
@@ -818,48 +802,51 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
             milestones={milestones}
           />
 
-          {/* Task Information Panel */}
-          <TaskInformationPanel
-            activeTasks={activeTasks}
-            selectedTask={selectedTask}
-            onTaskSelect={setSelectedTask}
-            currentDate={currentDate}
-            mode={mode}
-          />
-
-          {/* Export & Capture */}
+          {/* Export & Capture - Moved before Task Info */}
           <Card>
-            <CardHeader>
+            <CardHeader className="py-3">
               <CardTitle className="flex items-center space-x-2 text-sm">
                 <Video className="h-4 w-4" />
                 <span>Export & Capture</span>
               </CardTitle>
-              <CardDescription className="text-xs">Record simulation videos or take screenshots</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Button onClick={takeScreenshot} className="w-full" size="sm" disabled={isRecording || !viewerCanvasRef.current}>
-                <Camera className="h-4 w-4 mr-2" />
-                Take Screenshot
-              </Button>
-              {!isRecording ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button onClick={startRecording} size="sm" className="w-full" disabled={!viewerCanvasRef.current}>
-                    <Video className="h-4 w-4 mr-2" />
-                    Record Video
-                  </Button>
-                  <Button onClick={startRecordingForServerExport} size="sm" variant="outline" className="w-full" disabled={!viewerCanvasRef.current || isExportingVideo}>
-                    {isExportingVideo ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Share2 className="h-4 w-4 mr-2" />}
-                    Export
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={stopRecording} size="sm" className="w-full bg-red-600 hover:bg-red-700" disabled={!viewerCanvasRef.current}>
-                  <StopCircle className="h-4 w-4 mr-2" />
-                  Stop Recording
+            <CardContent className="py-2 space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                <Button onClick={takeScreenshot} size="sm" disabled={isRecording || !viewerCanvasRef.current}>
+                  <Camera className="h-4 w-4 mr-1" />
+                  Screenshot
                 </Button>
-              )}
+                {!isRecording ? (
+                  <>
+                    <Button onClick={startRecording} size="sm" disabled={!viewerCanvasRef.current}>
+                      <Video className="h-4 w-4 mr-1" />
+                      Record
+                    </Button>
+                    <Button onClick={startRecordingForServerExport} size="sm" variant="outline" disabled={!viewerCanvasRef.current || isExportingVideo}>
+                      {isExportingVideo ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Share2 className="h-4 w-4 mr-1" />}
+                      Export
+                    </Button>
+                  </>
+                ) : (
+                  <Button onClick={stopRecording} size="sm" className="col-span-2 bg-red-600 hover:bg-red-700">
+                    <StopCircle className="h-4 w-4 mr-1" />
+                    Stop Recording
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
+
+          {/* Task Information Panel - Compact height */}
+          <div className="max-h-[280px] overflow-hidden">
+            <TaskInformationPanel
+              activeTasks={activeTasks}
+              selectedTask={selectedTask}
+              onTaskSelect={setSelectedTask}
+              currentDate={currentDate}
+              mode={mode}
+            />
+          </div>
         </div>
       </div>
     </div>

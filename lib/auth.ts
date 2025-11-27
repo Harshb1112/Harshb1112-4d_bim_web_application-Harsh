@@ -35,8 +35,20 @@ export function generateToken(user: User): string {
 export function verifyToken(token: string): User | null {
   try {
     // Decode without verification first to see what's in the token
-    const decoded = jwt.decode(token) as any
-    console.log('[Auth] Token decoded (unverified):', decoded ? `User: ${decoded.email}, Alg: ${decoded.alg}` : 'Invalid token format')
+    const decoded = jwt.decode(token, { complete: true }) as any
+    
+    if (!decoded) {
+      console.log('[Auth] Invalid token format')
+      return null
+    }
+    
+    // Check if token uses wrong algorithm (e.g., RS256 from old Supabase setup)
+    if (decoded.header?.alg && decoded.header.alg !== 'HS256') {
+      console.log('[Auth] Token uses wrong algorithm:', decoded.header.alg, '- expected HS256. Please re-login.')
+      return null
+    }
+    
+    console.log('[Auth] Token decoded (unverified):', decoded.payload ? `User: ${decoded.payload.email}` : 'Invalid token format')
     
     // Now verify with HS256
     const verified = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any

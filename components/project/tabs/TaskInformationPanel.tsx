@@ -92,208 +92,121 @@ export default function TaskInformationPanel({
     const plannedStart = task.startDate ? new Date(task.startDate) : null
     const plannedEnd = task.endDate ? new Date(task.endDate) : null
     
-    // Calculate variance
     let startVariance = 0
     let endVariance = 0
-    if (actualStart && plannedStart) {
-      startVariance = differenceInDays(actualStart, plannedStart)
-    }
-    if (actualEnd && plannedEnd) {
-      endVariance = differenceInDays(actualEnd, plannedEnd)
-    }
+    if (actualStart && plannedStart) startVariance = differenceInDays(actualStart, plannedStart)
+    if (actualEnd && plannedEnd) endVariance = differenceInDays(actualEnd, plannedEnd)
 
     return (
-      <div className="space-y-4">
-        <div>
-          <div className="flex items-start justify-between mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 leading-tight">{task.name}</h3>
+      <div className="space-y-2">
+        {/* Header with back button */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{task.name}</h3>
+          </div>
+          <div className="flex items-center gap-1 ml-2">
             {getStatusBadge(progressStatus.status)}
+            <button 
+              onClick={() => onTaskSelect(null)} 
+              className="text-xs text-blue-600 hover:underline ml-2"
+            >
+              ← Back
+            </button>
           </div>
-          {task.description && (
-            <p className="text-sm text-gray-600 mt-2">{task.description}</p>
-          )}
         </div>
 
-        <Separator />
-
-        {/* Progress */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <StatusIcon className={`h-4 w-4 text-${progressStatus.color}-600`} />
-              <span className="text-sm font-medium text-gray-700">Progress</span>
-            </div>
-            <span className="text-sm font-bold text-gray-900">{task.progress || 0}%</span>
-          </div>
-          <Progress value={task.progress || 0} className="h-2" />
+        {/* Progress bar */}
+        <div className="flex items-center gap-2">
+          <Progress value={task.progress || 0} className="h-1.5 flex-1" />
+          <span className="text-xs font-bold text-gray-700">{task.progress || 0}%</span>
         </div>
 
-        <Separator />
-
-        {/* Dates */}
-        <div className="space-y-3">
-          <div className="flex items-center space-x-2 text-sm font-medium text-gray-700">
-            <Calendar className="h-4 w-4" />
-            <span>Schedule</span>
+        {/* Compact dates */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="bg-blue-50 p-2 rounded">
+            <div className="font-semibold text-blue-800">Planned</div>
+            <div className="text-blue-700">{formatDate(task.startDate)} - {formatDate(task.endDate)}</div>
           </div>
-          
-          {/* Planned Dates */}
-          <div className="bg-blue-50 p-3 rounded-lg space-y-2">
-            <div className="text-xs font-semibold text-blue-900 uppercase">Planned</div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <div className="text-xs text-blue-600">Start</div>
-                <div className="font-medium text-blue-900">{formatDate(task.startDate)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-blue-600">End</div>
-                <div className="font-medium text-blue-900">{formatDate(task.endDate)}</div>
-              </div>
-            </div>
-            {task.durationDays && (
-              <div className="text-xs text-blue-700">
-                Duration: {task.durationDays} days
-              </div>
-            )}
-          </div>
-
-          {/* Actual Dates */}
           {mode === 'actual' && (actualStart || actualEnd) && (
-            <div className="bg-green-50 p-3 rounded-lg space-y-2">
-              <div className="text-xs font-semibold text-green-900 uppercase">Actual</div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <div className="text-xs text-green-600">Start</div>
-                  <div className="font-medium text-green-900">{formatDate(task.actualStartDate)}</div>
-                  {startVariance !== 0 && (
-                    <div className={`text-xs ${startVariance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {startVariance > 0 ? '+' : ''}{startVariance} days
-                    </div>
-                  )}
+            <div className="bg-green-50 p-2 rounded">
+              <div className="font-semibold text-green-800">Actual</div>
+              <div className="text-green-700">{formatDate(task.actualStartDate)} - {formatDate(task.actualEndDate)}</div>
+              {(startVariance !== 0 || endVariance !== 0) && (
+                <div className={startVariance > 0 || endVariance > 0 ? 'text-red-600' : 'text-green-600'}>
+                  Variance: {startVariance > 0 ? '+' : ''}{startVariance}d / {endVariance > 0 ? '+' : ''}{endVariance}d
                 </div>
-                <div>
-                  <div className="text-xs text-green-600">End</div>
-                  <div className="font-medium text-green-900">{formatDate(task.actualEndDate)}</div>
-                  {endVariance !== 0 && actualEnd && (
-                    <div className={`text-xs ${endVariance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {endVariance > 0 ? '+' : ''}{endVariance} days
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
 
-        <Separator />
-
-        {/* Elements */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Layers className="h-4 w-4 text-gray-600" />
-              <span className="text-sm font-medium text-gray-700">Linked Elements</span>
-            </div>
-            <Badge variant="secondary">{task.elementCount || task.elementLinks?.length || 0}</Badge>
+        {/* Elements count */}
+        <div className="flex items-center justify-between text-xs bg-gray-50 p-2 rounded">
+          <div className="flex items-center gap-1">
+            <Layers className="h-3 w-3 text-gray-500" />
+            <span className="text-gray-600">Linked Elements</span>
           </div>
-          <p className="text-xs text-gray-500">
-            {task.elementCount || task.elementLinks?.length || 0} BIM elements are linked to this task
-          </p>
+          <Badge variant="secondary" className="text-xs">{task.elementCount || task.elementLinks?.length || 0}</Badge>
         </div>
-
-        {/* Additional Info */}
-        {(task.resource || task.assignee || task.team) && (
-          <>
-            <Separator />
-            <div className="space-y-2">
-              {task.resource && (
-                <div className="text-sm">
-                  <span className="text-gray-600">Resource:</span>
-                  <span className="ml-2 font-medium text-gray-900">{task.resource}</span>
-                </div>
-              )}
-              {task.assignee && (
-                <div className="text-sm">
-                  <span className="text-gray-600">Assignee:</span>
-                  <span className="ml-2 font-medium text-gray-900">{task.assignee.name}</span>
-                </div>
-              )}
-              {task.team && (
-                <div className="text-sm">
-                  <span className="text-gray-600">Team:</span>
-                  <span className="ml-2 font-medium text-gray-900">{task.team.name}</span>
-                </div>
-              )}
-            </div>
-          </>
-        )}
       </div>
     )
   }
 
   return (
     <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2 text-sm">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Task Information</span>
+      <CardHeader className="py-3">
+        <CardTitle className="flex items-center justify-between text-sm">
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Task Information</span>
+          </div>
+          {activeTasks.length > 0 && (
+            <Badge variant="secondary" className="text-xs">{activeTasks.length} active</Badge>
+          )}
         </CardTitle>
-        <CardDescription>
-          {activeTasks.length > 0 
-            ? `${activeTasks.length} active task${activeTasks.length !== 1 ? 's' : ''} at current date`
-            : 'No active tasks at current date'}
-        </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="py-2">
         {selectedTask ? (
-          <ScrollArea className="h-[500px] pr-4">
+          <ScrollArea className="h-[180px] pr-2">
             {renderTaskDetails(selectedTask)}
           </ScrollArea>
         ) : activeTasks.length > 0 ? (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-600 mb-3">Select a task to view details:</p>
-            <ScrollArea className="h-[500px] pr-4">
-              <div className="space-y-2">
-                {activeTasks.map((task) => {
-                  const progressStatus = getProgressStatus(task)
-                  const StatusIcon = progressStatus.icon
-                  
-                  return (
-                    <button
-                      key={task.id}
-                      onClick={() => onTaskSelect(task)}
-                      className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 truncate">{task.name}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {formatDate(task.startDate)} - {formatDate(task.endDate)}
-                          </div>
-                        </div>
-                        <StatusIcon className={`h-4 w-4 text-${progressStatus.color}-600 ml-2 flex-shrink-0`} />
+          <ScrollArea className="h-[180px] pr-2">
+            <div className="space-y-1.5">
+              {activeTasks.map((task) => {
+                const progressStatus = getProgressStatus(task)
+                const StatusIcon = progressStatus.icon
+                
+                return (
+                  <button
+                    key={task.id}
+                    onClick={() => onTaskSelect(task)}
+                    className="w-full text-left p-2 bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate text-sm">{task.name}</div>
                       </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <Progress value={task.progress || 0} className="h-1.5 flex-1 mr-3" />
-                        <span className="text-xs font-medium text-gray-700">{task.progress || 0}%</span>
+                      <div className="flex items-center gap-2 ml-2">
+                        <span className="text-xs font-medium text-gray-600">{task.progress || 0}%</span>
+                        <StatusIcon className={`h-3.5 w-3.5 text-${progressStatus.color}-600`} />
                       </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <Progress value={task.progress || 0} className="h-1 flex-1 mr-2" />
                       {task.elementCount > 0 && (
-                        <div className="flex items-center space-x-1 mt-2 text-xs text-gray-500">
-                          <Layers className="h-3 w-3" />
-                          <span>{task.elementCount} elements</span>
-                        </div>
+                        <span className="text-xs text-gray-500">{task.elementCount} elem</span>
                       )}
-                    </button>
-                  )
-                })}
-              </div>
-            </ScrollArea>
-          </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </ScrollArea>
         ) : (
-          <div className="text-center py-12 text-gray-500">
-            <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">No tasks are active at the current simulation date</p>
-            <p className="text-xs mt-2">Move the timeline slider to see active tasks</p>
+          <div className="text-center py-6 text-gray-500">
+            <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-xs">No active tasks at current date</p>
           </div>
         )}
       </CardContent>

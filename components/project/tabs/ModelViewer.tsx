@@ -218,7 +218,7 @@ export default function ModelViewer({
 
     if (state && selectedElements?.length) {
       viewerRef.current?.hideObjects(selectedElements)
-    } else viewerRef.current?.showObjects()
+    } else viewerRef.current?.showAllObjects()
   }
 
   const handleApplyColoring = () => {

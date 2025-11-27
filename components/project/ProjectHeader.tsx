@@ -64,8 +64,8 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600">
-                {new Date(currentProject.startDate).toLocaleDateString()} - {new Date(currentProject.endDate).toLocaleDateString()}
+              <span className="text-gray-600" suppressHydrationWarning>
+                {new Date(currentProject.startDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })} - {new Date(currentProject.endDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })}
               </span>
             </div>
             <div className="flex items-center gap-2">

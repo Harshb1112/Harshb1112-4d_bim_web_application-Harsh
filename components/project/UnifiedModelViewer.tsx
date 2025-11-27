@@ -22,10 +22,6 @@ export default function UnifiedModelViewer({
   selectedElements 
 }: UnifiedModelViewerProps) {
   
-  // Debug: Log project data
-  console.log('UnifiedModelViewer - Project:', project)
-  console.log('UnifiedModelViewer - Models:', project?.models)
-  
   // Analyze all models and their sources
   const modelAnalysis = useMemo(() => {
     if (!project.models || project.models.length === 0) {
@@ -77,12 +73,9 @@ export default function UnifiedModelViewer({
   const selectedModelSource = useMemo(() => {
     if (!selectedModel) return { type: 'none', detail: '' }
     
-    // Check source field first
-    if (selectedModel.source) {
-      return { 
-        type: selectedModel.source,
-        detail: selectedModel.source 
-      }
+    // Local IFC file (uploaded)
+    if (selectedModel.source === 'local' && selectedModel.filePath) {
+      return { type: 'ifc', detail: 'local_ifc' }
     }
     
     // Autodesk sources
@@ -91,18 +84,42 @@ export default function UnifiedModelViewer({
     }
     
     // Speckle
-    if (selectedModel.speckleUrl || selectedModel.streamId) {
+    if (selectedModel.speckleUrl || selectedModel.streamId || selectedModel.source === 'speckle') {
       return { type: 'speckle', detail: 'speckle' }
     }
     
-    // IFC file
-    if (selectedModel.fileUrl && selectedModel.fileUrl.endsWith('.ifc')) {
+    // IFC file by extension
+    if ((selectedModel.filePath && selectedModel.filePath.endsWith('.ifc')) || 
+        (selectedModel.fileUrl && selectedModel.fileUrl.endsWith('.ifc'))) {
+      return { type: 'ifc', detail: 'local_ifc' }
+    }
+    
+    // Check source field
+    if (selectedModel.source === 'local_ifc') {
       return { type: 'ifc', detail: 'local_ifc' }
     }
     
     // Default to speckle
     return { type: 'speckle', detail: 'speckle' }
   }, [selectedModel])
+
+  // Check if selected model has required data
+  const modelHasData = useMemo(() => {
+    if (!selectedModel) return false
+    
+    // Check if model has any viewable data
+    const hasSpeckleData = !!(selectedModel.speckleUrl || selectedModel.streamId)
+    const hasAutodeskData = !!(selectedModel.sourceId && (selectedModel.source === 'autodesk_construction_cloud' || selectedModel.source === 'autodesk_drive'))
+    const hasIFCData = !!(selectedModel.filePath || selectedModel.sourceUrl || selectedModel.fileUrl)
+    const hasLocalFile = !!(selectedModel.source === 'local' && selectedModel.filePath)
+    
+    return hasSpeckleData || hasAutodeskData || hasIFCData || hasLocalFile
+  }, [selectedModel])
+
+  // Debug logs
+  console.log('UnifiedModelViewer - Selected Model:', selectedModel)
+  console.log('UnifiedModelViewer - Model Source:', selectedModelSource)
+  console.log('UnifiedModelViewer - Model Has Data:', modelHasData)
 
   // No models
   if (!modelAnalysis.hasModels) {
@@ -118,23 +135,11 @@ export default function UnifiedModelViewer({
     )
   }
 
-  // Check if selected model has required data
-  const modelHasData = useMemo(() => {
-    if (!selectedModel) return false
-    
-    // Check if model has any viewable data
-    const hasSpeckleData = !!(selectedModel.speckleUrl || selectedModel.streamId)
-    const hasAutodeskData = !!(selectedModel.sourceId && (selectedModel.source === 'autodesk_construction_cloud' || selectedModel.source === 'autodesk_drive'))
-    const hasIFCData = !!(selectedModel.filePath || selectedModel.sourceUrl)
-    
-    return hasSpeckleData || hasAutodeskData || hasIFCData
-  }, [selectedModel])
-
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col rounded-lg border border-gray-200 shadow-sm overflow-hidden bg-white">
       {/* Model Selector - if multiple models */}
       {modelAnalysis.allModels.length > 1 && (
-        <div className="p-3 bg-gray-50 border-b flex items-center gap-3">
+        <div className="p-3 bg-gradient-to-r from-gray-50 to-white border-b border-gray-200 flex items-center gap-3">
           <Box className="h-4 w-4 text-gray-600" />
           <span className="text-sm font-medium text-gray-700">Select Model:</span>
           <Select 
@@ -193,10 +198,10 @@ export default function UnifiedModelViewer({
       )}
 
       {/* Viewer Area */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden" style={{ minHeight: '450px' }}>
         {/* Model data incomplete warning */}
         {!modelHasData && (
-          <div className="flex items-center justify-center h-full bg-gray-50">
+          <div className="flex items-center justify-center h-full bg-gradient-to-br from-gray-50 to-gray-100">
             <Alert className="max-w-md">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>

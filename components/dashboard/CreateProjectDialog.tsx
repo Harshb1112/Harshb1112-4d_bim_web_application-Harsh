@@ -169,16 +169,20 @@ export default function CreateProjectDialog({
         }
 
         let response: Response
+        const token = document.cookie.split('token=')[1]?.split(';')[0]
 
-        // Handle file upload separately
+        // Handle file upload separately using dedicated upload endpoint
         if (bimSource === "local" && selectedFile) {
           const formData = new FormData()
           formData.append("file", selectedFile)
           formData.append("projectData", JSON.stringify(projectData))
 
-          response = await fetch("/api/projects", {
+          response = await fetch("/api/projects/upload", {
             method: "POST",
             credentials: 'include',
+            headers: {
+              ...(token && { 'Authorization': `Bearer ${token}` }),
+            },
             body: formData,
           })
         } else {
@@ -187,6 +191,7 @@ export default function CreateProjectDialog({
             credentials: 'include',
             headers: {
               "Content-Type": "application/json",
+              ...(token && { 'Authorization': `Bearer ${token}` }),
             },
             body: JSON.stringify(projectData),
           })

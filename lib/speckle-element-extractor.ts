@@ -1,4 +1,4 @@
-import { ObjectLoader } from '@speckle/objectloader'
+import ObjectLoader from '@speckle/objectloader'
 
 interface SpeckleObject {
   id: string
@@ -43,16 +43,16 @@ export async function fetchAndExtractElements(
   const loader = new ObjectLoader({
     serverUrl,
     streamId,
+    objectId: referencedObject,
     token,
     options: {
       enableCaching: true,
-      customLogger: console,
-      customWarner: console.warn
+      customLogger: (...args: unknown[]) => console.log(...args),
+      customWarner: (...args: unknown[]) => console.warn(...args)
     }
   })
 
-  const objectUrl = `${serverUrl}/objects/${streamId}/${referencedObject}`
-  const objectData = await loader.getAndConstructObject(objectUrl)
+  const objectData = await loader.getAndConstructObject(() => {})
 
   if (!objectData) {
     throw new Error('Failed to load object data from the project')
@@ -104,7 +104,6 @@ function extractElementsFromSpeckle(obj: SpeckleObject): ExtractedElement[] {
         typeName: object.name || object.type || 'Unnamed',
         level: object.level?.name || object.baseLevel || null,
         parameters: {
-          speckle_type: object.speckle_type,
           ...object
         }
       })
@@ -113,7 +112,7 @@ function extractElementsFromSpeckle(obj: SpeckleObject): ExtractedElement[] {
     if (object.children && Array.isArray(object.children)) {
       object.children.forEach(child => {
         if (child && typeof child === 'object') {
-          const childCategory = child.category || child.name || elementCategory
+          const childCategory = child.category || child.name || category
           extractRecursive(child, childCategory, depth + 1)
         }
       })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma from '@/lib/db';
 import AutodeskClient from '@/lib/autodesk-client';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';

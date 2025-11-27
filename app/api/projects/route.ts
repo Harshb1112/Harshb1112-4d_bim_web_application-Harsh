@@ -5,6 +5,10 @@ import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
 
+// Disable body size limit for this route
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
@@ -157,26 +161,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only admin and manager can create projects' }, { status: 403 })
     }
 
-    const contentType = request.headers.get('content-type') || ''
     let projectData: any
     let uploadedFile: File | null = null
 
-    // Handle FormData (file upload)
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData()
-      const file = formData.get('file') as File
-      const projectDataStr = formData.get('projectData') as string
-      
-      if (file) {
-        uploadedFile = file
+    // Determine content type and parse body accordingly
+    const contentType = request.headers.get('content-type') || ''
+    
+    try {
+      if (contentType.includes('multipart/form-data')) {
+        // Handle FormData (file upload)
+        const formData = await request.formData()
+        const file = formData.get('file') as File
+        const projectDataStr = formData.get('projectData') as string
+        
+        if (file) {
+          uploadedFile = file
+        }
+        
+        if (projectDataStr) {
+          projectData = JSON.parse(projectDataStr)
+        } else {
+          return NextResponse.json({ error: 'Project data is required' }, { status: 400 })
+        }
+      } else {
+        // Handle JSON
+        projectData = await request.json()
       }
-      
-      if (projectDataStr) {
-        projectData = JSON.parse(projectDataStr)
-      }
-    } else {
-      // Handle JSON
-      projectData = await request.json()
+    } catch (e) {
+      console.error('Request body parsing error:', e)
+      return NextResponse.json({ 
+        error: 'Failed to parse request body',
+        details: e instanceof Error ? e.message : String(e)
+      }, { status: 400 })
     }
 
     const { 
@@ -324,8 +340,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ project })
   } catch (error) {
     console.error('Create project error:', error)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    console.error('Error message:', error instanceof Error ? error.message : String(error))
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     )
   }

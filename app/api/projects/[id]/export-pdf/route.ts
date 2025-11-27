@@ -73,7 +73,7 @@ export async function GET(
     const pdfBuffer = await generateSchedulePDF(project)
 
     // Return PDF file
-    return new NextResponse(pdfBuffer, {
+    return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${project.name}_schedule.pdf"`,

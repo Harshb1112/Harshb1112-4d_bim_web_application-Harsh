@@ -35,7 +35,7 @@ export function formatDateTime(date: Date | string): string {
   });
 }
 
-export function downloadFile(blob: Blob, filename: string) {
+export function downloadFile(blob: Blob, filename: string, p0: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

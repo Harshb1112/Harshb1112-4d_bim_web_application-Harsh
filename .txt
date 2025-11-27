@@ -16,10 +16,7 @@ fetch('/api/teams', {credentials: 'include'})
 
    npm run backup
 
-   git add . && git commit -m "Update all files" && git push origin main  //powershell
 
-   git push origin master
 
-   git add .
-git commit -m "Update all files"
-git push origin main
+      
+

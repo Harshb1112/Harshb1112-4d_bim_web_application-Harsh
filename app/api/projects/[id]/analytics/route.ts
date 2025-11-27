@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 import { differenceInDays } from 'date-fns'
-import { Task } from '@/app/generated/prisma/browser';
 
-
-
+interface TaskData {
+  id: number
+  progress: number
+  startDate: Date | null
+  endDate: Date | null
+  actualStartDate: Date | null
+  actualEndDate: Date | null
+  elementLinks: { id: number }[]
+}
 
 interface ProgressPoint {
   date: string
@@ -61,12 +67,7 @@ export async function GET(
     })
 
     // Fetch tasks
-    const tasks: (Pick<
-      Task,
-      'id' | 'progress' | 'startDate' | 'endDate' | 'actualStartDate' | 'actualEndDate'
-    > & {
-      elementLinks: { id: number }[]
-    })[] = await prisma.task.findMany({
+    const tasks: TaskData[] = await prisma.task.findMany({
       where: { projectId },
       select: {
         id: true,
@@ -110,17 +111,17 @@ export async function GET(
 
     const totalTasks = tasks.length
 
-    const completedTasks = tasks.filter((task: typeof tasks[0]) => Number(task.progress) >= 100).length
+    const completedTasks = tasks.filter((task) => Number(task.progress) >= 100).length
 
     const inProgressTasks = tasks.filter(
-      (task: typeof tasks[0]) => Number(task.progress) > 0 && Number(task.progress) < 100
+      (task) => Number(task.progress) > 0 && Number(task.progress) < 100
     ).length
 
-    const notStartedTasks = tasks.filter((task: typeof tasks[0]) => Number(task.progress) === 0).length
+    const notStartedTasks = tasks.filter((task) => Number(task.progress) === 0).length
 
     const averageTaskProgress =
       totalTasks > 0
-        ? tasks.reduce((sum: number, task: typeof tasks[0]) => sum + Number(task.progress), 0) /
+        ? tasks.reduce((sum, task) => sum + Number(task.progress), 0) /
           totalTasks
         : 0
 
@@ -140,13 +141,13 @@ export async function GET(
 
       while (currentDate <= projectDates.endDate) {
         const tasksUpToDate = tasks.filter(
-          (t: typeof tasks[0]) => t.startDate && t.startDate <= currentDate
+          (t) => t.startDate && t.startDate <= currentDate
         )
 
         const currentProgress =
           tasksUpToDate.length > 0
             ? tasksUpToDate.reduce(
-                (sum: number, t: typeof tasks[0]) => sum + Number(t.progress),
+                (sum, t) => sum + Number(t.progress),
                 0
               ) / tasksUpToDate.length
             : 0

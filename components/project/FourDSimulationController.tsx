@@ -31,7 +31,7 @@ export default function FourDSimulationController({
   const [currentDate, setCurrentDate] = useState<Date | null>(null)
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null)
   const [playbackSpeed, setPlaybackSpeed] = useState(1) // days per second
-  const animationRef = useRef<number>()
+  const animationRef = useRef<number>(undefined)
   const lastUpdateRef = useRef<number>(Date.now())
 
   // Calculate date range from tasks

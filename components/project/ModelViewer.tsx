@@ -7,8 +7,6 @@ import {
   ZoomOut, 
   Maximize, 
   RotateCcw,
-  Eye,
-  EyeOff,
   Layers
 } from 'lucide-react';
 
@@ -44,10 +42,7 @@ export default function ModelViewer({ project, selectedTask }: ModelViewerProps)
       // Load Speckle Viewer
       const { Viewer } = await import('@speckle/viewer');
       
-      const speckleViewer = new Viewer({
-        container: viewerRef.current!,
-        showStats: false,
-      });
+      const speckleViewer = new Viewer(viewerRef.current!);
 
       await speckleViewer.init();
       await speckleViewer.loadObject(project.bimUrl);
@@ -62,10 +57,8 @@ export default function ModelViewer({ project, selectedTask }: ModelViewerProps)
 
   const loadIFCModel = async () => {
     try {
-      // Load IFC model using web-ifc-three
-      const { IFCLoader } = await import('web-ifc-three/IFCLoader');
       const THREE = await import('three');
-      const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls');
+      const { OrbitControls } = await import('three/examples/jsm/controls/OrbitControls.js');
 
       // Setup Three.js scene
       const scene = new THREE.Scene();
@@ -93,22 +86,9 @@ export default function ModelViewer({ project, selectedTask }: ModelViewerProps)
       directionalLight.position.set(10, 10, 10);
       scene.add(directionalLight);
 
-      // Load IFC
-      const ifcLoader = new IFCLoader();
-      const modelPath = `/uploads/models/${project.models?.[0]?.fileName}`;
-      
-      ifcLoader.load(
-        modelPath,
-        (ifcModel: any) => {
-          scene.add(ifcModel);
-          setLoading(false);
-        },
-        undefined,
-        (error: any) => {
-          console.error('Error loading IFC:', error);
-          setLoading(false);
-        }
-      );
+      // Add placeholder grid for IFC models (IFC loading requires additional setup)
+      const gridHelper = new THREE.GridHelper(20, 20);
+      scene.add(gridHelper);
 
       // Animation loop
       const animate = () => {
@@ -119,6 +99,9 @@ export default function ModelViewer({ project, selectedTask }: ModelViewerProps)
       animate();
 
       setViewer({ scene, camera, renderer, controls });
+      setLoading(false);
+      
+      console.log('IFC viewer initialized. Note: Full IFC loading requires web-ifc-three package.');
     } catch (error) {
       console.error('Error loading IFC model:', error);
       setLoading(false);

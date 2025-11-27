@@ -16,7 +16,7 @@ interface Activity {
   timestamp: Date
   user?: {
     fullName: string
-  }
+  } | null
   project: {
     name: string
   }
