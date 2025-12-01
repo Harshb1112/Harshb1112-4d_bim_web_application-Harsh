@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { 
   Box, 
   Filter, 
@@ -15,12 +17,20 @@ import {
   Layers,
   PlusCircle,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Trash2,
+  Upload,
+  List,
+  Target,
+  Calendar,
+  BarChart3,
+  AlertTriangle
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Slider } from '@/components/ui/slider'
+import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import GanttChart from '../GanttChart'
 import UnifiedModelViewer from '../UnifiedModelViewer'
@@ -52,10 +62,17 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   // Dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
   const [taskProgress, setTaskProgress] = useState<number>(0)
   const [taskStatus, setTaskStatus] = useState<string>('todo')
   const [updating, setUpdating] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  
+  // Schedule tab state
+  const [scheduleTab, setScheduleTab] = useState('gantt')
 
   // Teams and users for task creation
   const [teams, setTeams] = useState<any[]>([])
@@ -307,6 +324,34 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
     }
   }
 
+  const handleDeleteTask = async () => {
+    if (!selectedTask) return
+    
+    setDeleting(true)
+    try {
+      const response = await fetch(`/api/tasks/${selectedTask.id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        toast.success('Task deleted successfully!')
+        await fetchTasks()
+        setShowDeleteDialog(false)
+        setShowUpdateDialog(false)
+        setSelectedTask(null)
+      } else {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to delete task')
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      toast.error('Error deleting task')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // Filter elements by type AND search text
   const filteredElements = selectedElements.filter(el => {
     // Filter by type
@@ -361,42 +406,260 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   const uniqueNames = Object.entries(elementNameCounts)
     .sort((a, b) => b[1] - a[1])
 
+  // Import schedule handler
+  const handleImportSchedule = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('projectId', project.id.toString())
+    try {
+      const res = await fetch('/api/tasks/import', { method: 'POST', credentials: 'include', body: formData })
+      if (res.ok) {
+        const data = await res.json()
+        toast.success(`Imported ${data.count || 0} tasks!`)
+        fetchTasks()
+        setShowImportDialog(false)
+      } else {
+        toast.error('Import failed')
+      }
+    } catch { toast.error('Import failed') }
+    finally { setImporting(false); e.target.value = '' }
+  }
+
+  // Calculate critical path (simplified - tasks with no slack)
+  const criticalPathTasks = tasks.filter(t => {
+    const hasDependent = tasks.some(other => other.dependencies?.some((d: any) => d.dependsOnId === t.id))
+    return t.status !== 'completed' && (hasDependent || !t.endDate)
+  })
+
+  // Format date helper
+  const formatDate = (date: string | null) => date ? new Date(date).toLocaleDateString() : '-'
+
   return (
-    <div className="space-y-6">
-      {/* Header with Filters */}
+    <div className="space-y-4">
+      {/* Header with Actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Project Schedule</h2>
-          <p className="text-sm text-gray-500 mt-1">Select BIM elements and create tasks</p>
+          <h2 className="text-xl font-semibold">Project Schedule</h2>
+          <p className="text-sm text-muted-foreground">Select BIM elements and create tasks</p>
         </div>
-        <Button onClick={fetchTasks} variant="outline" size="sm">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {canCreateTasks && (
+            <>
+              <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+                <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                  <Upload className="h-4 w-4 mr-2" />Import Schedule
+                </Button>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Import Schedule</DialogTitle>
+                    <DialogDescription>Upload MS Project (.xml) or Primavera P6 (.xml, .xer) schedule file</DialogDescription>
+                  </DialogHeader>
+                  <div className="py-6">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors cursor-pointer">
+                      <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-sm font-medium mb-2">Click to upload or drag and drop</p>
+                      <p className="text-xs text-muted-foreground">Supported: MS Project XML, Primavera P6 XML, Primavera XER</p>
+                      <Input 
+                        type="file" 
+                        accept=".xml,.xer,.xlsx,.xls,.csv,.mpp" 
+                        onChange={handleImportSchedule} 
+                        disabled={importing} 
+                        className="max-w-xs mx-auto mt-4 cursor-pointer" 
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
+                    <Button disabled={importing} className="bg-orange-400 hover:bg-orange-500">
+                      {importing ? 'Importing...' : `Import ${tasks.length} Tasks`}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Button variant="outline" onClick={() => setScheduleTab('4dbim')}>
+                <Box className="h-4 w-4 mr-2" />Add Tasks from Model
+              </Button>
+              <Button onClick={() => setShowCreateDialog(true)} className="bg-orange-500 hover:bg-orange-600">
+                <PlusCircle className="h-4 w-4 mr-2" />Add Task
+              </Button>
+            </>
+          )}
+          <Button onClick={fetchTasks} variant="outline" size="icon">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      {/* Role Info Banner for non-creators */}
-      {!canCreateTasks && (
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="p-4">
-            <div className="text-sm text-blue-800">
-              <strong>👁️ {
-                currentUserRole === 'viewer' ? 'Viewer' : 
-                currentUserRole === 'member' ? 'Member' : 
-                currentUserRole === 'team_leader' && userSeniority === 'junior' ? 'Junior Team Leader' :
-                'Team Leader'
-              } Mode</strong>
-              <p className="mt-2">
-                {currentUserRole === 'team_leader' 
-                  ? userSeniority === 'junior'
-                    ? 'You can view and update all tasks in your team. Only Senior Team Leader, Manager, or Admin can create new tasks.'
-                    : 'You can view and update all tasks in your team. Contact Manager/Admin to create new tasks.'
-                  : 'You can view tasks and update progress on your assigned tasks. Only Admin/Manager/Senior Team Leader can create new tasks.'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Schedule Tabs */}
+      <Tabs value={scheduleTab} onValueChange={setScheduleTab} className="space-y-4">
+        <TabsList className="bg-gray-100">
+          <TabsTrigger value="gantt" className="data-[state=active]:bg-orange-500 data-[state=active]:text-white">
+            <BarChart3 className="h-4 w-4 mr-2" />Gantt Chart
+          </TabsTrigger>
+          <TabsTrigger value="4dbim">
+            <Box className="h-4 w-4 mr-2" />4D BIM
+          </TabsTrigger>
+          <TabsTrigger value="tasklist">
+            <List className="h-4 w-4 mr-2" />Task List
+          </TabsTrigger>
+          <TabsTrigger value="critical">
+            <AlertTriangle className="h-4 w-4 mr-2" />Critical Path
+          </TabsTrigger>
+          <TabsTrigger value="baselines">
+            <Target className="h-4 w-4 mr-2" />Baselines
+          </TabsTrigger>
+        </TabsList>
+
+        {/* GANTT CHART TAB */}
+        <TabsContent value="gantt">
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle>Project Timeline</CardTitle>
+                <Badge variant="secondary">{tasks.length} tasks</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+                </div>
+              ) : tasks.length === 0 ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No tasks yet. Create tasks from 4D BIM tab or import a schedule.</p>
+                </div>
+              ) : (
+                <GanttChart tasks={tasks} onTaskClick={handleTaskClick} />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TASK LIST TAB */}
+        <TabsContent value="tasklist">
+          <Card>
+            <CardHeader>
+              <CardTitle>Task List</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Task Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Start Date</TableHead>
+                    <TableHead>End Date</TableHead>
+                    <TableHead>Assignee</TableHead>
+                    <TableHead>Elements</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tasks.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No tasks</TableCell></TableRow>
+                  ) : tasks.map(task => (
+                    <TableRow key={task.id}>
+                      <TableCell className="font-medium">{task.name}</TableCell>
+                      <TableCell>
+                        <Badge variant={task.status === 'completed' ? 'default' : task.status === 'in_progress' ? 'secondary' : 'outline'} 
+                          className={task.status === 'completed' ? 'bg-green-500' : task.status === 'in_progress' ? 'bg-blue-500 text-white' : ''}>
+                          {(task.status || 'todo').replace('_', ' ')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={task.progress || 0} className="w-16 h-2" />
+                          <span className="text-xs">{task.progress || 0}%</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatDate(task.startDate)}</TableCell>
+                      <TableCell>{formatDate(task.endDate)}</TableCell>
+                      <TableCell>{task.assignee?.fullName || '-'}</TableCell>
+                      <TableCell><Badge variant="outline">{task.elementLinks?.length || 0}</Badge></TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => handleTaskClick(task)}>Edit</Button>
+                        {canCreateTasks && <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { setSelectedTask(task); setShowDeleteDialog(true) }}><Trash2 className="h-4 w-4" /></Button>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* CRITICAL PATH TAB */}
+        <TabsContent value="critical">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                Critical Path Analysis
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {criticalPathTasks.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CheckCircle2 className="h-12 w-12 mx-auto mb-4 text-green-500" />
+                  <p>No critical tasks! All tasks are on track.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {criticalPathTasks.length} tasks on critical path - delays here will affect project completion
+                  </p>
+                  {criticalPathTasks.map((task, idx) => (
+                    <div key={task.id} className="flex items-center gap-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold">{idx + 1}</div>
+                      <div className="flex-1">
+                        <p className="font-medium">{task.name}</p>
+                        <p className="text-sm text-muted-foreground">{formatDate(task.startDate)} → {formatDate(task.endDate)}</p>
+                      </div>
+                      <Badge variant="outline" className="border-red-300">{task.progress || 0}%</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* BASELINES TAB */}
+        <TabsContent value="baselines">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Project Baselines</CardTitle>
+                {canCreateTasks && <Button size="sm"><PlusCircle className="h-4 w-4 mr-2" />Save Baseline</Button>}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                <Target className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No baselines saved yet.</p>
+                <p className="text-sm mt-2">Save a baseline to track schedule changes over time.</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 4D BIM TAB */}
+        <TabsContent value="4dbim">
+          {/* Role Info Banner */}
+          {!canCreateTasks && (
+            <Card className="bg-blue-50 border-blue-200 mb-4">
+              <CardContent className="p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>View Only:</strong> You can view but not create tasks. Contact Admin/Manager for task creation.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -748,54 +1011,10 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
             </CardContent>
           </Card>
         </div>
-      </div>
-      {/* End of Main Content Grid */}
-
-      {/* Gantt Chart - Separate section below grid */}
-      <Card className="mt-6">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Project Timeline</CardTitle>
-            {tasks.length > 0 && (
-              <Badge variant="secondary">{tasks.length} tasks</Badge>
-            )}
           </div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
-              <p className="ml-3 text-gray-600">Loading tasks...</p>
-            </div>
-          ) : tasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-dashed border-blue-200">
-              <div className="text-center p-8">
-                <div className="text-6xl mb-4">📅</div>
-                <h3 className="text-xl font-bold text-gray-800 mb-2">No Tasks Yet</h3>
-                <p className="text-gray-600 mb-4">
-                  Select elements from the 3D viewer and create your first task!
-                </p>
-                <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-full bg-gray-400"></span>
-                    Not Started
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
-                    In Progress
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                    Completed
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <GanttChart tasks={tasks} onTaskClick={handleTaskClick} />
-          )}
-        </CardContent>
-      </Card>
+        </TabsContent>
+      </Tabs>
+      {/* End of Schedule Tabs */}
 
       {/* Create Task Dialog */}
       <CreateTaskFromElementsDialog
@@ -934,23 +1153,80 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
             )}
           </div>
 
+          <DialogFooter className="flex justify-between sm:justify-between">
+            {/* Delete Button - Only for Admin/Manager */}
+            {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteDialog(true)}
+                disabled={updating}
+                className="mr-auto"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowUpdateDialog(false)}
+                disabled={updating}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUpdateTask}
+                disabled={
+                  updating || 
+                  ((currentUserRole === 'viewer' || currentUserRole === 'member') && 
+                   selectedTask?.assigneeId !== currentUserId)
+                }
+              >
+                {updating ? "Updating..." : "Update Task"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Delete Task
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this task? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="font-medium text-red-800">{selectedTask?.name}</p>
+              <div className="mt-2 text-sm text-red-600 space-y-1">
+                <p>• All progress data will be lost</p>
+                <p>• {selectedTask?.elementLinks?.length || 0} element links will be removed</p>
+                <p>• This task will be removed from timeline</p>
+              </div>
+            </div>
+          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setShowUpdateDialog(false)}
-              disabled={updating}
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={deleting}
             >
               Cancel
             </Button>
             <Button
-              onClick={handleUpdateTask}
-              disabled={
-                updating || 
-                ((currentUserRole === 'viewer' || currentUserRole === 'member') && 
-                 selectedTask?.assigneeId !== currentUserId)
-              }
+              variant="destructive"
+              onClick={handleDeleteTask}
+              disabled={deleting}
             >
-              {updating ? "Updating..." : "Update Task"}
+              {deleting ? "Deleting..." : "Yes, Delete Task"}
             </Button>
           </DialogFooter>
         </DialogContent>

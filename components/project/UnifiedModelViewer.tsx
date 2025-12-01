@@ -1,14 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useMemo, useState } from 'react'
-import SpeckleViewer from './SpeckleViewer'
-import AutodeskViewer from './viewers/AutodeskViewer'
-import IFCViewer from './viewers/IFCViewer'
+import { useMemo, useState, forwardRef, useImperativeHandle, useRef, useEffect } from 'react'
+import SpeckleViewer, { SpeckleViewerRef } from './SpeckleViewer'
+import AutodeskViewer, { AutodeskViewerRef } from './viewers/AutodeskViewer'
+import IFCViewer, { IFCViewerRef } from './viewers/IFCViewer'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, Box } from 'lucide-react'
+
+export interface UnifiedModelViewerRef {
+  isolateObjects: (guids: string[], ghost?: boolean) => void
+  unIsolateObjects: () => void
+  hideObjects: (guids: string[]) => void
+  showObjects: (guids: string[]) => void
+  setColorFilter: (filter: any) => void
+}
 
 interface UnifiedModelViewerProps {
   project: any
@@ -16,11 +24,52 @@ interface UnifiedModelViewerProps {
   selectedElements?: string[]
 }
 
-export default function UnifiedModelViewer({ 
+const UnifiedModelViewer = forwardRef<UnifiedModelViewerRef, UnifiedModelViewerProps>(({ 
   project, 
   onElementSelect, 
   selectedElements 
-}: UnifiedModelViewerProps) {
+}, ref) => {
+  const speckleViewerRef = useRef<SpeckleViewerRef>(null)
+  const autodeskViewerRef = useRef<AutodeskViewerRef>(null)
+  const ifcViewerRef = useRef<IFCViewerRef>(null)
+  const [currentViewerType, setCurrentViewerType] = useState<string>('speckle')
+
+  // Expose methods via ref
+  useImperativeHandle(ref, () => ({
+    isolateObjects: (guids: string[], ghost?: boolean) => {
+      if (currentViewerType === 'autodesk' && autodeskViewerRef.current) {
+        autodeskViewerRef.current.isolateObjects(guids, ghost)
+      } else if (currentViewerType === 'ifc' && ifcViewerRef.current) {
+        ifcViewerRef.current.isolateObjects(guids, ghost)
+      } else if (speckleViewerRef.current) {
+        speckleViewerRef.current.isolateObjects(guids, ghost)
+      }
+    },
+    unIsolateObjects: () => {
+      if (currentViewerType === 'autodesk' && autodeskViewerRef.current) {
+        autodeskViewerRef.current.unIsolateObjects()
+      } else if (currentViewerType === 'ifc' && ifcViewerRef.current) {
+        ifcViewerRef.current.unIsolateObjects()
+      } else if (speckleViewerRef.current) {
+        speckleViewerRef.current.unIsolateObjects?.()
+      }
+    },
+    hideObjects: (guids: string[]) => {
+      if (speckleViewerRef.current) {
+        speckleViewerRef.current.hideObjects(guids)
+      }
+    },
+    showObjects: (guids: string[]) => {
+      if (speckleViewerRef.current) {
+        speckleViewerRef.current.showObjects(guids)
+      }
+    },
+    setColorFilter: (filter: any) => {
+      if (speckleViewerRef.current) {
+        speckleViewerRef.current.setColorFilter(filter)
+      }
+    }
+  }))
   
   // Analyze all models and their sources
   const modelAnalysis = useMemo(() => {
@@ -102,6 +151,11 @@ export default function UnifiedModelViewer({
     // Default to speckle
     return { type: 'speckle', detail: 'speckle' }
   }, [selectedModel])
+
+  // Update current viewer type when model source changes
+  useEffect(() => {
+    setCurrentViewerType(selectedModelSource.type)
+  }, [selectedModelSource.type])
 
   // Check if selected model has required data
   const modelHasData = useMemo(() => {
@@ -198,7 +252,7 @@ export default function UnifiedModelViewer({
       )}
 
       {/* Viewer Area */}
-      <div className="flex-1 overflow-hidden" style={{ minHeight: '450px' }}>
+      <div className="flex-1 overflow-hidden" style={{ minHeight: '700px' }}>
         {/* Model data incomplete warning */}
         {!modelHasData && (
           <div className="flex items-center justify-center h-full bg-gradient-to-br from-gray-50 to-gray-100">
@@ -230,6 +284,7 @@ export default function UnifiedModelViewer({
         {/* Speckle Viewer */}
         {modelHasData && selectedModelSource.type === 'speckle' && (
           <SpeckleViewer
+            ref={speckleViewerRef}
             project={{
               ...project,
               speckleUrl: selectedModel?.speckleUrl || project.speckleUrl,
@@ -243,6 +298,7 @@ export default function UnifiedModelViewer({
         {/* Autodesk Forge Viewer */}
         {modelHasData && (selectedModelSource.type === 'autodesk' || selectedModelSource.detail === 'autodesk_drive' || selectedModelSource.detail === 'autodesk_construction_cloud') && (
           <AutodeskViewer
+            ref={autodeskViewerRef}
             model={selectedModel}
             onElementSelect={onElementSelect}
           />
@@ -251,6 +307,7 @@ export default function UnifiedModelViewer({
         {/* Local IFC File Viewer */}
         {modelHasData && (selectedModelSource.type === 'ifc' || selectedModelSource.detail === 'local_ifc') && (
           <IFCViewer
+            ref={ifcViewerRef}
             model={selectedModel}
             onElementSelect={onElementSelect}
           />
@@ -258,4 +315,8 @@ export default function UnifiedModelViewer({
       </div>
     </div>
   )
-}
+})
+
+UnifiedModelViewer.displayName = 'UnifiedModelViewer'
+
+export default UnifiedModelViewer

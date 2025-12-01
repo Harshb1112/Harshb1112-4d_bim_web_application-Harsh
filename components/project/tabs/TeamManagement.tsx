@@ -7,6 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { UserPlus, Trash2, Users, ShieldCheck, Eye, Crown } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -15,16 +23,17 @@ interface TeamManagementProps {
 }
 
 export default function TeamManagement({ project: initialProject }: TeamManagementProps) {
-  const [project, setProject] = useState(initialProject)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [memberRole, setMemberRole] = useState('member')
-  const [selectedTeamId, setSelectedTeamId] = useState(project.teamId?.toString() || '')
+  const [selectedTeamId, setSelectedTeamId] = useState(initialProject.teamId?.toString() || initialProject.team?.id?.toString() || '')
   const [teams, setTeams] = useState<any[]>([])
-  const [teamMembers, setTeamMembers] = useState<any[]>([])
+  // Initialize with project's team members if available
+  const [teamMembers, setTeamMembers] = useState<any[]>(initialProject.team?.members || [])
   const [loading, setLoading] = useState(false)
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState('')
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
 
   // Fetch teams and current user role
   useEffect(() => {
@@ -48,18 +57,15 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
         if (response.ok) {
           const data = await response.json()
           const fetchedTeams = data.teams || []
-          console.log('✅ Fetched teams:', fetchedTeams.length)
-          console.log('✅ First team members:', fetchedTeams[0]?.members?.length)
           setTeams(fetchedTeams)
           
           // Auto-select first team or project's team
           if (fetchedTeams.length > 0) {
-            const teamToSelect = project.teamId 
-              ? fetchedTeams.find((t: any) => t.id === project.teamId)?.id.toString()
+            const teamToSelect = initialProject.teamId 
+              ? fetchedTeams.find((t: any) => t.id === initialProject.teamId)?.id.toString()
               : fetchedTeams[0].id.toString()
             
             if (teamToSelect) {
-              console.log('✅ Auto-selecting team:', teamToSelect)
               setSelectedTeamId(teamToSelect)
             }
           }
@@ -69,7 +75,7 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
       }
     }
     fetchData()
-  }, [project.teamId])
+  }, [initialProject.teamId])
 
   // Fetch team members when team is selected OR teams change
   useEffect(() => {
@@ -139,6 +145,13 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
           throw new Error(data.error || 'Failed to add member')
         }
 
+        // Refresh teams to get updated members
+        const teamsResponse = await fetch('/api/teams', { credentials: 'include' })
+        if (teamsResponse.ok) {
+          const teamsData = await teamsResponse.json()
+          setTeams(teamsData.teams || [])
+        }
+        
         // Refresh team members
         await fetchTeamMembers(selectedTeamId)
         
@@ -148,6 +161,9 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
 
         if (data.temporaryPassword) {
           setTempPassword(data.temporaryPassword)
+        } else {
+          // Close dialog if no temp password to show
+          setInviteDialogOpen(false)
         }
         
         resolve(data.message || 'Member added successfully')
@@ -293,19 +309,184 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
     return teamRole
   }
 
+  // Calculate role counts
+  const roleCounts = {
+    total: teamMembers.length,
+    admin: teamMembers.filter(m => m.user.role === 'admin').length,
+    manager: teamMembers.filter(m => m.user.role === 'manager').length,
+    teamLeader: teamMembers.filter(m => m.role === 'leader' || m.user.role === 'team_leader').length,
+    member: teamMembers.filter(m => m.role === 'member' || m.user.role === 'viewer').length,
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2">
+    <div className="space-y-6">
+      {/* Header with Invite Button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Team Members</h2>
+          <p className="text-sm text-muted-foreground">Manage your project team and assign roles</p>
+        </div>
+        {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
+          <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Invite Member
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5" />
+                  Invite New {currentUserRole === 'admin' ? 'User' : 'Team Member'}
+                </DialogTitle>
+                <DialogDescription>
+                  Add a new user to this project. If the user doesn&apos;t exist, an account will be created.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleAddMember} className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="user@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dialogTeamSelect">Select Team</Label>
+                  <Select value={selectedTeamId} onValueChange={setSelectedTeamId} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id.toString()}>
+                          {team.name} ({team.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="memberRole">
+                    {currentUserRole === 'admin' ? 'User Role' : 'Team Role'}
+                  </Label>
+                  <Select value={memberRole} onValueChange={setMemberRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {currentUserRole === 'admin' && (
+                        <>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="manager">Manager</SelectItem>
+                        </>
+                      )}
+                      <SelectItem value="leader">Team Leader</SelectItem>
+                      <SelectItem value="member">Member</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'Adding...' : 'Add Member'}
+                </Button>
+              </form>
+              {tempPassword && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+                  <p className="font-medium">Temporary Password:</p>
+                  <p className="font-mono break-all">{tempPassword}</p>
+                  <p className="mt-2 text-xs">Share this with the new user.</p>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Users className="h-5 w-5" />
-              <span>Team Members</span>
-            </CardTitle>
-            <CardDescription>
-              Manage team members. {currentUserRole === 'admin' || currentUserRole === 'manager' ? 'Select a team to view and manage its members.' : 'View and manage your team members.'}
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{roleCounts.total}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Admins</CardTitle>
+            <ShieldCheck className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{roleCounts.admin}</div>
+            <p className="text-xs text-muted-foreground">Full control</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Managers</CardTitle>
+            <ShieldCheck className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{roleCounts.manager}</div>
+            <p className="text-xs text-muted-foreground">Project management</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Team Leaders</CardTitle>
+            <Crown className="h-4 w-4 text-yellow-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{roleCounts.teamLeader}</div>
+            <p className="text-xs text-muted-foreground">Team supervision</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Members</CardTitle>
+            <Users className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{roleCounts.member}</div>
+            <p className="text-xs text-muted-foreground">Team members</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Content */}
+      <div>
+        <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Users className="h-5 w-5" />
+                <span>Team Members</span>
+              </CardTitle>
+              <CardDescription>
+                Manage team members. {currentUserRole === 'admin' || currentUserRole === 'manager' ? 'Select a team to view and manage its members.' : 'View and manage your team members.'}
+              </CardDescription>
+            </CardHeader>
           <CardContent>
             {(currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader') && teams.length > 1 && (
               <div className="mb-4">
@@ -401,109 +582,6 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
           </CardContent>
         </Card>
       </div>
-      {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <UserPlus className="h-5 w-5" />
-                <span>Invite New {currentUserRole === 'admin' ? 'User' : 'Team Member'}</span>
-              </CardTitle>
-              <CardDescription>
-                Add a new user to this project by their email address. If the user doesn&apos;t exist, an account will be created.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAddMember} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="teamSelect">Select Team</Label>
-                <Select value={selectedTeamId} onValueChange={setSelectedTeamId} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose team to add member to" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id.toString()}>
-                        {team.name} ({team.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500">
-                  Member will be added to this team
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="memberRole">
-                  {currentUserRole === 'admin' ? 'User Role' : 'Team Role'}
-                </Label>
-                <Select value={memberRole} onValueChange={setMemberRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {currentUserRole === 'admin' && (
-                      <>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="manager">Manager</SelectItem>
-                      </>
-                    )}
-                    {(currentUserRole === 'admin' || currentUserRole === 'manager') && (
-                      <>
-                        <SelectItem value="leader">Team Leader</SelectItem>
-                        <SelectItem value="member">Member</SelectItem>
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-                {currentUserRole === 'admin' && (
-                  <p className="text-xs text-gray-500">
-                    As Admin, you can create users with any role
-                  </p>
-                )}
-                {currentUserRole === 'manager' && (
-                  <p className="text-xs text-gray-500">
-                    As Manager, you can create Team Leaders and Members
-                  </p>
-                )}
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Adding...' : 'Add Member'}
-              </Button>
-            </form>
-            {tempPassword && (
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
-                <p className="font-medium">Temporary Password Generated:</p>
-                <p className="font-mono break-all">{tempPassword}</p>
-                <p className="mt-2">Please share this with the new user. In a production environment, an email would be sent automatically.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        </div>
-      )}
     </div>
   )
 }

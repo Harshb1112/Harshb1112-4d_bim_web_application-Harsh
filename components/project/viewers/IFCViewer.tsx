@@ -1,16 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle, Loader2 } from 'lucide-react'
+
+export interface IFCViewerRef {
+  isolateObjects: (guids: string[], ghost?: boolean) => void
+  unIsolateObjects: () => void
+}
 
 interface IFCViewerProps {
   model: any
   onElementSelect?: (elementId: string, element: any) => void
 }
 
-export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
+const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSelect }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<any>(null)
   const onElementSelectRef = useRef(onElementSelect)
@@ -24,6 +29,38 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
   useEffect(() => {
     onElementSelectRef.current = onElementSelect
   }, [onElementSelect])
+
+  // Expose methods via ref for external control
+  useImperativeHandle(ref, () => ({
+    isolateObjects: (guids: string[]) => {
+      // IFC viewer isolation - highlight selected elements
+      if (viewerRef.current && guids.length > 0) {
+        try {
+          const viewer = viewerRef.current
+          // Try to select/highlight the elements
+          const expressIds = guids.map(g => parseInt(g)).filter(id => !isNaN(id))
+          if (expressIds.length > 0 && viewer.IFC) {
+            // Highlight the elements
+            viewer.IFC.selector?.pickIfcItemsByID(0, expressIds, true)
+          }
+        } catch (e) {
+          console.warn('IFC isolation error:', e)
+        }
+      }
+    },
+    unIsolateObjects: () => {
+      if (viewerRef.current) {
+        try {
+          const viewer = viewerRef.current
+          if (viewer.IFC) {
+            viewer.IFC.selector?.unpickIfcItems()
+          }
+        } catch (e) {
+          console.warn('IFC un-isolation error:', e)
+        }
+      }
+    }
+  }))
 
   const fileUrl = model?.fileUrl || model?.filePath || model?.sourceUrl
 
@@ -183,7 +220,7 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
                     const placedGeometry = flatMesh.geometries.get(j)
                     const geometry = ifcApi.GetGeometry(modelID, placedGeometry.geometryExpressID)
                     
-                    const vertices = ifcApi.GetVertexArray(
+                    const vertexData = ifcApi.GetVertexArray(
                       geometry.GetVertexData(),
                       geometry.GetVertexDataSize()
                     )
@@ -192,10 +229,25 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
                       geometry.GetIndexDataSize()
                     )
                     
+                    // web-ifc returns 6 floats per vertex: x, y, z, nx, ny, nz
+                    // Extract positions and normals separately
+                    const vertexCount = vertexData.length / 6
+                    const positions = new Float32Array(vertexCount * 3)
+                    const normals = new Float32Array(vertexCount * 3)
+                    
+                    for (let v = 0; v < vertexCount; v++) {
+                      positions[v * 3] = vertexData[v * 6]       // x
+                      positions[v * 3 + 1] = vertexData[v * 6 + 1] // y
+                      positions[v * 3 + 2] = vertexData[v * 6 + 2] // z
+                      normals[v * 3] = vertexData[v * 6 + 3]     // nx
+                      normals[v * 3 + 1] = vertexData[v * 6 + 4] // ny
+                      normals[v * 3 + 2] = vertexData[v * 6 + 5] // nz
+                    }
+                    
                     const bufferGeometry = new THREE.BufferGeometry()
-                    bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+                    bufferGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+                    bufferGeometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
                     bufferGeometry.setIndex(Array.from(indices))
-                    bufferGeometry.computeVertexNormals()
                     
                     // Color based on type
                     let color = 0xcccccc
@@ -343,7 +395,7 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
                       const placedGeometry = flatMesh.geometries.get(j)
                       const geometry = ifcApi2.GetGeometry(modelID2, placedGeometry.geometryExpressID)
                       
-                      const vertices = ifcApi2.GetVertexArray(
+                      const vertexData2 = ifcApi2.GetVertexArray(
                         geometry.GetVertexData(),
                         geometry.GetVertexDataSize()
                       )
@@ -352,10 +404,24 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
                         geometry.GetIndexDataSize()
                       )
                       
+                      // Extract positions and normals (6 floats per vertex)
+                      const vertexCount2 = vertexData2.length / 6
+                      const positions2 = new Float32Array(vertexCount2 * 3)
+                      const normals2 = new Float32Array(vertexCount2 * 3)
+                      
+                      for (let v = 0; v < vertexCount2; v++) {
+                        positions2[v * 3] = vertexData2[v * 6]
+                        positions2[v * 3 + 1] = vertexData2[v * 6 + 1]
+                        positions2[v * 3 + 2] = vertexData2[v * 6 + 2]
+                        normals2[v * 3] = vertexData2[v * 6 + 3]
+                        normals2[v * 3 + 1] = vertexData2[v * 6 + 4]
+                        normals2[v * 3 + 2] = vertexData2[v * 6 + 5]
+                      }
+                      
                       const bufferGeometry = new THREE.BufferGeometry()
-                      bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+                      bufferGeometry.setAttribute('position', new THREE.BufferAttribute(positions2, 3))
+                      bufferGeometry.setAttribute('normal', new THREE.BufferAttribute(normals2, 3))
                       bufferGeometry.setIndex(Array.from(indices))
-                      bufferGeometry.computeVertexNormals()
                       
                       const material = new THREE.MeshPhongMaterial({
                         color: 0xcccccc,
@@ -592,4 +658,8 @@ export default function IFCViewer({ model, onElementSelect }: IFCViewerProps) {
       </div>
     </div>
   )
-}
+})
+
+IFCViewer.displayName = 'IFCViewer'
+
+export default IFCViewer

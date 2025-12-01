@@ -29,9 +29,9 @@ export default async function SchedulePage({ params }: { params: Promise<{ id: s
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="p-8">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">IFC Schedule Manager</h1>
+        <h1 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">IFC Schedule Manager</h1>
         <ScheduleManager projectId={projectId} />
       </div>
     </div>

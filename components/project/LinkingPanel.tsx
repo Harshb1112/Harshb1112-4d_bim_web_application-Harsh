@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,10 +27,12 @@ import {
   Trash2,
   Lightbulb,
   Loader2,
-  Eye
+  Eye,
+  MousePointer
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
+import UnifiedModelViewer from './UnifiedModelViewer'
 
 interface LinkingPanelProps {
   project: any
@@ -39,6 +41,7 @@ interface LinkingPanelProps {
   onElementSelect?: (elementIds: string[]) => void
   onTaskSelect?: (taskIds: string[]) => void
   onLinksUpdate?: () => void
+  currentUserRole?: string
 }
 
 interface Link {
@@ -85,8 +88,11 @@ export default function LinkingPanel({
   selectedTasks,
   onElementSelect,
   onTaskSelect,
-  onLinksUpdate
+  onLinksUpdate,
+  currentUserRole = 'viewer'
 }: LinkingPanelProps) {
+  const canEdit = currentUserRole === 'admin' || currentUserRole === 'manager'
+  
   const [links, setLinks] = useState<Link[]>([])
   const [elements, setElements] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -103,6 +109,8 @@ export default function LinkingPanel({
 
   const [elementGroups, setElementGroups] = useState<ElementGroup[]>([])
   const [activeTab, setActiveTab] = useState('links')
+  const [highlightedElement, setHighlightedElement] = useState<string | null>(null)
+  const viewerRef = useRef<any>(null)
 
   // AI Suggestion states
   const [aiElementSearch, setAiElementSearch] = useState('')
@@ -144,14 +152,22 @@ export default function LinkingPanel({
   const loadElements = async () => {
     try {
       if (project.models && project.models.length > 0) {
-        const modelId = project.models[0].id
-        const response = await fetch(`/api/models/${modelId}/elements`, {
-          credentials: 'include'
-        })
-        if (response.ok) {
-          const data = await response.json()
-          setElements(data.elements || [])
+        // Load elements from all models
+        const allElements: any[] = []
+        for (const model of project.models) {
+          try {
+            const response = await fetch(`/api/models/${model.id}/elements`, {
+              credentials: 'include'
+            })
+            if (response.ok) {
+              const data = await response.json()
+              allElements.push(...(data.elements || []))
+            }
+          } catch (e) {
+            console.error(`Failed to load elements from model ${model.id}:`, e)
+          }
         }
+        setElements(allElements)
       }
     } catch (error) {
       console.error('Failed to load elements:', error)
@@ -186,6 +202,36 @@ export default function LinkingPanel({
       groups[category].taskLinks += elementLinks.length
     })
     setElementGroups(Object.values(groups))
+  }
+
+  // Highlight element in viewer
+  const highlightElement = (guid: string) => {
+    setHighlightedElement(guid)
+    if (viewerRef.current) {
+      viewerRef.current.isolateObjects([guid], true)
+      toast.info('Element highlighted - will reset in 1 minute', { duration: 3000 })
+      
+      // Auto-reset after 1 minute (60 seconds)
+      setTimeout(() => {
+        if (viewerRef.current) {
+          viewerRef.current.unIsolateObjects?.()
+        }
+        setHighlightedElement(null)
+        toast.info('View reset to show all elements')
+      }, 60000)
+    } else {
+      toast.error('Viewer not ready. Please wait for model to load.')
+    }
+  }
+
+  // Handle element selection from viewer
+  const handleViewerElementSelect = (elementId: string, element: any) => {
+    if (onElementSelect) {
+      const newSelection = selectedElements.includes(elementId)
+        ? selectedElements.filter(id => id !== elementId)
+        : [...selectedElements, elementId]
+      onElementSelect(newSelection)
+    }
   }
 
   const createLinks = async (elementsToLink: number[], tasksToLink: number[], type: string, status: string, startDate: string | null, endDate: string | null) => {
@@ -301,7 +347,6 @@ export default function LinkingPanel({
     setSuggestedLinks([])
     const promise = new Promise(async (resolve, reject) => {
       try {
-        const token = document.cookie.split('token=')[1]?.split(';')[0]
         const response = await fetch('/api/ai/suggest-links', {
           method: 'POST',
           headers: {
@@ -320,6 +365,19 @@ export default function LinkingPanel({
           throw new Error(data.error || 'Failed to generate suggestions')
         }
 
+        // If no suggestions but we have data, show helpful message
+        if (data.suggestions.length === 0) {
+          if (data.elementsCount === 0) {
+            throw new Error('No elements found. Please upload a 3D model first.')
+          }
+          if (data.tasksCount === 0) {
+            throw new Error('No tasks found. Please create tasks in the Schedule tab first.')
+          }
+          // Don't throw error, just show empty state with message
+          toast.info('No automatic matches found. You can manually create links in the "Create Links" tab.')
+          return
+        }
+
         const enrichedSuggestions = data.suggestions.map((s: SuggestedLink) => ({
           ...s,
           element: elements.find(el => el.id === s.elementId),
@@ -327,8 +385,8 @@ export default function LinkingPanel({
           isSelected: true, // Default to selected
         }))
         setSuggestedLinks(enrichedSuggestions)
-        resolve(`${enrichedSuggestions.length} suggestions generated!`)
-      } catch (error) {
+        resolve(`${enrichedSuggestions.length} suggestions generated from ${data.totalMatches} matches!`)
+      } catch (error: any) {
         console.error('AI suggestion error:', error)
         reject(error)
       } finally {
@@ -337,9 +395,9 @@ export default function LinkingPanel({
     })
 
     toast.promise(promise, {
-      loading: 'Generating AI suggestions...',
+      loading: 'Analyzing elements and tasks...',
       success: (message) => `${message}`,
-      error: (err) => `Failed to generate suggestions: ${err.message}`,
+      error: (err) => `${err.message}`,
     })
   }
 
@@ -376,25 +434,46 @@ export default function LinkingPanel({
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className={`grid w-full ${canEdit ? 'grid-cols-4' : 'grid-cols-2'}`}>
           <TabsTrigger value="links"><Link2 className="h-4 w-4 mr-2" />Active Links</TabsTrigger>
-          <TabsTrigger value="create"><Plus className="h-4 w-4 mr-2" />Create Links</TabsTrigger>
-          <TabsTrigger value="ai-suggestion"><Lightbulb className="h-4 w-4 mr-2" />AI Suggestion</TabsTrigger>
+          {canEdit && <TabsTrigger value="create"><Plus className="h-4 w-4 mr-2" />Create Links</TabsTrigger>}
+          {canEdit && <TabsTrigger value="ai-suggestion"><Lightbulb className="h-4 w-4 mr-2" />AI Suggestion</TabsTrigger>}
           <TabsTrigger value="analysis"><Layers className="h-4 w-4 mr-2" />Analysis</TabsTrigger>
         </TabsList>
 
         <TabsContent value="links" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg">Element-Task Links</CardTitle>
-                  <CardDescription>Manage existing 4D relationships</CardDescription>
+          {/* Viewer for highlighting elements */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card className="h-[400px]">
+              <CardHeader className="py-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  3D Model Viewer
+                  {highlightedElement && (
+                    <Badge variant="secondary" className="text-xs">Highlighting: {highlightedElement.slice(0, 8)}...</Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 h-[calc(100%-50px)]">
+                <UnifiedModelViewer 
+                  ref={viewerRef}
+                  project={project}
+                  onElementSelect={handleViewerElementSelect}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Element-Task Links</CardTitle>
+                    <CardDescription>Click eye icon to highlight element in viewer</CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={loadLinksData}><Zap className="h-4 w-4 mr-2" />Refresh</Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={loadLinksData}><Zap className="h-4 w-4 mr-2" />Refresh</Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+              </CardHeader>
+              <CardContent className="space-y-4">
               <div className="flex space-x-4">
                 <div className="flex-1 relative">
                   <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
@@ -458,24 +537,21 @@ export default function LinkingPanel({
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            onClick={() => {
-                              toast.info('Link Details', {
-                                description: `Element: ${link.element.category} (${link.element.guid})\nTask: ${link.task.name}\nType: ${link.linkType}\nStatus: ${link.status}\nStart: ${link.startDate ? formatDate(link.startDate) : 'N/A'}\nEnd: ${link.endDate ? formatDate(link.endDate) : 'N/A'}`,
-                                duration: 5000
-                              })
-                            }}
-                            className="text-blue-600 hover:text-blue-700"
+                            onClick={() => highlightElement(link.element.guid)}
+                            className={`text-blue-600 hover:text-blue-700 ${highlightedElement === link.element.guid ? 'bg-blue-100' : ''}`}
+                            title="Highlight element in viewer"
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button 
+                          {canEdit && <Button 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => removeLinks([link.id])} 
                             className="text-red-600 hover:text-red-700"
+                            title="Remove link"
                           >
                             <Trash2 className="h-4 w-4" />
-                          </Button>
+                          </Button>}
                         </div>
                       </div>
                     </div>
@@ -484,9 +560,31 @@ export default function LinkingPanel({
               </div>
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="create" className="space-y-4">
+          {/* Viewer for element selection */}
+          <Card className="h-[400px]">
+            <CardHeader className="py-2">
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <MousePointer className="h-4 w-4" />
+                  Select Elements from Model
+                </span>
+                <Badge variant="outline">{selectedElements.length} selected</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[calc(100%-50px)]">
+              <UnifiedModelViewer 
+                ref={viewerRef}
+                project={project}
+                onElementSelect={handleViewerElementSelect}
+                selectedElements={selectedElements}
+              />
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
@@ -542,6 +640,36 @@ export default function LinkingPanel({
                       />
                     </div>
                   </div>
+                  {/* Task Selection */}
+                  <div>
+                    <Label>Select Tasks to Link</Label>
+                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 mt-1 space-y-1">
+                      {tasks.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-2">No tasks available</p>
+                      ) : (
+                        tasks.map((task: any) => (
+                          <label key={task.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={selectedTasks.includes(task.id.toString())}
+                              onChange={(e) => {
+                                if (onTaskSelect) {
+                                  const taskId = task.id.toString()
+                                  const newSelection = e.target.checked
+                                    ? [...selectedTasks, taskId]
+                                    : selectedTasks.filter(id => id !== taskId)
+                                  onTaskSelect(newSelection)
+                                }
+                              }}
+                              className="form-checkbox h-4 w-4 text-blue-600"
+                            />
+                            <span className="text-sm truncate">{task.name}</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h4 className="font-medium mb-2">Selection Summary</h4>
                     <div className="space-y-2 text-sm">

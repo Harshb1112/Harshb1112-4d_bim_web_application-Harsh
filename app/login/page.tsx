@@ -3,11 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { clearAllAuthTokens } from '@/lib/clear-auth'
 
@@ -21,15 +21,12 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
 
-    // Clear any old cached tokens first
     clearAllAuthTokens()
 
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
 
@@ -39,7 +36,6 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login failed')
       }
 
-      // Store token in cookie
       document.cookie = `token=${data.token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`
       toast.success('Login successful!', {
         description: `Welcome back, ${data.user.fullName}.`,
@@ -56,53 +52,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 flex flex-col items-center">
-          <div className="flex items-center space-x-2">
-            <Building2 className="h-8 w-8 text-blue-600" />
-            <CardTitle className="text-2xl font-bold">4D BIM</CardTitle>
-          </div>
-          <CardDescription>
-            Sign in to your account to continue
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Top right logo */}
+      <div className="absolute top-3 right-2 flex items-center gap-3">
+        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={200} height={150} />
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex items-center justify-center px-4">
+        <Card className="w-full max-w-md shadow-xl">
+          <CardHeader className="space-y-1 flex flex-col items-center pb-2">
+            <div className="w-14 h-14 bg-blue-900 rounded-xl flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+            <h2 className="text-2xl font-bold text-gray-800">BIM 4D Scheduler</h2>
+            <CardDescription>Sign in to manage your construction projects</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
+              <button className="flex-1 py-2 px-4 bg-white rounded-md shadow-sm text-sm font-medium text-gray-800">
+                Sign In
+              </button>
+              <Link href="/register" className="flex-1 py-2 px-4 text-sm font-medium text-gray-500 text-center hover:text-gray-700">
+                Sign Up
+              </Link>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign in'}
-            </Button>
-          </form>
-          <div className="mt-6 text-center text-sm">
-            <span className="text-gray-500">Don&apos;t have an account? </span>
-            <Link href="/register" className="text-blue-600 hover:underline">
-              Sign up
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="h-11" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required className="h-11" />
+              </div>
+              <Button type="submit" className="w-full h-11 bg-blue-900 hover:bg-blue-800" disabled={loading}>
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* Bottom logo - fixed at bottom */}
+      <div className="pb-7 flex justify-center items-center gap-3">
+        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={200} height={150} />
+      </div>
     </div>
   )
 }

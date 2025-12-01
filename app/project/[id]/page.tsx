@@ -119,11 +119,33 @@ async function getProject(projectId: string, userId: number, userRole: string) {
           }
         }
       },
+      activityLogs: {
+        include: {
+          user: {
+            select: {
+              fullName: true
+            }
+          }
+        },
+        orderBy: {
+          timestamp: 'desc'
+        },
+        take: 10
+      },
       team: {
-        select: {
-          id: true,
-          name: true,
-          code: true
+        include: {
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  role: true
+                }
+              }
+            }
+          }
         }
       },
       teamLeader: {
@@ -179,6 +201,10 @@ async function getProject(projectId: string, userId: number, userRole: string) {
     models: project.models.map(model => ({
       ...model,
       uploadedAt: model.uploadedAt.toISOString()
+    })),
+    activityLogs: project.activityLogs.map(log => ({
+      ...log,
+      timestamp: log.timestamp.toISOString()
     }))
   }
 
@@ -192,7 +218,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const seniority = await getUserSeniority(user.id, project.id)
  
   return (
-    <div className="min-h-screen bg-gray-50" suppressHydrationWarning>
+    <div suppressHydrationWarning>
       <ProjectHeader project={project} user={user} />
       <ProjectTabs 
         project={project} 

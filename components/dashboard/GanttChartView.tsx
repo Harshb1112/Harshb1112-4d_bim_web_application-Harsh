@@ -280,17 +280,17 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
 
   if (loading) {
     return (
-      <Card>
+      <Card className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
         <CardContent className="p-8 text-center">
           <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
-          <p className="mt-4 text-gray-500">Loading Gantt Chart...</p>
+          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading Gantt Chart...</p>
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card className="w-full h-[calc(100vh-8rem)] flex flex-col">
+    <Card className="w-full h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
       <CardHeader className="pb-6 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
@@ -311,13 +311,13 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
       <CardContent className="space-y-6 flex-1 flex flex-col overflow-hidden">
         {/* Project Info */}
         {selectedProject !== "all" && projects.length > 0 && (
-          <div className="p-5 bg-blue-50 border border-blue-200 rounded-lg flex-shrink-0">
+          <div className="p-5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex-shrink-0">
             <div className="flex items-start justify-between">
               <div className="space-y-2">
-                <h3 className="font-semibold text-xl">
+                <h3 className="font-semibold text-xl text-gray-900 dark:text-white">
                   {projects.find(p => p.id.toString() === selectedProject)?.name}
                 </h3>
-                <p className="text-base text-gray-600">
+                <p className="text-base text-gray-600 dark:text-gray-400">
                   {projects.find(p => p.id.toString() === selectedProject)?.description}
                 </p>
                 <div className="flex items-center gap-4 text-sm">
@@ -343,7 +343,7 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
         )}
 
         {/* Controls */}
-        <div className="flex flex-wrap items-center gap-4 p-5 bg-gray-50 rounded-lg flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-4 p-5 bg-gray-50 dark:bg-gray-800 rounded-lg flex-shrink-0">
           {/* Project Selector */}
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-gray-500" />
@@ -459,11 +459,11 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
         </div>
 
         {/* Gantt Chart */}
-        <div className="border rounded-lg overflow-hidden flex-1 flex flex-col">
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex-1 flex flex-col">
           {/* Timeline Header */}
-          <div className="bg-gray-100 border-b flex-shrink-0">
+          <div className="bg-gray-100 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             <div className="flex">
-              <div className="w-80 p-4 border-r font-semibold text-base">Task Name</div>
+              <div className="w-80 p-4 border-r border-gray-200 dark:border-gray-700 font-semibold text-base text-gray-900 dark:text-white">Task Name</div>
               <div className="flex-1 flex">
                 {timeline.map((date, idx) => (
                   <div 
@@ -472,11 +472,11 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
                   >
                     {viewMode === "week" || viewMode === "month" ? (
                       <div className="flex flex-col gap-1">
-                        <div className="text-xs text-gray-600">{format(date, "EEE")}</div>
-                        <div>{format(date, "dd MMM")}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">{format(date, "EEE")}</div>
+                        <div className="text-gray-900 dark:text-white">{format(date, "dd MMM")}</div>
                       </div>
                     ) : (
-                      format(date, "MMM yyyy")
+                      <span className="text-gray-900 dark:text-white">{format(date, "MMM yyyy")}</span>
                     )}
                   </div>
                 ))}
@@ -487,22 +487,22 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
           {/* Tasks */}
           <div className="flex-1 overflow-y-auto">
             {filteredTasks.length === 0 ? (
-              <div className="p-12 text-center text-gray-500 text-lg">
+              <div className="p-12 text-center text-gray-500 dark:text-gray-400 text-lg">
                 No tasks found. Create tasks to see them here.
               </div>
             ) : (
               filteredTasks.map((task) => {
                 const position = getTaskPosition(task)
                 return (
-                  <div key={task.id} className="flex border-b hover:bg-gray-50 transition-colors min-h-[80px]">
-                    <div className="w-80 p-3 border-r flex flex-col justify-center">
-                      <div className="font-semibold text-base truncate">{task.name}</div>
+                  <div key={task.id} className="flex border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors min-h-[80px]">
+                    <div className="w-80 p-3 border-r border-gray-200 dark:border-gray-700 flex flex-col justify-center">
+                      <div className="font-semibold text-base truncate text-gray-900 dark:text-white">{task.name}</div>
                       {selectedProject === "all" && (task as any).project && (
                         <div className="text-sm text-blue-600 font-medium mt-1.5">
                           📁 {(task as any).project.name}
                         </div>
                       )}
-                      <div className="text-sm text-gray-500 mt-1.5">
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
                         👤 {task.assignee?.fullName || "Unassigned"}
                       </div>
                       <div className="flex gap-1.5 mt-2">
@@ -558,20 +558,20 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
           <div className="flex items-center gap-8 text-base">
             <div className="flex items-center gap-2.5">
               <div className="w-5 h-5 bg-green-500 rounded"></div>
-              <span className="font-medium">Completed ({filteredTasks.filter(t => t.status === "done").length})</span>
+              <span className="font-medium text-gray-900 dark:text-white">Completed ({filteredTasks.filter(t => t.status === "done").length})</span>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-5 h-5 bg-blue-500 rounded"></div>
-              <span className="font-medium">In Progress ({filteredTasks.filter(t => t.status === "in_progress").length})</span>
+              <span className="font-medium text-gray-900 dark:text-white">In Progress ({filteredTasks.filter(t => t.status === "in_progress").length})</span>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-5 h-5 bg-gray-400 rounded"></div>
-              <span className="font-medium">To Do ({filteredTasks.filter(t => t.status === "todo").length})</span>
+              <span className="font-medium text-gray-900 dark:text-white">To Do ({filteredTasks.filter(t => t.status === "todo").length})</span>
             </div>
           </div>
           
           {filteredTasks.length > 0 && (
-            <div className="text-base text-gray-600 font-medium">
+            <div className="text-base text-gray-600 dark:text-gray-400 font-medium">
               Average Progress: {Math.round(filteredTasks.reduce((acc, t) => acc + (t.progress || 0), 0) / filteredTasks.length)}%
             </div>
           )}

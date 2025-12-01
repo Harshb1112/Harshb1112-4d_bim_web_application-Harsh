@@ -1,10 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Building2, LogOut, User, Calendar } from 'lucide-react'
-import Link from 'next/link'
+import Image from 'next/image'
+import { Menu } from 'lucide-react'
 import CreateProjectDialog from '@/components/dashboard/CreateProjectDialog'
 
 interface DashboardHeaderProps {
@@ -14,47 +11,40 @@ interface DashboardHeaderProps {
     email: string
     role: string
   }
+  onMenuClick?: () => void
 }
 
-export default function DashboardHeader({ user }: DashboardHeaderProps) {
-  const router = useRouter()
-
-  const handleLogout = () => {
-    document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
-    router.push('/login')
-  }
-
+export default function DashboardHeader({ user, onMenuClick }: DashboardHeaderProps) {
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <header className="bg-white dark:bg-gray-900 shadow-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-40">
+      <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Building2 className="h-8 w-8 text-blue-600" />
-              <h1 className="text-xl font-bold text-gray-900">4D BIM</h1>
+          <div className="flex items-center gap-4">
+            {/* Mobile menu button */}
+            <button
+              onClick={onMenuClick}
+              className="lg:hidden p-2 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">BIM 4D Scheduler</h1>
             </div>
           </div>
 
-          <div className="flex items-center space-x-4">
-            <Link href="/dashboard/gantt">
-              <Button variant="outline" size="sm">
-                <Calendar className="h-4 w-4 mr-2" />
-                Gantt Chart
-              </Button>
-            </Link>
-
-            {(user.role === 'admin' || user.role === 'manager') && <CreateProjectDialog />}
-
-            <Link href="/profile">
-              <Button variant="ghost" size="sm">
-                <User className="h-4 w-4 mr-2" />
-                {user.fullName}
-              </Button>
-            </Link>
-
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-4">
+            { /*(user.role === 'admin' || user.role === 'manager') && <CreateProjectDialog /> */ } 
+            
+            {/* Right side logo */}
+            <div className="hidden sm:flex items-center gap-3">
+              <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={140} height={120} />
+            </div>
           </div>
         </div>
       </div>

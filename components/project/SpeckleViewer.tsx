@@ -182,7 +182,14 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
     resetFilters: () => viewerRef.current?.resetFilters(),
     isolateObjects: (ids, ghost = true) => viewerRef.current?.isolateObjects(ids, null, null, ghost),
     unIsolateObjects: () => viewerRef.current?.unIsolateObjects(),
-    hideObjects: (ids) => viewerRef.current?.hideObjects(ids),
+    hideObjects: (ids) => {
+      if (ids.length === 0) {
+        // Hide all objects
+        viewerRef.current?.hideAllObjects?.() || viewerRef.current?.hideObjects?.([])
+      } else {
+        viewerRef.current?.hideObjects(ids)
+      }
+    },
     showObjects: (ids) => viewerRef.current?.showObjects(ids),
     showAllObjects: () => viewerRef.current?.showAllObjects(),
     loadObject: async (commitId: string) => {

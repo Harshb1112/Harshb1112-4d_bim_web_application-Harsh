@@ -1,11 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-     provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -14,177 +8,152 @@ datasource db {
 }
 
 model User {
-  id                Int      @id @default(autoincrement())
-  fullName          String   @map("full_name")
-  email             String   @unique
-  passwordHash      String   @map("password_hash")
-  role              String   @default("member")
-  isEmailVerified   Boolean  @default(false) @map("is_email_verified")
-  emailVerifyToken  String?  @unique @map("email_verify_token")
-  emailVerifyExpiry DateTime? @map("email_verify_expiry")
-  inviteToken       String?  @unique @map("invite_token")
-  inviteExpiry      DateTime? @map("invite_expiry")
-  invitedBy         Int?     @map("invited_by")
-  createdAt         DateTime @default(now()) @map("created_at")
-
-  // Relations
-  createdProjects Project[]      @relation("ProjectCreator")
-  projectUsers    ProjectUser[]
-  uploadedModels  Model[]        @relation("ModelUploader")
-  progressLogs    ProgressLog[]  @relation("ProgressUpdater")
-  activityLogs    ActivityLog[]
-  errorLogs       ErrorLog[]     @relation("ErrorReporter")
-
-  // NEW: team & role management
-  teamLeadProjects Project[]        @relation("TeamLeadProjects")
-  teamMemberships  TeamMembership[]
-  roleRequests     RoleRequest[]
-  assignedTasks    Task[]
-  taskComments     TaskComment[]
+  id                Int              @id @default(autoincrement())
+  fullName          String           @map("full_name")
+  email             String           @unique
+  passwordHash      String           @map("password_hash")
+  role              String           @default("member")
+  profileImage      String?          @map("profile_image")
+  isEmailVerified   Boolean          @default(false) @map("is_email_verified")
+  emailVerifyToken  String?          @unique @map("email_verify_token")
+  emailVerifyExpiry DateTime?        @map("email_verify_expiry")
+  inviteToken       String?          @unique @map("invite_token")
+  inviteExpiry      DateTime?        @map("invite_expiry")
+  invitedBy         Int?             @map("invited_by")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  activityLogs      ActivityLog[]
+  errorLogs         ErrorLog[]       @relation("ErrorReporter")
+  uploadedModels    Model[]          @relation("ModelUploader")
+  progressLogs      ProgressLog[]    @relation("ProgressUpdater")
+  projectUsers      ProjectUser[]
+  createdProjects   Project[]        @relation("ProjectCreator")
+  teamLeadProjects  Project[]        @relation("TeamLeadProjects")
+  roleRequests      RoleRequest[]
+  taskComments      TaskComment[]
+  assignedTasks     Task[]
+  teamMemberships   TeamMembership[]
 
   @@map("users")
 }
 
 model Project {
-  id           Int      @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   name         String
   description  String?
-  startDate    DateTime? @map("start_date")
-  endDate      DateTime? @map("end_date")
-  createdById  Int?     @map("created_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // NEW: team assignment
-  teamId       Int?     @map("team_id")
-  teamLeaderId Int?     @map("team_leader_id")
-  
-  // Speckle integration
-  speckleUrl   String?  @map("speckle_url")
-
-  // Relations
-  createdBy     User?           @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  projectUsers  ProjectUser[]
-  models        Model[]
-  tasks         Task[]
-  activityLogs  ActivityLog[]
-  errorLogs     ErrorLog[]
-
-  team          Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  teamLeader    User?           @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id], onDelete: SetNull)
+  image        String?       @map("project_image")
+  status       String        @default("active") @map("project_status")
+  startDate    DateTime?     @map("start_date")
+  endDate      DateTime?     @map("end_date")
+  createdById  Int?          @map("created_by")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  teamId       Int?          @map("team_id")
+  teamLeaderId Int?          @map("team_leader_id")
+  speckleUrl   String?       @map("speckle_url")
+  activityLogs ActivityLog[]
+  errorLogs    ErrorLog[]
+  models       Model[]
+  projectUsers ProjectUser[]
+  createdBy    User?         @relation("ProjectCreator", fields: [createdById], references: [id])
+  team         Team?         @relation(fields: [teamId], references: [id])
+  teamLeader   User?         @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
+  tasks        Task[]
+  resources    Resource[]
 
   @@map("projects")
 }
 
 model ProjectUser {
-  id        Int    @id @default(autoincrement())
-  userId    Int    @map("user_id")
-  projectId Int    @map("project_id")
-  role      String @default("member")
-
-  // Relations
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        Int     @id @default(autoincrement())
+  userId    Int     @map("user_id")
+  projectId Int     @map("project_id")
+  role      String  @default("member")
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("project_users")
 }
 
 model Model {
-  id         Int      @id @default(autoincrement())
-  projectId  Int      @map("project_id")
+  id         Int       @id @default(autoincrement())
+  projectId  Int       @map("project_id")
   name       String?
-  
-  // Source information
-  source     String   @default("speckle") // 'speckle', 'local_ifc', 'autodesk_acc', 'autodesk_drive'
-  sourceUrl  String?  @map("source_url") // Speckle URL, ACC URL, Drive URL
-  sourceId   String?  @map("source_id") // Speckle stream ID, ACC file ID, Drive file ID
-  
-  // File information
-  filePath   String?  @map("file_path") // For local uploads
-  fileSize   Int?     @map("file_size") // File size in bytes
-  format     String? // 'speckle', 'ifc', 'rvt', etc.
-  
-  // Metadata
-  version    Int      @default(1)
-  metadata   Json? // Source-specific metadata
-  uploadedBy Int?     @map("uploaded_by")
-  uploadedAt DateTime @default(now()) @map("uploaded_at")
-
-  // Relations
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  uploader  User?     @relation("ModelUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
-  elements  Element[]
+  source     String    @default("speckle")
+  sourceUrl  String?   @map("source_url")
+  sourceId   String?   @map("source_id")
+  filePath   String?   @map("file_path")
+  fileSize   Int?      @map("file_size")
+  format     String?
+  version    Int       @default(1)
+  metadata   Json?
+  uploadedBy Int?      @map("uploaded_by")
+  uploadedAt DateTime  @default(now()) @map("uploaded_at")
+  elements   Element[]
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader   User?     @relation("ModelUploader", fields: [uploadedBy], references: [id])
 
   @@map("models")
 }
 
 model Element {
-  id           Int     @id @default(autoincrement())
-  modelId      Int     @map("model_id")
-  guid         String? @unique
-  category     String?
-  family       String?
-  typeName     String? @map("type_name")
-  level        String?
-  geometryRef  String? @map("geometry_ref")
-  parameters   Json?
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // Relations
-  model           Model               @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  properties      ElementProperty[]
-  taskLinks       ElementTaskLink[]
-  elementStatus   ElementStatus[]
+  id            Int               @id @default(autoincrement())
+  modelId       Int               @map("model_id")
+  guid          String?           @unique
+  category      String?
+  family        String?
+  typeName      String?           @map("type_name")
+  level         String?
+  geometryRef   String?           @map("geometry_ref")
+  parameters    Json?
+  createdAt     DateTime          @default(now()) @map("created_at")
+  properties    ElementProperty[]
+  elementStatus ElementStatus[]
+  taskLinks     ElementTaskLink[]
+  model         Model             @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
   @@map("elements")
 }
 
 model ElementProperty {
-  id        Int    @id @default(autoincrement())
-  elementId Int    @map("element_id")
+  id        Int     @id @default(autoincrement())
+  elementId Int     @map("element_id")
   key       String
   value     String
-
-  // Relations
-  element Element @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  element   Element @relation(fields: [elementId], references: [id], onDelete: Cascade)
 
   @@map("element_properties")
 }
 
 model Task {
-  id              Int      @id @default(autoincrement())
-  projectId       Int      @map("project_id")
-  parentId        Int?     @map("parent_id")
+  id              Int               @id @default(autoincrement())
+  projectId       Int               @map("project_id")
+  parentId        Int?              @map("parent_id")
   name            String
   description     String?
-  startDate       DateTime? @map("start_date")
-  endDate         DateTime? @map("end_date")
-  actualStartDate DateTime? @map("actual_start_date")
-  actualEndDate   DateTime? @map("actual_end_date")
-  durationDays    Int?     @map("duration_days")
-  progress        Float    @default(0.0)
+  startDate       DateTime?         @map("start_date")
+  endDate         DateTime?         @map("end_date")
+  actualStartDate DateTime?         @map("actual_start_date")
+  actualEndDate   DateTime?         @map("actual_end_date")
+  durationDays    Int?              @map("duration_days")
+  progress        Float             @default(0.0)
   color           String?
   resource        String?
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  // NEW: team + assignee
-  teamId      Int?    @map("team_id")
-  assigneeId  Int?    @map("assignee_id")
-  status      String  @default("todo")
-  priority    String?
-
-  // Relations
-  project         Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parent          Task?             @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children        Task[]            @relation("TaskHierarchy")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  teamId          Int?              @map("team_id")
+  assigneeId      Int?              @map("assignee_id")
+  status          String            @default("todo")
+  priority        String?
   predecessors    Dependency[]      @relation("PredecessorTask")
   successors      Dependency[]      @relation("SuccessorTask")
+  elementStatus   ElementStatus[]
   elementLinks    ElementTaskLink[]
   progressLogs    ProgressLog[]
-  elementStatus   ElementStatus[]
-  comments        TaskComment[]
-
-  team            Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  assignee        User?             @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  comments            TaskComment[]
+  assignee            User?                @relation(fields: [assigneeId], references: [id])
+  parent              Task?                @relation("TaskHierarchy", fields: [parentId], references: [id])
+  children            Task[]               @relation("TaskHierarchy")
+  project             Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team                Team?                @relation(fields: [teamId], references: [id])
+  resourceAssignments ResourceAssignment[]
 
   @@map("tasks")
 }
@@ -194,12 +163,10 @@ model TaskComment {
   taskId      Int      @map("task_id")
   userId      Int      @map("user_id")
   comment     String
-  attachments String?  // JSON array of file URLs
+  attachments String?
   createdAt   DateTime @default(now()) @map("created_at")
-
-  // Relations
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("task_comments")
 }
@@ -209,26 +176,22 @@ model Dependency {
   predecessorId Int    @map("predecessor_id")
   successorId   Int    @map("successor_id")
   type          String @default("FS")
-
-  // Relations
-  predecessor Task @relation("PredecessorTask", fields: [predecessorId], references: [id], onDelete: Cascade)
-  successor   Task @relation("SuccessorTask", fields: [successorId], references: [id], onDelete: Cascade)
+  predecessor   Task   @relation("PredecessorTask", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor     Task   @relation("SuccessorTask", fields: [successorId], references: [id], onDelete: Cascade)
 
   @@map("dependencies")
 }
 
 model ElementTaskLink {
-  id        Int      @id @default(autoincrement())
-  elementId Int      @map("element_id")
-  taskId    Int      @map("task_id")
-  linkType  String   @default("construction") @map("link_type")
-  status    String   @default("planned")
-  startDate DateTime? @map("start_date") // New field
-  endDate   DateTime? @map("end_date")   // New field
-
-  // Relations
-  element Element @relation(fields: [elementId], references: [id], onDelete: Cascade)
-  task    Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id        Int       @id @default(autoincrement())
+  elementId Int       @map("element_id")
+  taskId    Int       @map("task_id")
+  linkType  String    @default("construction") @map("link_type")
+  status    String    @default("planned")
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+  element   Element   @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@map("element_task_links")
 }
@@ -241,26 +204,22 @@ model ProgressLog {
   updatedBy       Int?     @map("updated_by")
   note            String?
   createdAt       DateTime @default(now()) @map("created_at")
-
-  // Relations
-  task      Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  updater   User? @relation("ProgressUpdater", fields: [updatedBy], references: [id], onDelete: SetNull)
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  updater         User?    @relation("ProgressUpdater", fields: [updatedBy], references: [id])
 
   @@map("progress_logs")
 }
 
 model ElementStatus {
-  id          Int       @id @default(autoincrement())
-  elementId   Int       @map("element_id")
-  taskId      Int?      @map("task_id")
-  actualStart DateTime? @map("actual_start")
+  id           Int       @id @default(autoincrement())
+  elementId    Int       @map("element_id")
+  taskId       Int?      @map("task_id")
+  actualStart  DateTime? @map("actual_start")
   actualFinish DateTime? @map("actual_finish")
-  progress    Float     @default(0.0)
-  lastUpdated DateTime  @default(now()) @map("last_updated")
-
-  // Relations
-  element Element @relation(fields: [elementId], references: [id], onDelete: Cascade)
-  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  progress     Float     @default(0.0)
+  lastUpdated  DateTime  @default(now()) @map("last_updated")
+  element      Element   @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  task         Task?     @relation(fields: [taskId], references: [id])
 
   @@map("element_status")
 }
@@ -272,42 +231,36 @@ model ActivityLog {
   action    String
   details   Json?
   timestamp DateTime @default(now())
-
-  // Relations
-  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@map("activity_logs")
 }
 
 model ErrorLog {
-  id          Int      @id @default(autoincrement())
-  timestamp   DateTime @default(now())
-  level       String   @default("error") // e.g., "info", "warn", "error", "critical"
-  message     String
-  stackTrace  String?  @map("stack_trace")
-  context     Json?    // Additional context like request body, user agent, etc.
-  userId      Int?     @map("user_id")
-  projectId   Int?     @map("project_id")
-  
-  // Relations
-  user        User?    @relation("ErrorReporter", fields: [userId], references: [id], onDelete: SetNull)
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id         Int      @id @default(autoincrement())
+  timestamp  DateTime @default(now())
+  level      String   @default("error")
+  message    String
+  stackTrace String?  @map("stack_trace")
+  context    Json?
+  userId     Int?     @map("user_id")
+  projectId  Int?     @map("project_id")
+  project    Project? @relation(fields: [projectId], references: [id])
+  user       User?    @relation("ErrorReporter", fields: [userId], references: [id])
 
   @@map("error_logs")
 }
 
 model Team {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  code      String?  @unique
-  createdAt DateTime @default(now()) @map("created_at")
-
-  // Relations
-  members      TeamMembership[]
+  id           Int              @id @default(autoincrement())
+  name         String           @unique
+  code         String?          @unique
+  createdAt    DateTime         @default(now()) @map("created_at")
   projects     Project[]
-  tasks        Task[]
   roleRequests RoleRequest[]
+  tasks        Task[]
+  members      TeamMembership[]
 
   @@map("teams")
 }
@@ -318,27 +271,75 @@ model TeamMembership {
   teamId    Int      @map("team_id")
   projectId Int?     @map("project_id")
   role      String   @default("member")
-  seniority String?  // "senior" or "junior" for team leaders (null for first leader)
+  seniority String?
   createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, teamId])
   @@map("team_memberships")
 }
 
 model RoleRequest {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
   role      String
-  teamId    Int?     @map("team_id")
-  status    String   @default("pending")
-  createdAt DateTime @default(now()) @map("created_at")
+  teamId    Int?      @map("team_id")
+  status    String    @default("pending")
+  createdAt DateTime  @default(now()) @map("created_at")
   decidedAt DateTime? @map("decided_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team      Team?     @relation(fields: [teamId], references: [id])
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("role_requests")
+}
+
+
+model Resource {
+  id          Int                  @id @default(autoincrement())
+  projectId   Int                  @map("project_id")
+  name        String
+  type        String               // labor, equipment, material, subcontractor
+  unit        String?              // hour, day, piece, etc.
+  hourlyRate  Float?               @map("hourly_rate")
+  dailyRate   Float?               @map("daily_rate")
+  capacity    Int?                 // available quantity
+  description String?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignments ResourceAssignment[]
+  costs       ResourceCost[]
+
+  @@map("resources")
+}
+
+model ResourceAssignment {
+  id          Int       @id @default(autoincrement())
+  resourceId  Int       @map("resource_id")
+  taskId      Int       @map("task_id")
+  quantity    Float     @default(1)
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  hoursPerDay Float?    @map("hours_per_day")
+  status      String    @default("planned") // planned, active, completed
+  createdAt   DateTime  @default(now()) @map("created_at")
+  resource    Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("resource_assignments")
+}
+
+model ResourceCost {
+  id          Int      @id @default(autoincrement())
+  resourceId  Int      @map("resource_id")
+  date        DateTime
+  hours       Float?
+  quantity    Float?
+  unitCost    Float    @map("unit_cost")
+  totalCost   Float    @map("total_cost")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  resource    Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@map("resource_costs")
 }

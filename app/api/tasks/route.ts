@@ -1,22 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Helper function to retry database operations
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  delay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error as Error
+      const isConnectionError = lastError.message?.includes('connection pool') || 
+                                lastError.message?.includes('Timed out')
+      if (!isConnectionError || i === maxRetries - 1) {
+        throw error
+      }
+      console.log(`[DB Retry] Attempt ${i + 1} failed, retrying in ${delay}ms...`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+  throw lastError
+}
 
 // Helper function to check project access
 async function checkProjectAccess(userId: number, projectId: number) {
   // Get user info
-  const user = await prisma.user.findUnique({
+  const user = await withRetry(() => prisma.user.findUnique({
     where: { id: userId }
-  })
+  }))
 
   if (!user) {
     return { hasAccess: false, error: 'User not found' }
   }
 
   // Get project info
-  const project = await prisma.project.findUnique({
+  const project = await withRetry(() => prisma.project.findUnique({
     where: { id: projectId },
     include: {
       projectUsers: {
@@ -30,7 +52,7 @@ async function checkProjectAccess(userId: number, projectId: number) {
         }
       }
     }
-  })
+  }))
 
   if (!project) {
     return { hasAccess: false, error: 'Project not found' }
@@ -125,24 +147,24 @@ export async function POST(req: NextRequest) {
     }
 
     // Get or create a model for this project
-    let model = await prisma.model.findFirst({
+    let model = await withRetry(() => prisma.model.findFirst({
       where: { projectId: parseInt(projectId) }
-    })
+    }))
 
     if (!model) {
       // Create a default model if none exists
-      model = await prisma.model.create({
+      model = await withRetry(() => prisma.model.create({
         data: {
           projectId: parseInt(projectId),
           name: 'Default Model',
           uploadedBy: userId,
           format: 'speckle'
         }
-      })
+      }))
     }
 
     // Create task with element links
-    const task = await prisma.task.create({
+    const task = await withRetry(() => prisma.task.create({
       data: {
         projectId: parseInt(projectId),
         name,
@@ -187,10 +209,10 @@ export async function POST(req: NextRequest) {
         },
         team: true
       }
-    })
+    }))
 
     // Log activity
-    await prisma.activityLog.create({
+    await withRetry(() => prisma.activityLog.create({
       data: {
         userId,
         projectId: parseInt(projectId),
@@ -201,7 +223,7 @@ export async function POST(req: NextRequest) {
           elementCount: elementIds.length
         }
       }
-    })
+    }))
 
     return NextResponse.json({
       success: true,
@@ -231,37 +253,44 @@ export async function GET(req: NextRequest) {
   try {
     const token = getTokenFromRequest(req)
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.log('[Tasks API] No token found')
+      return NextResponse.json({ error: 'Unauthorized - No token' }, { status: 401 })
     }
 
     const user = verifyToken(token)
     if (!user) {
+      console.log('[Tasks API] Invalid token')
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
     
     const userId = user.id
+    console.log('[Tasks API] User:', userId, 'Role:', user.role)
 
     const { searchParams } = new URL(req.url)
     const projectId = searchParams.get('projectId')
 
     if (!projectId) {
+      console.log('[Tasks API] No projectId provided')
       return NextResponse.json(
         { error: 'Project ID is required' },
         { status: 400 }
       )
     }
 
+    console.log('[Tasks API] Fetching tasks for project:', projectId)
+
     // Verify user has access to project
     const accessCheck = await checkProjectAccess(userId, parseInt(projectId))
     
     if (!accessCheck.hasAccess) {
+      console.log('[Tasks API] Access denied for user:', userId, 'project:', projectId)
       return NextResponse.json(
         { error: accessCheck.error || 'Access denied' },
         { status: 403 }
       )
     }
 
-    const tasks = await prisma.task.findMany({
+    const tasks = await withRetry(() => prisma.task.findMany({
       where: {
         projectId: parseInt(projectId)
       },
@@ -286,13 +315,15 @@ export async function GET(req: NextRequest) {
       orderBy: {
         createdAt: 'desc'
       }
-    })
+    }))
 
+    console.log('[Tasks API] Found', tasks.length, 'tasks')
     return NextResponse.json({ tasks })
   } catch (error) {
-    console.error('Error fetching tasks:', error)
+    console.error('[Tasks API] Error fetching tasks:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch tasks'
     return NextResponse.json(
-      { error: 'Failed to fetch tasks' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

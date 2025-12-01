@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
+    const hubId = request.nextUrl.searchParams.get('hubId');
     const projectId = request.nextUrl.searchParams.get('projectId');
     const folderId = request.nextUrl.searchParams.get('folderId');
 
@@ -15,23 +16,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!projectId || !folderId) {
-      return NextResponse.json(
-        { error: 'Project ID and Folder ID required' },
-        { status: 400 }
-      );
-    }
-
     const client = new AutodeskClient();
     client.setAccessToken(token);
 
-    const contents = await client.getFolderContents(projectId, folderId);
+    // If folderId provided, get folder contents
+    if (projectId && folderId) {
+      const contents = await client.getFolderContents(projectId, folderId);
+      return NextResponse.json({ contents });
+    }
 
-    return NextResponse.json({ contents });
-  } catch (error) {
-    console.error('Error fetching folder contents:', error);
+    // If hubId and projectId provided, get top folders
+    if (hubId && projectId) {
+      const folders = await client.getTopFolders(hubId, projectId);
+      return NextResponse.json({ folders });
+    }
+
     return NextResponse.json(
-      { error: 'Failed to fetch folder contents' },
+      { error: 'Either (hubId + projectId) or (projectId + folderId) required' },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error('Error fetching folders:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch folders' },
       { status: 500 }
     );
   }

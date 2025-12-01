@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export default function middleware(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const publicRoutes = [
@@ -11,8 +11,6 @@ export default function middleware(request: NextRequest) {
     '/api/auth/register',
     '/api/users/team-leaders',
   ]
-
-
 
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     return NextResponse.next()
@@ -44,7 +42,7 @@ export const config = {
   matcher: [
     '/dashboard/:path*', 
     '/project/:path*', 
-    // Exclude upload routes from middleware
+    // Exclude upload routes from proxy
     '/api/((?!projects/upload|projects$).*)' 
   ],
 }

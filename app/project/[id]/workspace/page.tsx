@@ -52,21 +52,21 @@ export default function ProjectWorkspacePage() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading project workspace...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading project workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col">
       {/* Header */}
       <ProjectHeader project={project} />
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Tasks */}
-        <div className="w-80 bg-white border-r overflow-y-auto">
+        <div className="w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 overflow-y-auto">
           <TasksSidebar 
             tasks={tasks} 
             selectedTask={selectedTask}
@@ -79,7 +79,7 @@ export default function ProjectWorkspacePage() {
         {/* Center - 3D Viewer */}
         <div className="flex-1 flex flex-col">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-            <TabsList className="w-full justify-start border-b rounded-none bg-white px-4">
+            <TabsList className="w-full justify-start border-b border-gray-200 dark:border-gray-800 rounded-none bg-white dark:bg-gray-900 px-4">
               <TabsTrigger value="overview" className="gap-2">
                 <Box className="w-4 h-4" />
                 3D Model
@@ -113,7 +113,7 @@ export default function ProjectWorkspacePage() {
 
         {/* Right Sidebar - Task Details */}
         {selectedTask && (
-          <div className="w-96 bg-white border-l overflow-y-auto">
+          <div className="w-96 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 overflow-y-auto">
             <TaskDetailsPanel 
               task={selectedTask} 
               onUpdate={loadProjectData}

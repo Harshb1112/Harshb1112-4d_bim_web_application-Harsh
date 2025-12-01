@@ -13,6 +13,18 @@ interface GanttChartProps {
   onTaskClick?: (task: any) => void
 }
 
+// Professional color palette for timeline
+const TASK_COLORS = [
+  { bg: '#8B5CF6', border: '#7C3AED', text: '#ffffff' }, // Purple
+  { bg: '#06B6D4', border: '#0891B2', text: '#ffffff' }, // Cyan
+  { bg: '#10B981', border: '#059669', text: '#ffffff' }, // Green
+  { bg: '#F59E0B', border: '#D97706', text: '#ffffff' }, // Amber
+  { bg: '#EF4444', border: '#DC2626', text: '#ffffff' }, // Red
+  { bg: '#EC4899', border: '#DB2777', text: '#ffffff' }, // Pink
+  { bg: '#3B82F6', border: '#2563EB', text: '#ffffff' }, // Blue
+  { bg: '#84CC16', border: '#65A30D', text: '#ffffff' }, // Lime
+]
+
 export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: GanttChartProps) {
   const timelineRef = useRef<HTMLDivElement>(null)
   const timeline = useRef<Timeline | null>(null)
@@ -20,52 +32,21 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
   useEffect(() => {
     if (!timelineRef.current || !tasks.length) return
 
-    // Function to get color based on task status
-    const getTaskColor = (status: string, progress: number) => {
-      switch (status) {
-        case 'completed':
-          return {
-            bg: '#10B981', // Green
-            border: '#059669',
-            text: '#ffffff'
-          }
-        case 'in_progress':
-          if (progress < 30) {
-            return {
-              bg: '#FCD34D', // Yellow
-              border: '#F59E0B',
-              text: '#1F2937'
-            }
-          } else if (progress < 70) {
-            return {
-              bg: '#F59E0B', // Orange
-              border: '#D97706',
-              text: '#ffffff'
-            }
-          } else {
-            return {
-              bg: '#86EFAC', // Light Green
-              border: '#10B981',
-              text: '#1F2937'
-            }
-          }
-        case 'todo':
-        default:
-          return {
-            bg: '#9CA3AF', // Grey
-            border: '#6B7280',
-            text: '#ffffff'
-          }
+    // Function to get color based on task status and index
+    const getTaskColor = (status: string, progress: number, index: number) => {
+      if (status === 'completed') {
+        return { bg: '#10B981', border: '#059669', text: '#ffffff' }
       }
+      const colorIndex = index % TASK_COLORS.length
+      return TASK_COLORS[colorIndex]
     }
 
     // Prepare data for vis-timeline
     const items = new DataSet(
-      tasks.map(task => {
+      tasks.map((task, index) => {
         const isCritical = criticalPathTasks?.has(task.id)
-        const colors = getTaskColor(task.status || 'todo', task.progress || 0)
+        const colors = getTaskColor(task.status || 'todo', task.progress || 0, index)
         
-        let itemClassName = 'gantt-task-item'
         let itemStyle = `
           background: linear-gradient(135deg, ${colors.bg} 0%, ${colors.bg}dd 100%);
           border: 2px solid ${colors.border};
@@ -74,28 +55,15 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
           font-weight: 500;
           padding: 4px 8px;
           box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          transition: all 0.3s ease;
         `
 
         if (isCritical) {
-          itemClassName += ' vis-item-critical'
-          itemStyle += `
-            border: 3px solid #EF4444;
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.4), 0 4px 8px rgba(0,0,0,0.2);
-            animation: pulse 2s infinite;
-          `
+          itemStyle += `border: 3px solid #EF4444; box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);`
         }
 
-        // Add progress bar overlay
         if (task.progress > 0 && task.progress < 100) {
           itemStyle += `
-            background: linear-gradient(
-              to right,
-              ${colors.bg} 0%,
-              ${colors.bg} ${task.progress}%,
-              ${colors.bg}66 ${task.progress}%,
-              ${colors.bg}66 100%
-            );
+            background: linear-gradient(to right, ${colors.bg} 0%, ${colors.bg} ${task.progress}%, ${colors.bg}66 ${task.progress}%, ${colors.bg}66 100%);
           `
         }
 
@@ -105,40 +73,51 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
 
         return {
           id: task.id,
-          content: `
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 600;">${task.name}</span>
-              ${elementCount > 0 ? `<span style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; font-size: 11px;">🔗 ${elementCount}</span>` : ''}
-            </div>
-          `,
+          content: `<div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 600;">${task.name}</span>
+            ${elementCount > 0 ? `<span style="background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; font-size: 11px;">🔗 ${elementCount}</span>` : ''}
+          </div>`,
           start: task.startDate ? new Date(task.startDate) : new Date(),
           end: task.endDate ? new Date(task.endDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           style: itemStyle,
-          className: itemClassName,
-          title: `
-            <div style="padding: 8px;">
-              <strong style="font-size: 14px;">${task.name}</strong><br/>
-              <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">
-                <div style="margin: 4px 0;">📊 Progress: <strong>${Number(task.progress || 0).toFixed(0)}%</strong></div>
-                <div style="margin: 4px 0;">👤 Assignee: <strong>${assigneeName}</strong></div>
-                <div style="margin: 4px 0;">👥 Team: <strong>${teamName}</strong></div>
-                <div style="margin: 4px 0;">🔗 Elements: <strong>${elementCount}</strong></div>
-                <div style="margin: 4px 0;">📅 Status: <strong style="text-transform: capitalize;">${(task.status || 'todo').replace('_', ' ')}</strong></div>
-              </div>
+          title: `<div style="padding: 12px; min-width: 200px;">
+            <strong style="font-size: 14px;">${task.name}</strong>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">
+              <div style="margin: 4px 0;">📊 Progress: <strong>${Number(task.progress || 0).toFixed(0)}%</strong></div>
+              <div style="margin: 4px 0;">👤 Assignee: <strong>${assigneeName}</strong></div>
+              <div style="margin: 4px 0;">👥 Team: <strong>${teamName}</strong></div>
+              <div style="margin: 4px 0;">🔗 Elements: <strong>${elementCount}</strong></div>
+              <div style="margin: 4px 0;">📅 Status: <strong style="text-transform: capitalize;">${(task.status || 'todo').replace('_', ' ')}</strong></div>
             </div>
-          `
+          </div>`
         }
       })
     )
 
+    // Calculate date range from tasks
+    const taskDates = tasks.flatMap(t => [
+      t.startDate ? new Date(t.startDate) : null,
+      t.endDate ? new Date(t.endDate) : null
+    ]).filter(Boolean) as Date[]
+    
+    const minDate = taskDates.length > 0 
+      ? new Date(Math.min(...taskDates.map(d => d.getTime())) - 15 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    
+    const maxDate = taskDates.length > 0
+      ? new Date(Math.max(...taskDates.map(d => d.getTime())) + 30 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+
     const options = {
       stack: true,
-      start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-      end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),   // 90 days from now
+      start: minDate,
+      end: maxDate,
       editable: false,
       selectable: true,
       zoomable: true,
       moveable: true,
+      zoomMin: 1000 * 60 * 60 * 24 * 7, // 1 week minimum
+      zoomMax: 1000 * 60 * 60 * 24 * 365 * 2, // 2 years maximum
       tooltip: {
         followMouse: true,
         overflowMethod: 'cap'
@@ -167,269 +146,112 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
           year:       ''
         }
       },
-      margin: {
-        item: {
-          horizontal: 10,
-          vertical: 8
-        }
-      },
-      orientation: 'top',
+      margin: { item: { horizontal: 10, vertical: 10 } },
+      orientation: { axis: 'both', item: 'top' },
       showCurrentTime: true,
       showMajorLabels: true,
-      showMinorLabels: true
+      showMinorLabels: true,
+      height: '500px'
     }
 
-    // Create timeline
-    timeline.current = new Timeline(timelineRef.current, items)
+    timeline.current = new Timeline(timelineRef.current, items, options)
 
-    // Add click event listener
     if (onTaskClick) {
       timeline.current.on('select', (properties) => {
         if (properties.items && properties.items.length > 0) {
           const taskId = properties.items[0]
           const task = tasks.find(t => t.id === taskId)
-          if (task) {
-            onTaskClick(task)
-          }
+          if (task) onTaskClick(task)
         }
       })
     }
 
-    // Cleanup
     return () => {
-      if (timeline.current) {
-        timeline.current.destroy()
-      }
+      if (timeline.current) timeline.current.destroy()
     }
-  }, [tasks, criticalPathTasks])
+  }, [tasks, criticalPathTasks, onTaskClick])
 
   if (!tasks.length) {
     return (
-      <div className="flex items-center justify-center h-96 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-xl border-2 border-dashed border-blue-200">
+      <div className="flex items-center justify-center h-96 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border-2 border-dashed border-blue-200">
         <div className="text-center p-8">
-          <div className="text-7xl mb-4 animate-bounce">📅</div>
+          <div className="text-6xl mb-4">📅</div>
           <h3 className="text-xl font-bold text-gray-800 mb-2">No Tasks Yet</h3>
-          <p className="text-gray-600 mb-4">Create tasks with linked 3D elements to see them on the timeline</p>
-          <div className="flex items-center justify-center gap-4 text-sm text-gray-500">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-gray-400"></span>
-              Not Started
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
-              In Progress
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded-full bg-green-500"></span>
-              Completed
-            </span>
-          </div>
+          <p className="text-gray-600">Create tasks to see them on the timeline</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="gantt-chart-wrapper">
+    <div className="gantt-wrapper rounded-xl overflow-hidden border border-gray-200">
       <style jsx global>{`
-        .gantt-chart-wrapper {
-          width: 100%;
-          min-height: 600px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 16px;
-          padding: 20px;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-
-        .gantt-chart-wrapper > div {
-          background: white;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-
-        .vis-timeline {
+        .gantt-wrapper { background: #f8fafc; }
+        .vis-timeline { border: none !important; font-family: system-ui, sans-serif !important; }
+        
+        /* Top & Bottom axis */
+        .vis-panel.vis-top, .vis-panel.vis-bottom {
+          background: linear-gradient(180deg, #1e293b 0%, #334155 100%) !important;
           border: none !important;
-          font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
         }
-
-        .vis-panel.vis-top {
-          border-bottom: 2px solid #e5e7eb !important;
-          background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
-        }
-
-        .vis-panel.vis-center {
-          background: #ffffff !important;
-        }
-
+        
         .vis-time-axis .vis-text {
-          color: #475569 !important;
+          color: #ffffff !important;
           font-weight: 600 !important;
-          font-size: 12px !important;
+          font-size: 11px !important;
           text-transform: uppercase !important;
-          letter-spacing: 0.5px !important;
         }
-
+        
         .vis-time-axis .vis-text.vis-major {
-          color: #1e293b !important;
-          font-weight: 700 !important;
-          font-size: 14px !important;
+          color: #94a3b8 !important;
+          font-size: 12px !important;
         }
-
+        
+        /* Center panel */
+        .vis-panel.vis-center { background: #ffffff !important; }
+        
+        /* Grid */
+        .vis-grid.vis-vertical { border-color: #f1f5f9 !important; }
+        .vis-grid.vis-minor.vis-vertical { border-color: #f8fafc !important; }
+        
+        /* Task items */
         .vis-item {
-          border-radius: 8px !important;
+          border-radius: 6px !important;
           cursor: pointer !important;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-          position: relative !important;
+          transition: all 0.2s ease !important;
         }
-
-        .vis-item::after {
-          content: '✏️ Click to update';
-          position: absolute;
-          top: -25px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: rgba(0, 0, 0, 0.8);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 11px;
-          white-space: nowrap;
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 0.2s;
-        }
-
+        
         .vis-item:hover {
-          transform: translateY(-3px) scale(1.02);
-          box-shadow: 0 12px 24px rgba(0,0,0,0.2) !important;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(0,0,0,0.15) !important;
           z-index: 999 !important;
         }
-
-        .vis-item:hover::after {
-          opacity: 1;
-        }
-
+        
         .vis-item.vis-selected {
-          border-width: 3px !important;
-          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3), 0 8px 16px rgba(0,0,0,0.2) !important;
-          transform: scale(1.05);
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 4px 12px rgba(0,0,0,0.15) !important;
         }
-
-        .vis-item-critical {
-          animation: pulse-critical 2s ease-in-out infinite;
-          position: relative;
-        }
-
-        .vis-item-critical::before {
-          content: '⚠️';
-          position: absolute;
-          left: -20px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-size: 16px;
-          animation: bounce 1s infinite;
-        }
-
-        @keyframes pulse-critical {
-          0%, 100% {
-            box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
-          }
-          50% {
-            box-shadow: 0 0 30px rgba(239, 68, 68, 0.9);
-          }
-        }
-
-        @keyframes bounce {
-          0%, 100% { transform: translateY(-50%) scale(1); }
-          50% { transform: translateY(-60%) scale(1.1); }
-        }
-
+        
+        /* Current time */
         .vis-current-time {
-          background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%) !important;
-          width: 3px !important;
-          box-shadow: 0 0 15px rgba(59, 130, 246, 0.6) !important;
-          z-index: 10 !important;
+          background: #EF4444 !important;
+          width: 2px !important;
         }
-
-        .vis-current-time::before {
-          content: '📍';
-          position: absolute;
-          top: -25px;
-          left: 50%;
-          transform: translateX(-50%);
-          font-size: 18px;
-        }
-
-        .vis-labelset .vis-label {
-          color: #475569 !important;
-          font-weight: 600 !important;
-          border-bottom: 1px solid #e5e7eb !important;
-          background: #f8fafc !important;
-        }
-
-        .vis-foreground .vis-group {
-          border-bottom: 1px solid #f1f5f9 !important;
-        }
-
-        .vis-foreground .vis-group:hover {
-          background: #f8fafc !important;
-        }
-
+        
+        /* Tooltip */
         .vis-tooltip {
           background: white !important;
-          border: none !important;
-          border-radius: 12px !important;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.2) !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 8px !important;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.15) !important;
           padding: 0 !important;
-          font-family: 'Inter', system-ui, sans-serif !important;
-          max-width: 320px !important;
-          overflow: hidden !important;
         }
-
-        .vis-time-axis .vis-grid.vis-minor {
-          border-color: #f1f5f9 !important;
-        }
-
-        .vis-time-axis .vis-grid.vis-major {
-          border-color: #e2e8f0 !important;
-          border-width: 2px !important;
-        }
-
-        .vis-time-axis .vis-grid.vis-saturday,
-        .vis-time-axis .vis-grid.vis-sunday {
-          background: #fef3c7 !important;
-        }
-
-        /* Scrollbar styling */
-        .vis-timeline::-webkit-scrollbar {
-          width: 10px;
-          height: 10px;
-        }
-
-        .vis-timeline::-webkit-scrollbar-track {
-          background: #f1f5f9;
-          border-radius: 5px;
-        }
-
-        .vis-timeline::-webkit-scrollbar-thumb {
-          background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
-          border-radius: 5px;
-          border: 2px solid #f1f5f9;
-        }
-
-        .vis-timeline::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg, #64748b 0%, #475569 100%);
-        }
-
-        .vis-timeline::-webkit-scrollbar-corner {
-          background: #f1f5f9;
-        }
+        
+        /* Scrollbar */
+        .vis-timeline::-webkit-scrollbar { width: 8px; height: 8px; }
+        .vis-timeline::-webkit-scrollbar-track { background: #f1f5f9; }
+        .vis-timeline::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
       `}</style>
-      <div 
-        ref={timelineRef} 
-        className="w-full h-[600px]"
-      />
+      <div ref={timelineRef} className="w-full" />
     </div>
   )
 }

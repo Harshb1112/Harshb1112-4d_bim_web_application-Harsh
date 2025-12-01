@@ -54,6 +54,8 @@ export default function ErrorLogViewer({ projectId }: ErrorLogViewerProps) {
   const [loading, setLoading] = useState(true)
   const [filterLevel, setFilterLevel] = useState('all')
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
+  const [reportingError, setReportingError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     if (projectId) {
@@ -78,6 +80,38 @@ export default function ErrorLogViewer({ projectId }: ErrorLogViewerProps) {
       toast.error('An error occurred while loading error logs.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const reportError = async () => {
+    if (!errorMessage.trim()) {
+      toast.error('Please enter an error message')
+      return
+    }
+    setReportingError(true)
+    try {
+      const response = await fetch('/api/error-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          message: errorMessage,
+          level: 'error',
+          projectId,
+          context: { source: 'user_reported' }
+        })
+      })
+      if (response.ok) {
+        toast.success('Error reported successfully')
+        setErrorMessage('')
+        fetchErrorLogs()
+      } else {
+        toast.error('Failed to report error')
+      }
+    } catch (error) {
+      toast.error('Failed to report error')
+    } finally {
+      setReportingError(false)
     }
   }
 
@@ -107,6 +141,27 @@ export default function ErrorLogViewer({ projectId }: ErrorLogViewerProps) {
           </Button>
         </div>
       </div>
+
+      {/* Report Error Section */}
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">Report an Issue</CardTitle>
+        </CardHeader>
+        <CardContent className="py-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={errorMessage}
+              onChange={(e) => setErrorMessage(e.target.value)}
+              placeholder="Describe the issue you encountered..."
+              className="flex-1 px-3 py-2 border rounded-md text-sm"
+            />
+            <Button size="sm" onClick={reportError} disabled={reportingError || !errorMessage.trim()}>
+              {reportingError ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Report'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

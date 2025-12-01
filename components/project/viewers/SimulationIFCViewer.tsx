@@ -66,12 +66,20 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
       },
 
       hideObjects: (guids: string[]) => {
-        guids.forEach(guid => {
-          const mesh = meshMapRef.current.get(guid)
-          if (mesh) {
+        if (guids.length === 0) {
+          // Hide all elements
+          meshMapRef.current.forEach((mesh) => {
             mesh.visible = false
-          }
-        })
+          })
+        } else {
+          // Hide specific elements
+          guids.forEach(guid => {
+            const mesh = meshMapRef.current.get(guid)
+            if (mesh) {
+              mesh.visible = false
+            }
+          })
+        }
       },
 
       showObjects: (guids: string[]) => {
@@ -241,7 +249,7 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
                       const placedGeometry = flatMesh.geometries.get(j)
                       const geometry = ifcApi.GetGeometry(modelID, placedGeometry.geometryExpressID)
                       
-                      const vertices = ifcApi.GetVertexArray(
+                      const vertexData = ifcApi.GetVertexArray(
                         geometry.GetVertexData(),
                         geometry.GetVertexDataSize()
                       )
@@ -250,10 +258,24 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
                         geometry.GetIndexDataSize()
                       )
                       
+                      // web-ifc returns 6 floats per vertex: x, y, z, nx, ny, nz
+                      const vertexCount = vertexData.length / 6
+                      const positions = new Float32Array(vertexCount * 3)
+                      const normals = new Float32Array(vertexCount * 3)
+                      
+                      for (let v = 0; v < vertexCount; v++) {
+                        positions[v * 3] = vertexData[v * 6]
+                        positions[v * 3 + 1] = vertexData[v * 6 + 1]
+                        positions[v * 3 + 2] = vertexData[v * 6 + 2]
+                        normals[v * 3] = vertexData[v * 6 + 3]
+                        normals[v * 3 + 1] = vertexData[v * 6 + 4]
+                        normals[v * 3 + 2] = vertexData[v * 6 + 5]
+                      }
+                      
                       const bufferGeometry = new THREE.BufferGeometry()
-                      bufferGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3))
+                      bufferGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+                      bufferGeometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
                       bufferGeometry.setIndex(Array.from(indices))
-                      bufferGeometry.computeVertexNormals()
                       
                       let color = 0xcccccc
                       if (ifcType === WebIFC.IFCWALL || ifcType === WebIFC.IFCWALLSTANDARDCASE) color = 0xe8e8e8

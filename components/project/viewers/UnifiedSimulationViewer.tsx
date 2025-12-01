@@ -4,6 +4,7 @@
 import { forwardRef, useImperativeHandle, useRef, useMemo, useState } from 'react'
 import SpeckleViewer, { SpeckleViewerRef } from '../SpeckleViewer'
 import SimulationIFCViewer, { SimulationViewerRef } from './SimulationIFCViewer'
+import SimulationAutodeskViewer, { SimulationAutodeskViewerRef } from './SimulationAutodeskViewer'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Box } from 'lucide-react'
@@ -26,6 +27,7 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
   ({ project, onElementSelect, viewerCanvasRef }, ref) => {
     const speckleViewerRef = useRef<SpeckleViewerRef>(null)
     const ifcViewerRef = useRef<SimulationViewerRef>(null)
+    const autodeskViewerRef = useRef<SimulationAutodeskViewerRef>(null)
 
     // Analyze models
     const modelAnalysis = useMemo(() => {
@@ -70,7 +72,9 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
     // Expose unified interface
     useImperativeHandle(ref, () => ({
       isolateObjects: (guids: string[], ghost?: boolean) => {
-        if (viewerType === 'ifc' && ifcViewerRef.current) {
+        if (viewerType === 'autodesk' && autodeskViewerRef.current) {
+          autodeskViewerRef.current.isolateObjects(guids, ghost)
+        } else if (viewerType === 'ifc' && ifcViewerRef.current) {
           ifcViewerRef.current.isolateObjects(guids, ghost)
         } else if (speckleViewerRef.current) {
           speckleViewerRef.current.isolateObjects(guids, ghost)
@@ -78,7 +82,9 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
       },
 
       hideObjects: (guids: string[]) => {
-        if (viewerType === 'ifc' && ifcViewerRef.current) {
+        if (viewerType === 'autodesk' && autodeskViewerRef.current) {
+          autodeskViewerRef.current.hideObjects(guids)
+        } else if (viewerType === 'ifc' && ifcViewerRef.current) {
           ifcViewerRef.current.hideObjects(guids)
         } else if (speckleViewerRef.current) {
           speckleViewerRef.current.hideObjects(guids)
@@ -86,7 +92,9 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
       },
 
       showObjects: (guids: string[]) => {
-        if (viewerType === 'ifc' && ifcViewerRef.current) {
+        if (viewerType === 'autodesk' && autodeskViewerRef.current) {
+          autodeskViewerRef.current.showObjects(guids)
+        } else if (viewerType === 'ifc' && ifcViewerRef.current) {
           ifcViewerRef.current.showObjects(guids)
         } else if (speckleViewerRef.current) {
           speckleViewerRef.current.showObjects(guids)
@@ -94,7 +102,9 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
       },
 
       setColorFilter: (filter: any) => {
-        if (viewerType === 'ifc' && ifcViewerRef.current) {
+        if (viewerType === 'autodesk' && autodeskViewerRef.current) {
+          autodeskViewerRef.current.setColorFilter(filter)
+        } else if (viewerType === 'ifc' && ifcViewerRef.current) {
           ifcViewerRef.current.setColorFilter(filter)
         } else if (speckleViewerRef.current) {
           speckleViewerRef.current.setColorFilter(filter)
@@ -102,7 +112,9 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
       },
 
       getCanvas: () => {
-        if (viewerType === 'ifc' && ifcViewerRef.current) {
+        if (viewerType === 'autodesk' && autodeskViewerRef.current) {
+          return autodeskViewerRef.current.getCanvas()
+        } else if (viewerType === 'ifc' && ifcViewerRef.current) {
           return ifcViewerRef.current.getCanvas()
         }
         return viewerCanvasRef?.current || null
@@ -169,10 +181,13 @@ const UnifiedSimulationViewer = forwardRef<UnifiedSimulationViewerRef, UnifiedSi
             />
           )}
 
-          {viewerType === 'autodesk' && (
-            <div className="flex items-center justify-center h-full bg-gray-100 text-gray-500">
-              Autodesk viewer simulation support coming soon
-            </div>
+          {viewerType === 'autodesk' && selectedModel && (
+            <SimulationAutodeskViewer
+              ref={autodeskViewerRef}
+              model={selectedModel}
+              onElementSelect={onElementSelect}
+              viewerCanvasRef={viewerCanvasRef}
+            />
           )}
         </div>
       </div>

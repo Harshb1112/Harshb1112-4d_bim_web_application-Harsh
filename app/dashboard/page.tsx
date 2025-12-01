@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { verifyToken } from '@/lib/auth'
 import { cookies } from 'next/headers'
-import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import ProjectGrid from '@/components/dashboard/ProjectGrid'
 import RecentActivity from '@/components/dashboard/RecentActivity'
 import StatsCards from '@/components/dashboard/StatsCards'
@@ -29,208 +28,82 @@ async function getDashboardData(userId: number, userRole: string) {
   let activities
 
   if (userRole === 'admin' || userRole === 'manager') {
-    // Admin and Manager see all projects
     projects = await prisma.project.findMany({
       include: {
-        _count: {
-          select: {
-            tasks: true,
-            models: true
-          }
-        },
-        tasks: {
-          select: {
-            progress: true
-          }
-        },
-        team: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        teamLeader: {
-          select: {
-            id: true,
-            fullName: true
-          }
-        }
+        _count: { select: { tasks: true, models: true } },
+        tasks: { select: { progress: true } },
+        models: { select: { id: true, name: true, source: true } },
+        team: { select: { id: true, name: true } },
+        teamLeader: { select: { id: true, fullName: true } }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { createdAt: 'desc' }
     })
 
-    // Get all activity
     activities = await prisma.activityLog.findMany({
       include: {
-        user: {
-          select: {
-            fullName: true
-          }
-        },
-        project: {
-          select: {
-            name: true
-          }
-        }
+        user: { select: { fullName: true } },
+        project: { select: { name: true } }
       },
-      orderBy: {
-        timestamp: 'desc'
-      },
+      orderBy: { timestamp: 'desc' },
       take: 10
     })
   } else if (userRole === 'team_leader') {
-    // Team Leader sees only their team's projects
     projects = await prisma.project.findMany({
       where: {
         OR: [
-          {
-            team: {
-              members: {
-                some: {
-                  userId: userId,
-                  role: 'leader'
-                }
-              }
-            }
-          },
-          {
-            teamLeaderId: userId
-          }
+          { team: { members: { some: { userId: userId, role: 'leader' } } } },
+          { teamLeaderId: userId }
         ]
       },
       include: {
-        _count: {
-          select: {
-            tasks: true,
-            models: true
-          }
-        },
-        tasks: {
-          select: {
-            progress: true
-          }
-        },
-        team: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
+        _count: { select: { tasks: true, models: true } },
+        tasks: { select: { progress: true } },
+        models: { select: { id: true, name: true, source: true } },
+        team: { select: { id: true, name: true } }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { createdAt: 'desc' }
     })
 
-    // Get team activity
     const teamMemberships = await prisma.teamMembership.findMany({
-      where: {
-        userId: userId,
-        role: 'leader'
-      },
-      select: {
-        teamId: true
-      }
+      where: { userId: userId, role: 'leader' },
+      select: { teamId: true }
     })
     const teamIds = teamMemberships.map(m => m.teamId)
 
     activities = await prisma.activityLog.findMany({
-      where: {
-        project: {
-          teamId: {
-            in: teamIds
-          }
-        }
-      },
+      where: { project: { teamId: { in: teamIds } } },
       include: {
-        user: {
-          select: {
-            fullName: true
-          }
-        },
-        project: {
-          select: {
-            name: true
-          }
-        }
+        user: { select: { fullName: true } },
+        project: { select: { name: true } }
       },
-      orderBy: {
-        timestamp: 'desc'
-      },
+      orderBy: { timestamp: 'desc' },
       take: 10
     })
   } else {
-    // Viewer sees only their team's projects
     projects = await prisma.project.findMany({
-      where: {
-        team: {
-          members: {
-            some: {
-              userId: userId
-            }
-          }
-        }
-      },
+      where: { team: { members: { some: { userId: userId } } } },
       include: {
-        _count: {
-          select: {
-            tasks: true,
-            models: true
-          }
-        },
-        tasks: {
-          select: {
-            progress: true
-          }
-        },
-        team: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
+        _count: { select: { tasks: true, models: true } },
+        tasks: { select: { progress: true } },
+        models: { select: { id: true, name: true, source: true } },
+        team: { select: { id: true, name: true } }
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      orderBy: { createdAt: 'desc' }
     })
 
-    // Get team activity
     const teamMemberships = await prisma.teamMembership.findMany({
-      where: {
-        userId: userId
-      },
-      select: {
-        teamId: true
-      }
+      where: { userId: userId },
+      select: { teamId: true }
     })
     const teamIds = teamMemberships.map(m => m.teamId)
 
     activities = await prisma.activityLog.findMany({
-      where: {
-        project: {
-          teamId: {
-            in: teamIds
-          }
-        }
-      },
+      where: { project: { teamId: { in: teamIds } } },
       include: {
-        user: {
-          select: {
-            fullName: true
-          }
-        },
-        project: {
-          select: {
-            name: true
-          }
-        }
+        user: { select: { fullName: true } },
+        project: { select: { name: true } }
       },
-      orderBy: {
-        timestamp: 'desc'
-      },
+      orderBy: { timestamp: 'desc' },
       take: 10
     })
   }
@@ -242,7 +115,6 @@ export default async function DashboardPage() {
   const user = await getCurrentUser()
   const { projects, activities } = await getDashboardData(user.id, user.role)
 
-  // Calculate stats
   const totalProjects = projects.length
   const totalTasks = projects.reduce((sum: any, project: { _count: { tasks: any } }) => sum + project._count.tasks, 0)
   const totalModels = projects.reduce((sum: any, project: { _count: { models: any } }) => sum + project._count.models, 0)
@@ -256,42 +128,36 @@ export default async function DashboardPage() {
     : 0
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHeader user={user} />
-      
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Welcome back, {user.fullName}
-              <span className="ml-3 text-lg font-medium text-blue-600">
-                ({user.role === 'admin' ? 'Admin' : 
-                  user.role === 'manager' ? 'Manager' : 
-                  user.role === 'team_leader' ? 'Team Leader' : 'Member'})
-              </span>
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Here&apos;s what&apos;s happening with your projects today.
-            </p>
-          </div>
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          Welcome back, {user.fullName}
+          <span className="ml-3 text-lg font-medium text-blue-600 dark:text-blue-400">
+            ({user.role === 'admin' ? 'Admin' : 
+              user.role === 'manager' ? 'Manager' : 
+              user.role === 'team_leader' ? 'Team Leader' : 'Member'})
+          </span>
+        </h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Here&apos;s what&apos;s happening with your projects today.
+        </p>
+      </div>
 
-          <StatsCards 
-            totalProjects={totalProjects}
-            totalTasks={totalTasks}
-            totalModels={totalModels}
-            avgProgress={avgProgress}
-          />
+      <StatsCards 
+        totalProjects={totalProjects}
+        totalTasks={totalTasks}
+        totalModels={totalModels}
+        avgProgress={avgProgress}
+      />
 
-          <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-3">
-            <div className="xl:col-span-2">
-              <ProjectGrid projects={projects} userRole={user.role} />
-            </div>
-            <div>
-              <RecentActivity activities={activities} />
-            </div>
-          </div>
+      <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <ProjectGrid projects={projects} userRole={user.role} />
         </div>
-      </main>
+        <div>
+          <RecentActivity activities={activities} />
+        </div>
+      </div>
     </div>
   )
 }

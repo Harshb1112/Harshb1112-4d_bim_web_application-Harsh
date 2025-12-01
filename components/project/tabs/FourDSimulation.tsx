@@ -208,7 +208,16 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     if (!viewerRef.current || links.length === 0) return
 
     const allElementGuids = links.map(link => link.element.guid)
-    viewerRef.current.isolateObjects(allElementGuids, true) // Ghost all elements first
+    
+    // TRUE 4D SIMULATION: 
+    // Hide ALL elements first (empty array = hide all in Autodesk viewer)
+    // Then show only the elements that should be visible based on timeline
+    try {
+      viewerRef.current.hideObjects([]) // Hide all elements
+    } catch (e) {
+      // Fallback: hide only linked elements
+      viewerRef.current.hideObjects(allElementGuids)
+    }
 
     const colorFilters: any[] = []
     const visibleGuids: string[] = []
@@ -224,7 +233,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       linksByTask.get(link.task.id)!.push(link)
     })
 
-    // Process each task's elements with progress-based visibility
+    // Process each task's elements with TIMELINE-BASED progress
     linksByTask.forEach((taskLinks, taskId) => {
       const firstLink = taskLinks[0]
       const task = firstLink.task
@@ -237,63 +246,65 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       const isTaskCritical = criticalPathTasks.has(task.id) && showCriticalPath
 
       if (mode === 'planned') {
-        const taskProgress = Number(task.progress || 0)
-        const isTaskCompleted = taskProgress >= 100 || 
-                               task.status === 'completed' || 
-                               task.status === 'done'
-        
-        // Calculate if task should be visible based on date
-        const taskDuration = (plannedEnd.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24)
+        // Calculate TIMELINE-BASED progress (how much should be done by currentDate)
+        const taskDuration = Math.max(1, (plannedEnd.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24))
         const daysPassed = (currentDate.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24)
-        const expectedProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
         
-        let shouldShowTask = false
-        let taskColor = STATUS_COLORS.PLANNED.NOT_STARTED
-        
+        // Timeline progress: 0% before start, 0-100% during task, 100% after end
+        let timelineProgress = 0
         if (isBefore(currentDate, plannedStart)) {
-          // Task hasn't started yet - hide all elements
-          shouldShowTask = false
-        } else if (!isAfter(currentDate, plannedEnd)) { 
-          // Date within task range - show based on progress
-          if (taskProgress > 0) {
-            shouldShowTask = true
-            
-            // Determine color based on progress
-            if (taskProgress >= 100) {
-              taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
-            } else if (taskProgress >= expectedProgress) {
-              taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.IN_PROGRESS
-            } else {
-              taskColor = '#F97316' // Orange - behind schedule
-            }
-            
-            // Track active task
-            if (!taskElementMap.has(task.id)) {
-              taskElementMap.set(task.id, [])
-              currentActiveTasks.push(task)
-            }
-          }
+          timelineProgress = 0 // Task hasn't started yet
         } else if (isAfter(currentDate, plannedEnd)) {
-          // Date passed task end
-          if (isTaskCompleted) {
-            shouldShowTask = true
+          timelineProgress = 100 // Task should be complete
+        } else {
+          timelineProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
+        }
+        
+        // Determine visibility and color based on timeline position
+        let shouldShowElements = false
+        let taskColor = STATUS_COLORS.PLANNED.NOT_STARTED
+        const actualProgress = Number(task.progress || 0)
+        
+        if (timelineProgress === 0) {
+          // Before task start date - NO elements visible
+          shouldShowElements = false
+        } else if (timelineProgress > 0 && timelineProgress < 100) {
+          // During task - show elements progressively based on timeline
+          shouldShowElements = true
+          
+          // Color based on actual vs expected progress
+          if (actualProgress >= timelineProgress) {
+            taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.IN_PROGRESS
+          } else {
+            taskColor = '#F97316' // Orange - behind schedule
+          }
+          
+          // Track as active task
+          if (!taskElementMap.has(task.id)) {
+            taskElementMap.set(task.id, [])
+            currentActiveTasks.push(task)
+          }
+        } else {
+          // After task end date - show all elements as completed
+          shouldShowElements = true
+          if (actualProgress >= 100) {
             taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
-          } else if (taskProgress > 0) {
-            shouldShowTask = true
-            taskColor = '#F97316' // Orange - delayed
+          } else {
+            taskColor = '#F97316' // Orange - delayed (should be done but isn't)
           }
         }
         
-        // **ENHANCED: Multiple visualization modes for progress**
-        if (shouldShowTask && taskProgress > 0) {
+        // Apply visibility based on timeline progress
+        if (shouldShowElements && timelineProgress > 0) {
           const totalElements = taskLinks.length
           const sortedLinks = [...taskLinks].sort((a, b) => 
             a.element.guid.localeCompare(b.element.guid)
           )
           
           if (visualizationMode === 'element-count') {
-            // MODE 1: Show only percentage of elements (current implementation)
-            const elementsToShow = Math.ceil((taskProgress / 100) * totalElements)
+            // MODE 1: Show elements progressively based on TIMELINE progress
+            // As timeline moves forward, more elements appear
+            const elementsToShow = Math.ceil((timelineProgress / 100) * totalElements)
             
             sortedLinks.forEach((link, index) => {
               if (index < elementsToShow) {
@@ -306,24 +317,17 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
                 if (taskElementMap.has(task.id)) {
                   taskElementMap.get(task.id)!.push(link.element.guid)
                 }
-              } else {
-                colorFilters.push({ 
-                  property: { key: 'id', value: link.element.guid }, 
-                  color: STATUS_COLORS.PLANNED.NOT_STARTED 
-                })
               }
+              // Elements not yet reached by timeline stay HIDDEN (not ghosted)
             })
           } else if (visualizationMode === 'opacity') {
-            // MODE 2: Show all elements with opacity based on progress
-            // Elements fade in as progress increases
-            sortedLinks.forEach((link, index) => {
+            // MODE 2: Show all task elements with opacity based on timeline progress
+            sortedLinks.forEach((link) => {
               visibleGuids.push(link.element.guid)
               
-              // Calculate opacity: 0.3 (ghosted) to 1.0 (full)
-              const opacity = 0.3 + (taskProgress / 100) * 0.7
-              
-              // Use lighter color for partial progress
-              const progressColor = taskProgress < 100 
+              // Opacity increases as timeline progresses
+              const opacity = 0.3 + (timelineProgress / 100) * 0.7
+              const progressColor = timelineProgress < 100 
                 ? STATUS_COLORS.PLANNED.IN_PROGRESS_PARTIAL 
                 : taskColor
               
@@ -338,15 +342,12 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
               }
             })
           } else if (visualizationMode === 'color-gradient') {
-            // MODE 3: Color gradient from grey to full color based on progress
-            sortedLinks.forEach((link, index) => {
+            // MODE 3: Color gradient from grey to full color based on timeline
+            sortedLinks.forEach((link) => {
               visibleGuids.push(link.element.guid)
               
-              // Interpolate between grey and task color
               const greyColor = STATUS_COLORS.PLANNED.NOT_STARTED
-              const progressRatio = taskProgress / 100
-              
-              // Simple color interpolation (grey to task color)
+              const progressRatio = timelineProgress / 100
               const interpolatedColor = interpolateColor(greyColor, taskColor, progressRatio)
               
               colorFilters.push({ 
@@ -359,68 +360,69 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
               }
             })
           }
-        } else {
-          // Task not visible - ghost all elements
-          taskLinks.forEach(link => {
-            colorFilters.push({ 
-              property: { key: 'id', value: link.element.guid }, 
-              color: STATUS_COLORS.PLANNED.NOT_STARTED 
-            })
-          })
         }
-      } else { // mode === 'actual'
-        const taskProgress = Number(task.progress || 0)
-        const isTaskCompleted = taskProgress >= 100 || 
-                               task.status === 'completed' || 
-                               task.status === 'done'
+        // Elements for tasks not yet started remain HIDDEN (not added to visibleGuids)
         
-        let shouldShowTask = false
+      } else { // mode === 'actual'
+        // For actual mode, use actual dates and actual progress
+        const startDate = actualStart || plannedStart
+        const endDate = actualEnd || plannedEnd
+        
+        const taskDuration = Math.max(1, (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+        const daysPassed = (currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        
+        let timelineProgress = 0
+        if (isBefore(currentDate, startDate)) {
+          timelineProgress = 0
+        } else if (isAfter(currentDate, endDate)) {
+          timelineProgress = 100
+        } else {
+          timelineProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
+        }
+        
+        const actualProgress = Number(task.progress || 0)
+        let shouldShowElements = false
         let taskColor = STATUS_COLORS.ACTUAL.NOT_STARTED
         
-        if (actualStart && !isBefore(currentDate, actualStart)) {
-          if (actualEnd && isAfter(currentDate, actualEnd)) {
-            // Task completed (actual)
-            if (isTaskCompleted) {
-              shouldShowTask = true
-              if (isBefore(actualEnd, plannedEnd)) {
-                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.AHEAD
-              } else if (isAfter(actualEnd, plannedEnd)) {
-                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.BEHIND
-              } else {
-                taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.ON_TIME
-              }
+        if (timelineProgress === 0) {
+          shouldShowElements = false
+        } else if (timelineProgress > 0 && timelineProgress < 100) {
+          shouldShowElements = true
+          
+          if (actualProgress >= timelineProgress) {
+            taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.IN_PROGRESS
+          } else {
+            taskColor = STATUS_COLORS.ACTUAL.BEHIND
+          }
+          
+          if (!taskElementMap.has(task.id)) {
+            taskElementMap.set(task.id, [])
+            currentActiveTasks.push(task)
+          }
+        } else {
+          shouldShowElements = true
+          if (actualProgress >= 100) {
+            // Completed - check if ahead, on time, or behind
+            if (actualEnd && isBefore(actualEnd, plannedEnd)) {
+              taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.AHEAD
+            } else if (actualEnd && isAfter(actualEnd, plannedEnd)) {
+              taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.BEHIND
+            } else {
+              taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.ON_TIME
             }
           } else {
-            // Task in progress (actual)
-            if (taskProgress > 0) {
-              shouldShowTask = true
-              taskColor = isTaskCritical ? STATUS_COLORS.ACTUAL.CRITICAL : STATUS_COLORS.ACTUAL.IN_PROGRESS
-              
-              // Track active task
-              if (!taskElementMap.has(task.id)) {
-                taskElementMap.set(task.id, [])
-                currentActiveTasks.push(task)
-              }
-            }
-          }
-        } else if (!actualStart && isAfter(currentDate, plannedEnd)) {
-          // No actual start but planned date passed
-          if (taskProgress > 0) {
-            shouldShowTask = true
-            taskColor = '#F97316' // Orange - delayed/not started
+            taskColor = STATUS_COLORS.ACTUAL.BEHIND // Should be done but isn't
           }
         }
         
-        // **ENHANCED: Multiple visualization modes for progress (Actual mode)**
-        if (shouldShowTask && taskProgress > 0) {
+        if (shouldShowElements && timelineProgress > 0) {
           const totalElements = taskLinks.length
           const sortedLinks = [...taskLinks].sort((a, b) => 
             a.element.guid.localeCompare(b.element.guid)
           )
           
           if (visualizationMode === 'element-count') {
-            // MODE 1: Show only percentage of elements
-            const elementsToShow = Math.ceil((taskProgress / 100) * totalElements)
+            const elementsToShow = Math.ceil((timelineProgress / 100) * totalElements)
             
             sortedLinks.forEach((link, index) => {
               if (index < elementsToShow) {
@@ -433,20 +435,14 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
                 if (taskElementMap.has(task.id)) {
                   taskElementMap.get(task.id)!.push(link.element.guid)
                 }
-              } else {
-                colorFilters.push({ 
-                  property: { key: 'id', value: link.element.guid }, 
-                  color: STATUS_COLORS.ACTUAL.NOT_STARTED 
-                })
               }
             })
           } else if (visualizationMode === 'opacity') {
-            // MODE 2: Show all elements with opacity
             sortedLinks.forEach((link) => {
               visibleGuids.push(link.element.guid)
               
-              const opacity = 0.3 + (taskProgress / 100) * 0.7
-              const progressColor = taskProgress < 100 
+              const opacity = 0.3 + (timelineProgress / 100) * 0.7
+              const progressColor = timelineProgress < 100 
                 ? STATUS_COLORS.ACTUAL.IN_PROGRESS_PARTIAL 
                 : taskColor
               
@@ -461,12 +457,11 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
               }
             })
           } else if (visualizationMode === 'color-gradient') {
-            // MODE 3: Color gradient
             sortedLinks.forEach((link) => {
               visibleGuids.push(link.element.guid)
               
               const greyColor = STATUS_COLORS.ACTUAL.NOT_STARTED
-              const progressRatio = taskProgress / 100
+              const progressRatio = timelineProgress / 100
               const interpolatedColor = interpolateColor(greyColor, taskColor, progressRatio)
               
               colorFilters.push({ 
@@ -479,18 +474,9 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
               }
             })
           }
-        } else {
-          taskLinks.forEach(link => {
-            colorFilters.push({ 
-              property: { key: 'id', value: link.element.guid }, 
-              color: STATUS_COLORS.ACTUAL.NOT_STARTED 
-            })
-          })
         }
       }
     })
-
-
 
     // Update active tasks with element counts
     const tasksWithCounts = currentActiveTasks.map(task => ({
@@ -499,29 +485,23 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     }))
     setActiveTasks(tasksWithCounts)
 
-    // Apply visibility and colors to viewer
-    if (visualizationMode === 'element-count') {
-      // For element count mode: hide elements not in visibleGuids
-      const hiddenGuids = allElementGuids.filter(guid => !visibleGuids.includes(guid))
-      
-      if (hiddenGuids.length > 0) {
-        viewerRef.current.hideObjects(hiddenGuids)
-      }
-      
-      if (visibleGuids.length > 0) {
-        viewerRef.current.showObjects(visibleGuids)
-      }
-    } else {
-      // For opacity and gradient modes: show all elements
-      viewerRef.current.showObjects(allElementGuids)
+    // TRUE 4D SIMULATION: Apply visibility progressively
+    // Only show elements that should be visible based on timeline
+    if (visibleGuids.length > 0) {
+      viewerRef.current.showObjects(visibleGuids)
     }
+    
+    // For opacity and gradient modes, we still only show elements that have started
+    // (they're already in visibleGuids from the processing above)
 
-    // Apply color filters
-    viewerRef.current.setColorFilter({
-      property: 'id',
-      multiple: colorFilters,
-      default_color: STATUS_COLORS.PLANNED.NOT_STARTED,
-    })
+    // Apply color filters to visible elements
+    if (colorFilters.length > 0) {
+      viewerRef.current.setColorFilter({
+        property: 'id',
+        multiple: colorFilters,
+        default_color: STATUS_COLORS.PLANNED.NOT_STARTED,
+      })
+    }
 
   }, [currentDate, links, mode, criticalPathTasks, showCriticalPath, visualizationMode])
 
@@ -660,7 +640,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">4D Simulation</h2>
-          <p className="text-sm text-gray-500">Visualize construction progress over time</p>
+          <p className="text-sm text-gray-500">Watch the construction sequence unfold - model builds progressively from start to finish</p>
         </div>
         <div className="flex items-center space-x-2">
           {/* Visualization Mode Selector */}
@@ -710,26 +690,26 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         </div>
       </div>
 
-      {/* Visualization Mode Info */}
+      {/* 4D Simulation Info */}
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4">
           <div className="flex items-start space-x-3">
             <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-blue-900 mb-1">
-                Progress Visualization: {
-                  visualizationMode === 'element-count' ? 'Element Count' :
-                  visualizationMode === 'opacity' ? 'Opacity Mode' :
+                True 4D Simulation - {
+                  visualizationMode === 'element-count' ? 'Progressive Build' :
+                  visualizationMode === 'opacity' ? 'Opacity Fade-In' :
                   'Color Gradient'
                 }
               </h3>
               <p className="text-xs text-blue-800">
                 {visualizationMode === 'element-count' && 
-                  'Shows only the percentage of elements matching task progress. 20% progress = 2 out of 10 elements visible.'}
+                  'Model starts empty. Elements appear progressively as the timeline advances through each task. Task with 4 elements at 50% timeline = 2 elements visible.'}
                 {visualizationMode === 'opacity' && 
-                  'All elements visible with opacity based on progress. 20% progress = all elements at 30-50% opacity.'}
+                  'Model starts empty. Task elements fade in as timeline progresses. 25% through task = elements at 50% opacity.'}
                 {visualizationMode === 'color-gradient' && 
-                  'All elements visible with color transitioning from grey to full color based on progress.'}
+                  'Model starts empty. Elements appear with color transitioning from grey to full status color as timeline advances.'}
               </p>
             </div>
           </div>

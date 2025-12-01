@@ -161,31 +161,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only admin and manager can create projects' }, { status: 403 })
     }
 
-    let projectData: any
-    let uploadedFile: File | null = null
+    let name: string = ''
+    let description: string = ''
+    let startDate: string = ''
+    let endDate: string = ''
+    let status: string = 'active'
+    let teamId: number | null = null
+    let teamLeaderId: number | null = null
+    let projectImage: File | null = null
 
     // Determine content type and parse body accordingly
     const contentType = request.headers.get('content-type') || ''
     
     try {
       if (contentType.includes('multipart/form-data')) {
-        // Handle FormData (file upload)
+        // Handle FormData (new format with image)
         const formData = await request.formData()
-        const file = formData.get('file') as File
-        const projectDataStr = formData.get('projectData') as string
         
-        if (file) {
-          uploadedFile = file
-        }
+        name = formData.get('name') as string || ''
+        description = formData.get('description') as string || ''
+        startDate = formData.get('startDate') as string || ''
+        endDate = formData.get('endDate') as string || ''
+        status = formData.get('status') as string || 'active'
+        const teamIdStr = formData.get('teamId') as string
+        const teamLeaderIdStr = formData.get('teamLeaderId') as string
         
-        if (projectDataStr) {
-          projectData = JSON.parse(projectDataStr)
-        } else {
-          return NextResponse.json({ error: 'Project data is required' }, { status: 400 })
+        teamId = teamIdStr ? parseInt(teamIdStr) : null
+        teamLeaderId = teamLeaderIdStr ? parseInt(teamLeaderIdStr) : null
+        
+        const imageFile = formData.get('image') as File
+        if (imageFile && imageFile.size > 0) {
+          projectImage = imageFile
         }
       } else {
-        // Handle JSON
-        projectData = await request.json()
+        // Handle JSON (legacy format)
+        const projectData = await request.json()
+        name = projectData.name
+        description = projectData.description
+        startDate = projectData.startDate
+        endDate = projectData.endDate
+        status = projectData.status || 'active'
+        teamId = projectData.teamId
+        teamLeaderId = projectData.teamLeaderId
       }
     } catch (e) {
       console.error('Request body parsing error:', e)
@@ -194,19 +211,6 @@ export async function POST(request: NextRequest) {
         details: e instanceof Error ? e.message : String(e)
       }, { status: 400 })
     }
-
-    const { 
-      name, 
-      description, 
-      startDate, 
-      endDate, 
-      teamId, 
-      teamLeaderId, 
-      bimSource,
-      speckleUrl,
-      autodeskUrn,
-      autodeskFileUrl
-    } = projectData
 
     if (!name) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
@@ -240,17 +244,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Handle project image upload
+    let imagePath: string | null = null
+    if (projectImage) {
+      const uploadsDir = join(process.cwd(), 'public', 'uploads', 'projects')
+      
+      if (!existsSync(uploadsDir)) {
+        await mkdir(uploadsDir, { recursive: true })
+      }
+
+      const fileName = `${Date.now()}-${projectImage.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
+      const filePath = join(uploadsDir, fileName)
+      
+      const bytes = await projectImage.arrayBuffer()
+      const buffer = Buffer.from(bytes)
+      await writeFile(filePath, buffer)
+
+      imagePath = `/uploads/projects/${fileName}`
+    }
+
     // Create project
     const project = await prisma.project.create({
       data: {
         name,
-        description,
+        description: description || null,
+        image: imagePath,
+        status: status || 'active',
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         createdById: user.id,
         teamId,
-        teamLeaderId,
-        speckleUrl: bimSource === 'speckle' ? speckleUrl : null
+        teamLeaderId
       },
       include: {
         _count: {
@@ -275,52 +299,6 @@ export async function POST(request: NextRequest) {
         }
       }
     })
-
-    // Handle different BIM sources
-    if (bimSource && bimSource !== 'none') {
-      let modelData: any = {
-        projectId: project.id,
-        name: `${name} - Model`,
-        uploadedBy: user.id,
-        source: bimSource
-      }
-
-      if (bimSource === 'speckle') {
-        modelData.sourceUrl = speckleUrl
-        modelData.format = 'speckle'
-      } 
-      else if (bimSource === 'local' && uploadedFile) {
-        // Save file to disk
-        const uploadsDir = join(process.cwd(), 'public', 'uploads', 'models')
-        
-        if (!existsSync(uploadsDir)) {
-          await mkdir(uploadsDir, { recursive: true })
-        }
-
-        const fileName = `${Date.now()}-${uploadedFile.name}`
-        const filePath = join(uploadsDir, fileName)
-        
-        const bytes = await uploadedFile.arrayBuffer()
-        const buffer = Buffer.from(bytes)
-        await writeFile(filePath, buffer)
-
-        modelData.filePath = `/uploads/models/${fileName}`
-        modelData.fileSize = uploadedFile.size
-        modelData.format = 'ifc'
-      }
-      else if (bimSource === 'acc' || bimSource === 'drive') {
-        // Store Autodesk URN and file URL
-        modelData.sourceId = autodeskUrn
-        modelData.sourceUrl = autodeskFileUrl || null
-        modelData.source = bimSource === 'acc' ? 'autodesk_construction_cloud' : 'autodesk_drive'
-        modelData.format = 'autodesk'
-      }
-
-      // Create model record
-      await prisma.model.create({
-        data: modelData
-      })
-    }
 
     // Log activity
     await prisma.activityLog.create({

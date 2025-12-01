@@ -16,6 +16,11 @@ fetch('/api/teams', {credentials: 'include'})
 
    npm run backup
 
+   git add .
+   git commit -m "update"
+   git push 
+   git push  main 
+
 
 
       

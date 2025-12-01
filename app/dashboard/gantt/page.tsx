@@ -26,21 +26,12 @@ export default async function GanttPage() {
   const user = await getCurrentUser()
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6 space-y-6">
+    <div>
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold">Project Timeline</h1>
-              <p className="text-gray-500">Gantt chart view of all projects and tasks</p>
-            </div>
+          <div>
+            <p className="text-gray-500 dark:text-gray-400">Gantt chart view of all projects and tasks</p>
           </div>
         </div>
 

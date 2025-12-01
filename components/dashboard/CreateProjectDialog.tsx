@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -16,8 +16,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CalendarPlus, Loader2, Plus } from "lucide-react"
+import { CalendarPlus, Loader2, Plus, ImagePlus, X } from "lucide-react"
 import { toast } from "sonner"
+import Image from "next/image"
 
 interface Team {
   id: number
@@ -32,17 +33,8 @@ interface TeamLeader {
 }
 
 interface CreateProjectDialogProps {
-  /**
-   * Optional: override the trigger button label.
-   */
   label?: string
-  /**
-   * Optional: pass a different button variant (e.g. "outline") for the trigger.
-   */
   variant?: "default" | "outline" | "ghost" | "secondary" | "destructive" | "link"
-  /**
-   * Optional: size for the trigger button.
-   */
   size?: "default" | "sm" | "lg" | "icon"
 }
 
@@ -57,23 +49,22 @@ export default function CreateProjectDialog({
   const [description, setDescription] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [status, setStatus] = useState("active")
   const [teamId, setTeamId] = useState("")
   const [teamLeaderId, setTeamLeaderId] = useState("")
   const [teams, setTeams] = useState<Team[]>([])
   const [teamLeaders, setTeamLeaders] = useState<TeamLeader[]>([])
   const [loading, setLoading] = useState(false)
-  const [speckleUrl, setSpeckleUrl] = useState("")
-  const [bimSource, setBimSource] = useState<string>("none") // none, speckle, local, acc, drive
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [autodeskUrn, setAutodeskUrn] = useState("")
-  const [autodeskFileUrl, setAutodeskFileUrl] = useState("")
+  
+  // Project Image
+  const [projectImage, setProjectImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch teams (cookie will be sent automatically)
-      fetch("/api/teams", {
-        credentials: 'include'
-      })
+      fetch("/api/teams", { credentials: 'include' })
         .then((res) => res.json())
         .then((data) => {
           if (data.teams) {
@@ -86,14 +77,10 @@ export default function CreateProjectDialog({
 
   useEffect(() => {
     if (teamId) {
-      // Fetch team leaders for selected team (cookie will be sent automatically)
-      fetch(`/api/users?role=team_leader`, {
-        credentials: 'include'
-      })
+      fetch(`/api/users?role=team_leader`, { credentials: 'include' })
         .then((res) => res.json())
         .then((data) => {
           if (data.users) {
-            // Filter leaders who belong to selected team
             const selectedTeamId = parseInt(teamId)
             const leadersInTeam = data.users.filter((user: any) =>
               user.teamMemberships?.some(
@@ -115,13 +102,39 @@ export default function CreateProjectDialog({
     setDescription("")
     setStartDate("")
     setEndDate("")
+    setStatus("active")
     setTeamId("")
     setTeamLeaderId("")
-    setSpeckleUrl("")
-    setBimSource("none")
-    setSelectedFile(null)
-    setAutodeskUrn("")
-    setAutodeskFileUrl("")
+    setProjectImage(null)
+    setImagePreview(null)
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error("Please select an image file")
+        return
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB")
+        return
+      }
+      setProjectImage(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const removeImage = () => {
+    setProjectImage(null)
+    setImagePreview(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -130,79 +143,44 @@ export default function CreateProjectDialog({
       toast.error("Project name is required")
       return
     }
+    if (!teamId) {
+      toast.error("Please select a team")
+      return
+    }
 
     setLoading(true)
 
     const promise = new Promise(async (resolve, reject) => {
       try {
-        if (!teamId) {
-          throw new Error("Please select a team")
+        const formData = new FormData()
+        formData.append("name", name.trim())
+        formData.append("description", description.trim() || "")
+        formData.append("startDate", startDate || "")
+        formData.append("endDate", endDate || "")
+        formData.append("status", status)
+        formData.append("teamId", teamId)
+        if (teamLeaderId) {
+          formData.append("teamLeaderId", teamLeaderId)
+        }
+        if (projectImage) {
+          formData.append("image", projectImage)
         }
 
-        // Validate based on selected source
-        if (bimSource === "speckle" && !speckleUrl.trim()) {
-          throw new Error("Please provide Speckle URL")
-        }
-        if (bimSource === "local" && !selectedFile) {
-          throw new Error("Please select an IFC file")
-        }
-        if ((bimSource === "acc" || bimSource === "drive") && !autodeskUrn) {
-          throw new Error("Please provide Autodesk URN")
-        }
-
-        let projectData: any = {
-          name: name.trim(),
-          description: description.trim() || null,
-          startDate: startDate || null,
-          endDate: endDate || null,
-          teamId: parseInt(teamId),
-          teamLeaderId: teamLeaderId ? parseInt(teamLeaderId) : null,
-          bimSource: bimSource,
-        }
-
-        // Add source-specific data
-        if (bimSource === "speckle") {
-          projectData.speckleUrl = speckleUrl.trim()
-        } else if (bimSource === "acc" || bimSource === "drive") {
-          projectData.autodeskUrn = autodeskUrn.trim()
-          projectData.autodeskFileUrl = autodeskFileUrl.trim()
-        }
-
-        let response: Response
         const token = document.cookie.split('token=')[1]?.split(';')[0]
-
-        // Handle file upload separately using dedicated upload endpoint
-        if (bimSource === "local" && selectedFile) {
-          const formData = new FormData()
-          formData.append("file", selectedFile)
-          formData.append("projectData", JSON.stringify(projectData))
-
-          response = await fetch("/api/projects/upload", {
-            method: "POST",
-            credentials: 'include',
-            headers: {
-              ...(token && { 'Authorization': `Bearer ${token}` }),
-            },
-            body: formData,
-          })
-        } else {
-          response = await fetch("/api/projects", {
-            method: "POST",
-            credentials: 'include',
-            headers: {
-              "Content-Type": "application/json",
-              ...(token && { 'Authorization': `Bearer ${token}` }),
-            },
-            body: JSON.stringify(projectData),
-          })
-        }
+        const response = await fetch("/api/projects", {
+          method: "POST",
+          credentials: 'include',
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` }),
+          },
+          body: formData,
+        })
 
         const data = await response.json()
         if (!response.ok) {
           throw new Error(data.error || "Failed to create project")
         }
 
-        // Navigate directly to the new project workspace
         const projectId = data.project?.id
         if (projectId) {
           setIsOpen(false)
@@ -229,6 +207,7 @@ export default function CreateProjectDialog({
     })
   }
 
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
@@ -237,112 +216,86 @@ export default function CreateProjectDialog({
           {label}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <CalendarPlus className="h-5 w-5" />
             <span>Create New Project</span>
           </DialogTitle>
           <DialogDescription>
-            Define the basic information for your new 4D BIM project.
+            Add a new construction project to manage its schedule
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+          {/* Project Image */}
           <div className="space-y-2">
-            <Label htmlFor="project-name">Project Name</Label>
+            <Label>Project Image</Label>
+            <div className="flex items-center gap-4">
+              {imagePreview ? (
+                <div className="relative w-24 h-24 rounded-lg overflow-hidden border">
+                  <Image
+                    src={imagePreview}
+                    alt="Project preview"
+                    fill
+                    className="object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                >
+                  <ImagePlus className="h-6 w-6 text-gray-400" />
+                  <span className="text-xs text-gray-500 mt-1">Add Image</span>
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              <div className="text-xs text-gray-500">
+                <p>Upload a project image</p>
+                <p>Max size: 5MB</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Project Name */}
+          <div className="space-y-2">
+            <Label htmlFor="project-name">Project Name *</Label>
             <Input
               id="project-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="Enter project name"
               required
             />
           </div>
+
+          {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="project-description">Description</Label>
             <Textarea
               id="project-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
+              placeholder="Project description (optional)"
+              rows={2}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="bim-source">BIM Model Source</Label>
-            <Select value={bimSource} onValueChange={setBimSource}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select BIM source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No Model (Add Later)</SelectItem>
-                <SelectItem value="speckle">Speckle</SelectItem>
-                <SelectItem value="local">Local IFC File</SelectItem>
-                <SelectItem value="acc">Autodesk Construction Cloud</SelectItem>
-                <SelectItem value="drive">Autodesk Drive</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
 
-          {bimSource === "speckle" && (
-            <div className="space-y-2">
-              <Label htmlFor="speckle-url">Speckle Model URL</Label>
-              <Input
-                id="speckle-url"
-                type="url"
-                placeholder="https://app.speckle.systems/projects/..."
-                value={speckleUrl}
-                onChange={(e) => setSpeckleUrl(e.target.value)}
-              />
-              <p className="text-xs text-gray-500">
-                Paste your Speckle project/model URL
-              </p>
-            </div>
-          )}
-
-          {bimSource === "local" && (
-            <div className="space-y-2">
-              <Label htmlFor="ifc-file">Upload IFC File</Label>
-              <Input
-                id="ifc-file"
-                type="file"
-                accept=".ifc"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-              />
-              <p className="text-xs text-gray-500">
-                Upload your IFC model file (max 100MB)
-              </p>
-            </div>
-          )}
-
-          {(bimSource === "acc" || bimSource === "drive") && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="autodesk-urn">Autodesk URN *</Label>
-                <Input
-                  id="autodesk-urn"
-                  type="text"
-                  placeholder="urn:adsk.wipprod:dm.lineage:..."
-                  value={autodeskUrn}
-                  onChange={(e) => setAutodeskUrn(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">
-                  The URN of your model in {bimSource === "acc" ? "Autodesk Construction Cloud" : "Autodesk Drive"}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="autodesk-file-url">File URL (Optional)</Label>
-                <Input
-                  id="autodesk-file-url"
-                  type="text"
-                  placeholder="https://..."
-                  value={autodeskFileUrl}
-                  onChange={(e) => setAutodeskFileUrl(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">
-                  Direct link to the file (optional)
-                </p>
-              </div>
-            </>
-          )}
+          {/* Team Selection */}
           <div className="space-y-2">
             <Label htmlFor="project-team">Team *</Label>
             <Select value={teamId} onValueChange={setTeamId} required>
@@ -358,6 +311,8 @@ export default function CreateProjectDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Team Leader (Optional) */}
           {teamId && teamLeaders.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="project-leader">Team Leader (Optional)</Label>
@@ -375,6 +330,8 @@ export default function CreateProjectDialog({
               </Select>
             </div>
           )}
+
+          {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="project-start">Start Date</Label>
@@ -395,6 +352,23 @@ export default function CreateProjectDialog({
               />
             </div>
           </div>
+
+          {/* Status */}
+          <div className="space-y-2">
+            <Label htmlFor="project-status">Status</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="planning">Planning</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="on_hold">On Hold</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

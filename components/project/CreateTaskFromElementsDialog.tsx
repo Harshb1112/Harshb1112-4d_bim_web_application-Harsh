@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -102,9 +102,16 @@ export default function CreateTaskFromElementsDialog({
         })
       })
 
+      // Handle non-JSON error responses
+      const contentType = response.headers.get('content-type')
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create task')
+        if (contentType?.includes('application/json')) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to create task')
+        } else {
+          const text = await response.text()
+          throw new Error(text || `Server error: ${response.status}`)
+        }
       }
 
       const result = await response.json()
@@ -124,6 +131,9 @@ export default function CreateTaskFromElementsDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Task from Selected Elements</DialogTitle>
+          <DialogDescription>
+            Link selected BIM elements to a new task for tracking construction progress.
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
