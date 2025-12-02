@@ -15,7 +15,8 @@ import {
   CheckCircle2,
   Clock,
   Eye,
-  X
+  X,
+  Pencil
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -25,6 +26,7 @@ interface TaskDetailPanelProps {
   onFocusElements: (elementIds: string[]) => void
   onUpdateStatus: (taskId: number, status: string) => void
   onUpdateProgress: (taskId: number, progress: number) => void
+  onEditTask?: (task: any) => void
 }
 
 export default function TaskDetailPanel({
@@ -32,7 +34,8 @@ export default function TaskDetailPanel({
   onClose,
   onFocusElements,
   onUpdateStatus,
-  onUpdateProgress
+  onUpdateProgress,
+  onEditTask
 }: TaskDetailPanelProps) {
   const [isUpdating, setIsUpdating] = useState(false)
 
@@ -115,9 +118,16 @@ export default function TaskDetailPanel({
               )}
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {onEditTask && (
+              <Button variant="ghost" size="sm" onClick={() => onEditTask(task)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
 

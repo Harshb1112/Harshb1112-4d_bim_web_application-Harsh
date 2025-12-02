@@ -32,6 +32,7 @@ model User {
   taskComments      TaskComment[]
   assignedTasks     Task[]
   teamMemberships   TeamMembership[]
+  siteViewLogs      SiteViewLog[]
 
   @@map("users")
 }
@@ -49,15 +50,23 @@ model Project {
   teamId       Int?          @map("team_id")
   teamLeaderId Int?          @map("team_leader_id")
   speckleUrl   String?       @map("speckle_url")
-  activityLogs ActivityLog[]
-  errorLogs    ErrorLog[]
-  models       Model[]
-  projectUsers ProjectUser[]
-  createdBy    User?         @relation("ProjectCreator", fields: [createdById], references: [id])
-  team         Team?         @relation(fields: [teamId], references: [id])
-  teamLeader   User?         @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
-  tasks        Task[]
-  resources    Resource[]
+  location     String?       // Site location address
+  latitude     Float?
+  longitude    Float?
+  activityLogs      ActivityLog[]
+  errorLogs         ErrorLog[]
+  models            Model[]
+  projectUsers      ProjectUser[]
+  createdBy         User?              @relation("ProjectCreator", fields: [createdById], references: [id])
+  team              Team?              @relation(fields: [teamId], references: [id])
+  teamLeader        User?              @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
+  tasks             Task[]
+  resources         Resource[]
+  siteCameras       SiteCamera[]
+  siteCaptures      SiteCapture[]
+  dailySiteCosts    DailySiteCost[]
+  dailySiteProgress DailySiteProgress[]
+  siteViewLogs      SiteViewLog[]
 
   @@map("projects")
 }
@@ -342,4 +351,111 @@ model ResourceCost {
   resource    Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@map("resource_costs")
+}
+
+// ============================================
+// VIEW SITE - 360° Live Camera System
+// ============================================
+
+model SiteCamera {
+  id            Int           @id @default(autoincrement())
+  projectId     Int           @map("project_id")
+  name          String
+  cameraType    String        @default("360") @map("camera_type") // 360, drone, fixed
+  brand         String?       // RICOH THETA, Insta360, etc.
+  model         String?
+  streamUrl     String?       @map("stream_url") // RTSP/WebRTC URL
+  snapshotUrl   String?       @map("snapshot_url") // For periodic snapshots
+  apiKey        String?       @map("api_key")
+  apiSecret     String?       @map("api_secret")
+  location      String?       // Position description
+  latitude      Float?
+  longitude     Float?
+  altitude      Float?
+  isActive      Boolean       @default(true) @map("is_active")
+  isLive        Boolean       @default(false) @map("is_live")
+  lastPingAt    DateTime?     @map("last_ping_at")
+  settings      Json?         // Camera-specific settings
+  createdAt     DateTime      @default(now()) @map("created_at")
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  captures      SiteCapture[]
+
+  @@map("site_cameras")
+}
+
+model SiteCapture {
+  id           Int         @id @default(autoincrement())
+  projectId    Int         @map("project_id")
+  cameraId     Int?        @map("camera_id")
+  captureType  String      @map("capture_type") // 360_photo, 360_video, photo, video, drone, timelapse
+  url          String      // Cloud storage URL
+  thumbnailUrl String?     @map("thumbnail_url")
+  fileSize     Int?        @map("file_size")
+  duration     Int?        // Video duration in seconds
+  resolution   String?     // e.g., "4K", "8K"
+  capturedAt   DateTime    @map("captured_at")
+  weather      String?     // Weather conditions
+  temperature  Float?
+  notes        String?
+  metadata     Json?       // EXIF, GPS, etc.
+  isProcessed  Boolean     @default(false) @map("is_processed")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  camera       SiteCamera? @relation(fields: [cameraId], references: [id])
+
+  @@map("site_captures")
+}
+
+model DailySiteCost {
+  id          Int      @id @default(autoincrement())
+  projectId   Int      @map("project_id")
+  date        DateTime
+  category    String   // labor, material, equipment, subcontractor, overhead
+  description String?
+  quantity    Float?
+  unit        String?
+  unitCost    Float?   @map("unit_cost")
+  totalCost   Float    @map("total_cost")
+  currency    String   @default("INR")
+  vendor      String?
+  invoiceRef  String?  @map("invoice_ref")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("daily_site_costs")
+}
+
+model DailySiteProgress {
+  id              Int      @id @default(autoincrement())
+  projectId       Int      @map("project_id")
+  date            DateTime
+  workDescription String   @map("work_description")
+  teamName        String?  @map("team_name")
+  workersCount    Int?     @map("workers_count")
+  hoursWorked     Float?   @map("hours_worked")
+  progressPercent Float?   @map("progress_percent")
+  weather         String?
+  issues          String?
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("daily_site_progress")
+}
+
+model SiteViewLog {
+  id         Int      @id @default(autoincrement())
+  projectId  Int      @map("project_id")
+  userId     Int      @map("user_id")
+  viewType   String   @map("view_type") // live, timelapse, capture
+  captureId  Int?     @map("capture_id")
+  viewedAt   DateTime @default(now()) @map("viewed_at")
+  duration   Int?     // View duration in seconds
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("site_view_logs")
 }

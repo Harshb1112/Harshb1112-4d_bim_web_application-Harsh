@@ -40,17 +40,30 @@ export default function TaskDetailsPanel({ task, onUpdate }: TaskDetailsPanelPro
     setSaving(true);
     try {
       const response = await fetch(`/api/tasks/${task.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          status: formData.status,
+          priority: formData.priority,
+          progress: formData.progress,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+        }),
       });
 
       if (response.ok) {
         setIsEditing(false);
         onUpdate();
+      } else {
+        const data = await response.json();
+        console.error('Error updating task:', data.error);
+        alert(data.error || 'Failed to update task');
       }
     } catch (error) {
       console.error('Error updating task:', error);
+      alert('Failed to update task');
     } finally {
       setSaving(false);
     }

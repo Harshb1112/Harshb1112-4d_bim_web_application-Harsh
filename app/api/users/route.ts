@@ -6,13 +6,17 @@ export async function GET(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.log('[Users API] No token found')
+      return NextResponse.json({ error: 'Unauthorized - Please login' }, { status: 401 })
     }
 
     const currentUser = verifyToken(token)
     if (!currentUser) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+      console.log('[Users API] Invalid token')
+      return NextResponse.json({ error: 'Invalid token - Please login again' }, { status: 401 })
     }
+    
+    console.log('[Users API] Request from user:', currentUser.email)
 
     const { searchParams } = new URL(request.url)
     const role = searchParams.get('role')
@@ -60,10 +64,11 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({ users })
-  } catch (error) {
-    console.error('Get users error:', error)
+  } catch (error: any) {
+    console.error('[Users API] Error:', error?.message || error)
+    console.error('[Users API] Stack:', error?.stack)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error?.message },
       { status: 500 }
     )
   }

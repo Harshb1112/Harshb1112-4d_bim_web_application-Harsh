@@ -22,6 +22,7 @@ import GanttChart from '../GanttChart'
 import { formatDate, calculateCriticalPath } from '@/lib/utils'
 import { toast } from 'sonner'
 import TaskCommentSection from '../TaskCommentSection'
+import EditTaskDialog from '../EditTaskDialog'
 
 interface ScheduleManagerProps {
   project: any
@@ -39,6 +40,11 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
   const [showCriticalPath, setShowCriticalPath] = useState(false)
   const [timeFilter, setTimeFilter] = useState<string>('all')
   const [selectedTaskForComments, setSelectedTaskForComments] = useState<any | null>(null)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [taskToEdit, setTaskToEdit] = useState<any | null>(null)
+  const [teams, setTeams] = useState<any[]>([])
+  const [users, setUsers] = useState<any[]>([])
+  const [availableElements, setAvailableElements] = useState<any[]>([])
 
   // Create-task dialog state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -75,6 +81,60 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
   const canEdit = currentUserRole === 'admin' || currentUserRole === 'manager'
 
   const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Fetch teams, users, elements when edit dialog opens
+  useEffect(() => {
+    if (showEditDialog) {
+      fetchTeamsAndUsers()
+      fetchAvailableElements()
+    }
+  }, [showEditDialog])
+
+  const fetchTeamsAndUsers = async () => {
+    try {
+      const [teamsRes, usersRes] = await Promise.all([
+        fetch('/api/teams', { credentials: 'include' }),
+        fetch('/api/users', { credentials: 'include' })
+      ])
+      if (teamsRes.ok) {
+        const data = await teamsRes.json()
+        setTeams(data.teams || [])
+      }
+      if (usersRes.ok) {
+        const data = await usersRes.json()
+        setUsers(data.users || [])
+      }
+    } catch (error) {
+      console.error('Error fetching teams/users:', error)
+    }
+  }
+
+  const fetchAvailableElements = async () => {
+    try {
+      const response = await fetch(`/api/projects/${project.id}/models`, { credentials: 'include' })
+      if (response.ok) {
+        const data = await response.json()
+        const models = data.models || []
+        for (const model of models) {
+          const elemResponse = await fetch(`/api/models/${model.id}/elements`, { credentials: 'include' })
+          if (elemResponse.ok) {
+            const elemData = await elemResponse.json()
+            if (elemData.elements && elemData.elements.length > 0) {
+              setAvailableElements(elemData.elements)
+              break
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching elements:', error)
+    }
+  }
+
+  const handleOpenEditDialog = (task: any) => {
+    setTaskToEdit(task)
+    setShowEditDialog(true)
+  }
 
   useEffect(() => {
     fetchTasks() // Initial fetch
@@ -337,12 +397,18 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
             <div className="text-sm text-gray-600">{task.startDate ? formatDate(task.startDate) : '-'}</div>
             <div className="text-sm text-gray-600">{task.actualStartDate ? formatDate(task.actualStartDate) : '-'}</div>
             <div className="text-sm text-gray-600">{task.progress}%</div>
-            <div className="flex justify-end col-span-2">
+            <div className="flex justify-end col-span-2 gap-2">
               {canEdit && (
-                <Button size="sm" variant="outline" onClick={() => handleEdit(task)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Update Progress
-                </Button>
+                <>
+                  <Button size="sm" variant="outline" onClick={() => handleEdit(task)}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Progress
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleOpenEditDialog(task)}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Task
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -556,6 +622,24 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
             taskName={selectedTaskForComments.name}
           />
         </div>
+      )}
+
+      {/* Edit Task Dialog */}
+      {taskToEdit && (
+        <EditTaskDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          task={taskToEdit}
+          projectId={project.id}
+          availableElements={availableElements}
+          teams={teams}
+          users={users}
+          onTaskUpdated={() => {
+            fetchTasks()
+            setShowEditDialog(false)
+            setTaskToEdit(null)
+          }}
+        />
       )}
     </div>
   )

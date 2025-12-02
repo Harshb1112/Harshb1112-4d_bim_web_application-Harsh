@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Users, Calendar, Pencil, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Pencil, Trash2, Loader2, AlertTriangle, Video, Shield, Camera, Lock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,7 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
   const [currentProject, setCurrentProject] = useState(project);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [viewSiteOpen, setViewSiteOpen] = useState(false);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [startDate, setStartDate] = useState(project.startDate ? project.startDate.split('T')[0] : '');
@@ -149,6 +150,17 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
             </div>
           </div>
 
+          {/* View Site Button - Opens confirmation dialog */}
+          <Button 
+            variant="default" 
+            size="sm" 
+            onClick={() => setViewSiteOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Video className="w-4 h-4 mr-2" />
+            View Site (LIVE)
+          </Button>
+
           {canDelete && (
             <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)} className="text-red-600 border-red-200 hover:bg-red-50">
               <Trash2 className="w-4 h-4 mr-2" />
@@ -224,6 +236,88 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
             <Button variant="destructive" onClick={handleDelete} disabled={deleting || deleteConfirmText !== currentProject.name}>
               {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Delete Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Site Confirmation Dialog */}
+      <Dialog open={viewSiteOpen} onOpenChange={setViewSiteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-4 w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+              <Camera className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <DialogTitle className="text-center text-xl">
+              View Live Site
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              Access the live 360° camera feed for this construction site
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Security Notice */}
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 flex items-start gap-3">
+              <Shield className="w-5 h-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-yellow-800 dark:text-yellow-200">Secure Access</p>
+                <p className="text-yellow-700 dark:text-yellow-300 text-xs mt-1">
+                  You must be logged in to view the live site. All access is logged for security purposes.
+                </p>
+              </div>
+            </div>
+
+            {/* Project Info */}
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Project:</p>
+              <p className="font-medium text-gray-900 dark:text-white">{currentProject.name}</p>
+              {currentProject.location && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{currentProject.location}</p>
+              )}
+            </div>
+
+            {/* Features */}
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="font-medium mb-2">You will be able to:</p>
+              <ul className="space-y-1 text-xs">
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  View live 360° camera feed (Hikvision)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  See historical timelapse recordings
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  Track daily costs and progress
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                  View upcoming construction tasks
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setViewSiteOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                setViewSiteOpen(false);
+                router.push(`/project/${project.id}/view-site`);
+              }}
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+            >
+              <Lock className="w-4 h-4 mr-2" />
+              Sign In & View Site
             </Button>
           </DialogFooter>
         </DialogContent>

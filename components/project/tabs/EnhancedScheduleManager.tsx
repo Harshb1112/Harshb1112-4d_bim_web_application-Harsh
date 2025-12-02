@@ -35,6 +35,7 @@ import { toast } from 'sonner'
 import GanttChart from '../GanttChart'
 import UnifiedModelViewer from '../UnifiedModelViewer'
 import CreateTaskFromElementsDialog from '../CreateTaskFromElementsDialog'
+import EditTaskDialog from '../EditTaskDialog'
 
 interface EnhancedScheduleManagerProps {
   project: any
@@ -62,14 +63,18 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   // Dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showUpdateDialog, setShowUpdateDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
   const [taskProgress, setTaskProgress] = useState<number>(0)
   const [taskStatus, setTaskStatus] = useState<string>('todo')
+  const [taskStartDate, setTaskStartDate] = useState<string>('')
+  const [taskEndDate, setTaskEndDate] = useState<string>('')
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [availableElements, setAvailableElements] = useState<any[]>([])
   
   // Schedule tab state
   const [scheduleTab, setScheduleTab] = useState('gantt')
@@ -84,13 +89,45 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
 
   // Only fetch teams and users when dialog opens
   useEffect(() => {
-    if (showCreateDialog && teams.length === 0) {
+    if ((showCreateDialog || showEditDialog) && teams.length === 0) {
       fetchTeams()
     }
-    if (showCreateDialog && users.length === 0) {
+    if ((showCreateDialog || showEditDialog) && users.length === 0) {
       fetchUsers()
     }
-  }, [showCreateDialog])
+  }, [showCreateDialog, showEditDialog])
+
+  // Fetch available elements when edit dialog opens
+  useEffect(() => {
+    if (showEditDialog && project.id) {
+      fetchAvailableElements()
+    }
+  }, [showEditDialog, project.id])
+
+  const fetchAvailableElements = async () => {
+    try {
+      // Get elements from project models
+      const response = await fetch(`/api/projects/${project.id}/models`)
+      if (response.ok) {
+        const data = await response.json()
+        const models = data.models || []
+        
+        // Fetch elements from first model with elements
+        for (const model of models) {
+          const elemResponse = await fetch(`/api/models/${model.id}/elements`)
+          if (elemResponse.ok) {
+            const elemData = await elemResponse.json()
+            if (elemData.elements && elemData.elements.length > 0) {
+              setAvailableElements(elemData.elements)
+              break
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching elements:', error)
+    }
+  }
 
   const fetchTasks = async () => {
     setLoading(true)
@@ -275,21 +312,14 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   const handleTaskClick = (task: any) => {
     console.log('Task clicked:', task)
     
-    // Check if user can update this task
-    if (currentUserRole === 'viewer' || currentUserRole === 'member') {
-      // Viewer/Member can only update their own assigned tasks
-      // We'll check assigneeId in the dialog, for now just open it
-      setSelectedTask(task)
-      setTaskProgress(Number(task.progress || 0))
-      setTaskStatus(task.status || 'todo')
-      setShowUpdateDialog(true)
-    } else {
-      // Team Leader, Manager, Admin can update any task
-      setSelectedTask(task)
-      setTaskProgress(Number(task.progress || 0))
-      setTaskStatus(task.status || 'todo')
-      setShowUpdateDialog(true)
-    }
+    // Set task data
+    setSelectedTask(task)
+    setTaskProgress(Number(task.progress || 0))
+    setTaskStatus(task.status || 'todo')
+    // Set dates - format for input type="date"
+    setTaskStartDate(task.startDate ? task.startDate.split('T')[0] : '')
+    setTaskEndDate(task.endDate ? task.endDate.split('T')[0] : '')
+    setShowUpdateDialog(true)
   }
 
   const handleUpdateTask = async () => {
@@ -582,8 +612,13 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                       <TableCell>{task.assignee?.fullName || '-'}</TableCell>
                       <TableCell><Badge variant="outline">{task.elementLinks?.length || 0}</Badge></TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => handleTaskClick(task)}>Edit</Button>
-                        {canCreateTasks && <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { setSelectedTask(task); setShowDeleteDialog(true) }}><Trash2 className="h-4 w-4" /></Button>}
+                        <Button variant="ghost" size="sm" onClick={() => handleTaskClick(task)}>Progress</Button>
+                        {canCreateTasks && (
+                          <>
+                            <Button variant="ghost" size="sm" className="text-blue-500" onClick={() => { setSelectedTask(task); setShowEditDialog(true) }}>Edit</Button>
+                            <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { setSelectedTask(task); setShowDeleteDialog(true) }}><Trash2 className="h-4 w-4" /></Button>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1026,6 +1061,24 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
         users={users}
         onTaskCreated={handleTaskCreated}
       />
+
+      {/* Edit Task Dialog - For editing dates and elements */}
+      {selectedTask && (
+        <EditTaskDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          task={selectedTask}
+          projectId={project.id}
+          availableElements={availableElements}
+          teams={teams}
+          users={users}
+          onTaskUpdated={() => {
+            fetchTasks()
+            setShowEditDialog(false)
+            setSelectedTask(null)
+          }}
+        />
+      )}
 
       {/* Update Task Dialog */}
       <Dialog open={showUpdateDialog} onOpenChange={(open) => !open && setShowUpdateDialog(false)}>
