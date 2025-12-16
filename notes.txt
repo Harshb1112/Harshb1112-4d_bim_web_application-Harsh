@@ -1,0 +1,9 @@
+Monitor connection - If you see this error again, just run:
+
+npx prisma db pull
+npx prisma generate
+
+
+Now restart your dev server and it should work:
+
+npm run dev

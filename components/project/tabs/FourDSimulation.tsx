@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Camera, Video, StopCircle, Share2, Loader2, RefreshCw, AlertTriangle, Info, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 import html2canvas from 'html2canvas'
-import { VideoRecorder } from '@/lib/video-recorder'
+import { VideoRecorder, RecordingOptions } from '@/lib/video-recorder'
 
 interface FourDSimulationProps {
   project: any
@@ -103,6 +103,9 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   const [criticalPathTasks, setCriticalPathTasks] = useState<Set<number>>(new Set())
   const [showCriticalPath, setShowCriticalPath] = useState(false)
   const [visualizationMode, setVisualizationMode] = useState<ProgressVisualizationMode>('element-count')
+  const [recordingFormat, setRecordingFormat] = useState<'webm' | 'mp4'>('webm')
+  const [recordingQuality, setRecordingQuality] = useState<'hd' | 'fullhd' | '4k'>('fullhd')
+  const [includeOverlay, setIncludeOverlay] = useState(true)
 
   const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -114,12 +117,28 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         fetch(`/api/links?projectId=${project.id}`, { credentials: 'include' }),
         fetch(`/api/projects/${project.id}/tasks`, { credentials: 'include' })
       ])
+      
+      // Handle links response
       if (linksRes.ok) {
         const data = await linksRes.json()
-        setLinks(data.links || [])
+        const fetchedLinks = data.links || []
+        setLinks(fetchedLinks)
+        
+        if (fetchedLinks.length === 0) {
+          console.warn('No element-task links found. 4D simulation will show tasks only.')
+        }
       } else {
-        console.error('Failed to load links for simulation.')
+        const errorData = await linksRes.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Failed to load links for simulation:', linksRes.status, errorData)
+        setLinks([]) // Set empty array to continue
+        
+        // Only show error for server errors, not for empty data
+        if (linksRes.status >= 500) {
+          toast.error('Failed to load element-task links. 4D simulation may not work properly.')
+        }
       }
+      
+      // Handle tasks response
       if (tasksRes.ok) {
         const tasksData = (await tasksRes.json()).tasks || []
         setTasks(tasksData)
@@ -133,9 +152,11 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
 
       } else {
         console.error('Failed to load tasks for simulation.')
+        toast.error('Failed to load tasks. Please refresh the page.')
       }
     } catch (error) {
       console.error('Failed to load simulation data:', error)
+      toast.error('Error loading simulation data. Please check your connection.')
     } finally {
       setLoadingData(false)
     }
@@ -159,13 +180,23 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   // Initialize VideoRecorder when viewer is ready and canvas is available
   useEffect(() => {
     if (viewerRef.current && viewerCanvasRef.current && !videoRecorderRef.current) {
-      videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current)
+      videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current, {
+        format: recordingFormat,
+        quality: recordingQuality,
+        fps: 60,
+        includeOverlay,
+        overlayData: {
+          projectName: project.name,
+          date: formatDate(currentDate),
+          progress: `${Math.round((activeTasks.filter(t => t.status === 'completed').length / Math.max(activeTasks.length, 1)) * 100)}%`,
+        }
+      })
     }
     return () => {
       videoRecorderRef.current?.dispose()
       videoRecorderRef.current = null
     }
-  }, [viewerCanvasRef.current])
+  }, [viewerCanvasRef.current, recordingFormat, recordingQuality, includeOverlay])
 
   const projectTimeframe = useMemo(() => {
     if (tasks.length === 0) return { start: new Date(), end: new Date() }
@@ -513,6 +544,15 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
           const nextDay = addDays(prevDate, 1)
           if (isAfter(nextDay, projectTimeframe.end)) {
             setIsPlaying(false)
+            
+            // Auto-stop recording when simulation ends
+            if (isRecording && videoRecorderRef.current) {
+              setTimeout(() => {
+                videoRecorderRef.current?.stop()
+                toast.success('🎬 Recording completed! Video will download shortly...')
+              }, 1000) // Small delay to capture final frame
+            }
+            
             return projectTimeframe.end
           }
           return nextDay
@@ -520,7 +560,63 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       }, 1000 / playbackSpeed) // Adjust interval based on playback speed
     }
     return () => clearInterval(interval)
-  }, [isPlaying, projectTimeframe.end, playbackSpeed])
+  }, [isPlaying, projectTimeframe.end, playbackSpeed, isRecording])
+
+  // Fetch and track real-time cost data
+  const [totalProjectCost, setTotalProjectCost] = useState<number>(0)
+
+  useEffect(() => {
+    // Fetch real cost data from API
+    const fetchCost = async () => {
+      try {
+        const response = await fetch(`/api/resources/costs?projectId=${project.id}`, {
+          credentials: 'include'
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setTotalProjectCost(data.totalCost || 0)
+        }
+      } catch (error) {
+        console.error('Failed to fetch cost data:', error)
+      }
+    }
+    
+    fetchCost()
+    // Update cost every 5 seconds during recording
+    const interval = isRecording ? setInterval(fetchCost, 5000) : null
+    
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [project.id, isRecording])
+
+  // Update overlay data during recording
+  useEffect(() => {
+    if (isRecording && videoRecorderRef.current && includeOverlay) {
+      const completedTasks = activeTasks.filter(t => t.progress >= 100 || t.status === 'completed').length
+      const totalTasks = tasks.length
+      const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+      
+      // Get current active task name
+      const currentTask = activeTasks.length > 0 ? activeTasks[0].name : 'No active tasks'
+      
+      // Format cost with Indian currency
+      const formattedCost = new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(totalProjectCost)
+      
+      videoRecorderRef.current.updateOverlayData({
+        projectName: project.name,
+        date: formatDate(currentDate),
+        progress: `${overallProgress}%`,
+        taskName: currentTask,
+        completedTasks: `${completedTasks} / ${totalTasks}`,
+        totalCost: formattedCost,
+      })
+    }
+  }, [currentDate, activeTasks, tasks, isRecording, includeOverlay, project.name, totalProjectCost])
 
   const takeScreenshot = async () => {
     if (!viewerCanvasRef.current) {
@@ -553,17 +649,47 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       toast.error('Video recorder not initialized.')
       return
     }
-    setIsRecording(true)
-    setIsPlaying(true) // Start simulation playback
-    setCurrentDate(projectTimeframe.start) // Reset simulation to start
-    videoRecorderRef.current.start((blob: Blob) => {
-      // This callback runs when recording stops
-      setIsRecording(false)
-      setIsPlaying(false)
-      downloadFile(blob, `4dbim_simulation_${formatDate(new Date())}.webm`, 'video/webm')
-      toast.success('Video recorded and downloaded!')
-    })
-    toast.info('Recording started. Simulation will play automatically.')
+
+    // Reinitialize recorder with current settings
+    videoRecorderRef.current.dispose()
+    if (viewerCanvasRef.current) {
+      videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current, {
+        format: recordingFormat,
+        quality: recordingQuality,
+        fps: 60,
+        includeOverlay,
+        overlayData: {
+          projectName: project.name,
+          date: formatDate(currentDate),
+          progress: `0%`,
+        }
+      })
+    }
+
+    // Reset to start and begin recording
+    setCurrentDate(projectTimeframe.start)
+    setIsPlaying(false) // Pause first to ensure clean start
+    
+    // Small delay to ensure viewer updates
+    setTimeout(() => {
+      setIsRecording(true)
+      setIsPlaying(true) // Start simulation playback
+      
+      videoRecorderRef.current!.start((blob: Blob, format: string) => {
+        // This callback runs when recording stops
+        setIsRecording(false)
+        setIsPlaying(false)
+        const extension = format === 'mp4' ? 'mp4' : 'webm'
+        const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm'
+        const fileSize = (blob.size / 1024 / 1024).toFixed(2)
+        downloadFile(blob, `4dbim_simulation_${recordingQuality}_${formatDate(new Date())}.${extension}`, mimeType)
+        toast.success(`Video recorded! Size: ${fileSize} MB - Quality: ${recordingQuality.toUpperCase()} ${format.toUpperCase()}`)
+      })
+      
+      const qualityText = recordingQuality === 'fullhd' ? 'Full HD (1920x1080)' : recordingQuality === '4k' ? '4K (3840x2160)' : 'HD (1280x720)'
+      const duration = Math.ceil((projectTimeframe.end.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24))
+      toast.info(`🎬 Recording started in ${qualityText} ${recordingFormat.toUpperCase()}. Duration: ~${duration} days. Simulation playing automatically...`)
+    }, 500)
   }
 
   const stopRecording = () => {
@@ -573,14 +699,16 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     }
   }
 
-  const handleConceptualServerExport = async (videoBlob: Blob) => {
+  const handleConceptualServerExport = async (videoBlob: Blob, format: string) => {
     setIsExportingVideo(true)
     const promise = new Promise(async (resolve, reject) => {
       try {
+        const extension = format === 'mp4' ? 'mp4' : 'webm'
+        const fileName = `4dbim_simulation_${recordingQuality}_${formatDate(new Date())}.${extension}`
         const formData = new FormData()
-        formData.append('video', videoBlob, `4dbim_simulation_${formatDate(new Date())}.webm`)
+        formData.append('video', videoBlob, fileName)
         formData.append('projectId', String(project.id))
-        formData.append('fileName', `4dbim_simulation_${formatDate(new Date())}.webm`)
+        formData.append('fileName', fileName)
 
         const token = document.cookie.split('token=')[1]?.split(';')[0]
         const response = await fetch('/api/video-export', {
@@ -622,16 +750,42 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       toast.error('Video recorder not initialized.')
       return
     }
+
+    // Reinitialize recorder with current settings
+    videoRecorderRef.current.dispose()
+    if (viewerCanvasRef.current) {
+      const totalTasks = tasks.length
+      const completedTasks = tasks.filter(t => t.progress >= 100 || t.status === 'completed').length
+      
+      videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current, {
+        format: recordingFormat,
+        quality: recordingQuality,
+        fps: 60,
+        includeOverlay,
+        overlayData: {
+          projectName: project.name,
+          date: formatDate(projectTimeframe.start),
+          progress: `0%`,
+          taskName: tasks.length > 0 ? tasks[0].name : 'Starting...',
+          completedTasks: `0 / ${totalTasks}`,
+          totalCost: '₹0',
+        }
+      })
+    }
+
     setIsRecording(true)
     setIsPlaying(true) // Start simulation playback
     setCurrentDate(projectTimeframe.start) // Reset simulation to start
-    videoRecorderRef.current.start((blob: Blob) => {
+    
+    videoRecorderRef.current.start((blob: Blob, format: string) => {
       // This callback runs when recording stops
       setIsRecording(false)
       setIsPlaying(false)
-      handleConceptualServerExport(blob)
+      handleConceptualServerExport(blob, format)
     })
-    toast.info('Recording started for server export. Simulation will play automatically.')
+    
+    const qualityText = recordingQuality === 'fullhd' ? 'Full HD (1920x1080)' : recordingQuality === '4k' ? '4K (3840x2160)' : 'HD (1280x720)'
+    toast.info(`Recording started in ${qualityText} ${recordingFormat.toUpperCase()} for server export.`)
   }
 
 
@@ -790,7 +944,75 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
                 <span>Export & Capture</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="py-2 space-y-2">
+            <CardContent className="py-2 space-y-3">
+              {/* Recording Settings */}
+              {!isRecording && (
+                <div className="space-y-2 p-2 bg-gray-50 rounded-md">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Format Selection */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-gray-700">Format</label>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant={recordingFormat === 'webm' ? 'default' : 'outline'}
+                          onClick={() => setRecordingFormat('webm')}
+                          className="flex-1 h-7 text-xs"
+                        >
+                          WebM
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={recordingFormat === 'mp4' ? 'default' : 'outline'}
+                          onClick={() => setRecordingFormat('mp4')}
+                          className="flex-1 h-7 text-xs"
+                        >
+                          MP4
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Quality Selection */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-gray-700">Quality</label>
+                      <select
+                        value={recordingQuality}
+                        onChange={(e) => setRecordingQuality(e.target.value as 'hd' | 'fullhd' | '4k')}
+                        className="w-full h-7 text-xs border rounded-md px-2"
+                      >
+                        <option value="hd">HD (720p)</option>
+                        <option value="fullhd">Full HD (1080p)</option>
+                        <option value="4k">4K (2160p)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Overlay Toggle */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-gray-700">Include Info Overlay</label>
+                    <button
+                      onClick={() => setIncludeOverlay(!includeOverlay)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        includeOverlay ? 'bg-blue-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          includeOverlay ? 'translate-x-5' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {includeOverlay && (
+                    <div className="text-xs text-gray-500 italic">
+                      Video will include project name, date, progress, and watermark
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
               <div className="grid grid-cols-3 gap-2">
                 <Button onClick={takeScreenshot} size="sm" disabled={isRecording || !viewerCanvasRef.current}>
                   <Camera className="h-4 w-4 mr-1" />

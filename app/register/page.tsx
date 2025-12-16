@@ -74,11 +74,11 @@ export default function RegisterPage() {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Top right logo */}
       <div className="absolute top-6 right-8 flex items-center gap-3">
-        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={70} height={70} />
-        <div className="text-right">
+        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={180} height={100} />
+        {/* <div className="text-right">
           <p className="text-blue-900 font-bold text-xl">BIMBOSS</p>
           <p className="text-teal-600 text-xs font-semibold tracking-wider">CONSULTANTS</p>
-        </div>
+        </div> */}
       </div>
 
       {/* Main content */}
@@ -171,11 +171,11 @@ export default function RegisterPage() {
 
       {/* Bottom logo - fixed at bottom */}
       <div className="pb-8 flex justify-center items-center gap-4">
-        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={80} height={80} />
-        <div>
+        <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={180} height={80} />
+        {/* <div>
           <p className="text-blue-900 font-bold text-2xl tracking-wide">BIMBOSS</p>
           <p className="text-teal-600 text-sm font-semibold tracking-widest">CONSULTANTS</p>
-        </div>
+        </div> */}
       </div>
     </div>
   )

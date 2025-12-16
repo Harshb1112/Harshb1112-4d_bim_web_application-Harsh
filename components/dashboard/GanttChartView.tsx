@@ -79,6 +79,36 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
     }
   }, [selectedProject])
 
+  // Auto-adjust currentDate to show tasks when they load
+  useEffect(() => {
+    if (tasks.length > 0) {
+      // Find the earliest task start date
+      const taskDates = tasks.map(t => t.startDate.getTime()).filter(d => !isNaN(d))
+      if (taskDates.length > 0) {
+        const earliestDate = new Date(Math.min(...taskDates))
+        // Only adjust if current view doesn't show any tasks
+        const timelineStart = viewMode === "week" 
+          ? startOfWeek(currentDate)
+          : viewMode === "month"
+          ? startOfMonth(currentDate)
+          : startOfYear(currentDate)
+        
+        const daysToShow = viewMode === "week" ? 7 : viewMode === "month" ? 30 : viewMode === "year" ? 365 : viewMode === "2years" ? 730 : 1095
+        const timelineEnd = addDays(timelineStart, daysToShow)
+        
+        // Check if any task is visible in current timeline
+        const anyTaskVisible = tasks.some(t => 
+          t.startDate <= timelineEnd && t.endDate >= timelineStart
+        )
+        
+        // If no tasks visible, move to earliest task date
+        if (!anyTaskVisible) {
+          setCurrentDate(earliestDate)
+        }
+      }
+    }
+  }, [tasks])
+
   const fetchProjects = async () => {
     try {
       const res = await fetch('/api/projects', { credentials: 'include' })
@@ -178,8 +208,44 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
     return filtered
   }, [tasks, userRole, userId, selectedTeam, selectedUser, selectedRole, teams])
 
-  // Calculate timeline based on view mode
+  // Calculate timeline based on tasks' actual date range
   const timeline = useMemo(() => {
+    const tasksToUse = tasks.length > 0 ? tasks : filteredTasks
+    
+    if (tasksToUse.length > 0) {
+      // Collect ALL dates (both start and end) to find true min/max
+      const allDates: number[] = []
+      
+      tasksToUse.forEach(t => {
+        if (t.startDate && !isNaN(t.startDate.getTime())) {
+          allDates.push(t.startDate.getTime())
+        }
+        if (t.endDate && !isNaN(t.endDate.getTime())) {
+          allDates.push(t.endDate.getTime())
+        }
+      })
+      
+      if (allDates.length > 0) {
+        const earliestDate = new Date(Math.min(...allDates))
+        const latestDate = new Date(Math.max(...allDates))
+        
+        // Add padding (3 days before and after)
+        const start = addDays(earliestDate, -3)
+        const end = addDays(latestDate, 3)
+        
+        // Calculate total days
+        const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+        
+        // For very long ranges (> 90 days), show months instead of days
+        if (totalDays > 90) {
+          return eachMonthOfInterval({ start, end })
+        } else {
+          return eachDayOfInterval({ start, end })
+        }
+      }
+    }
+    
+    // Fallback: use current date based view if no tasks
     const start = viewMode === "week" 
       ? startOfWeek(currentDate)
       : viewMode === "month"
@@ -198,27 +264,29 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
 
     const end = addDays(start, daysToShow)
 
-    if (viewMode === "week") {
-      return eachDayOfInterval({ start, end })
-    } else if (viewMode === "month") {
+    if (viewMode === "week" || viewMode === "month") {
       return eachDayOfInterval({ start, end })
     } else {
       return eachMonthOfInterval({ start, end })
     }
-  }, [currentDate, viewMode])
+  }, [tasks, filteredTasks, currentDate, viewMode])
 
   const getTaskPosition = (task: Task) => {
     const timelineStart = timeline[0]
     const timelineEnd = timeline[timeline.length - 1]
     
-    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
-    const taskStart = Math.max(0, Math.ceil((task.startDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
-    const taskDuration = Math.ceil((task.endDate.getTime() - task.startDate.getTime()) / (1000 * 60 * 60 * 24))
+    // Handle case where endDate is before startDate (swap them)
+    const taskStartTime = Math.min(task.startDate.getTime(), task.endDate.getTime())
+    const taskEndTime = Math.max(task.startDate.getTime(), task.endDate.getTime())
     
-    const left = (taskStart / totalDays) * 100
+    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
+    const taskStartDays = Math.max(0, Math.ceil((taskStartTime - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
+    const taskDuration = Math.max(1, Math.ceil((taskEndTime - taskStartTime) / (1000 * 60 * 60 * 24)))
+    
+    const left = (taskStartDays / totalDays) * 100
     const width = (taskDuration / totalDays) * 100
     
-    return { left: `${left}%`, width: `${Math.max(width, 2)}%` }
+    return { left: `${Math.min(left, 100)}%`, width: `${Math.max(Math.min(width, 100 - left), 2)}%` }
   }
 
   const getStatusColor = (status: string) => {
@@ -502,7 +570,10 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
                           📁 {(task as any).project.name}
                         </div>
                       )}
-                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        📅 {format(task.startDate, "dd MMM yyyy")} - {format(task.endDate, "dd MMM yyyy")}
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                         👤 {task.assignee?.fullName || "Unassigned"}
                       </div>
                       <div className="flex gap-1.5 mt-2">
