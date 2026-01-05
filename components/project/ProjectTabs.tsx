@@ -6,18 +6,17 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LayoutDashboard, Box, Calendar, Play, Link2, Users, UploadCloud, Bug, Briefcase, Brain } from 'lucide-react'
+import { LayoutDashboard, Box, Calendar, Play, Link2, Users, Briefcase, Brain, Bot } from 'lucide-react'
 import UnifiedModelViewer from './UnifiedModelViewer'
 import EnhancedScheduleManager from './tabs/EnhancedScheduleManager'
 import FourDSimulation from './tabs/FourDSimulation'
 import LinkingPanel from './LinkingPanel'
 import TeamManagement from './tabs/TeamManagement'
-import ImportExport from './tabs/ImportExport'
-import ErrorLogViewer from './tabs/ErrorLogViewer'
 import AddModelDialog from './AddModelDialog'
 import ProjectDashboard from './tabs/ProjectDashboard'
 import ResourceManagement from './tabs/ResourceManagement'
 import AIInsights from './tabs/AIInsights'
+import AITaskGenerator from './AITaskGenerator'
 
 interface ProjectTabsProps {
   project: any
@@ -36,15 +35,10 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
   // Handle tab from URL query param
   useEffect(() => {
     const tabParam = searchParams.get('tab')
-    if (tabParam && ['dashboard', 'schedule', 'models', 'linking', 'simulation', 'resources', 'team', 'ai-insights', 'import', 'errors'].includes(tabParam)) {
+    if (tabParam && ['dashboard', 'schedule', 'models', 'linking', 'simulation', 'resources', 'team', 'ai-insights', 'ai-tasks'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
   }, [searchParams])
-
-  const handleImportSuccess = () => {
-    // Potentially refresh data or switch tabs
-    setActiveTab('schedule')
-  }
 
   const handleModelAdded = () => {
     // Refresh the page to show new model
@@ -66,8 +60,8 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className={`grid w-full max-w-full bg-gray-100 dark:bg-gray-800 ${
           currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader' 
-            ? 'grid-cols-10' 
-            : 'grid-cols-9'
+            ? 'grid-cols-9' 
+            : 'grid-cols-8'
         }`}>
           <TabsTrigger value="dashboard" className="flex items-center space-x-2">
             <LayoutDashboard className="h-4 w-4" />
@@ -103,13 +97,9 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
             <Brain className="h-4 w-4" />
             <span>AI Insights</span>
           </TabsTrigger>
-          <TabsTrigger value="import" className="flex items-center space-x-2">
-            <UploadCloud className="h-4 w-4" />
-            <span>Import/Export</span>
-          </TabsTrigger>
-          <TabsTrigger value="errors" className="flex items-center space-x-2">
-            <Bug className="h-4 w-4" />
-            <span>Error Logs</span>
+          <TabsTrigger value="ai-tasks" className="flex items-center space-x-2">
+            <Bot className="h-4 w-4" />
+            <span>🤖 AI Tasks</span>
           </TabsTrigger>
         </TabsList>
 
@@ -220,12 +210,16 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
           <AIInsights project={project} />
         </TabsContent>
 
-        <TabsContent value="import" className="space-y-6">
-          <ImportExport project={project} onImportSuccess={handleImportSuccess} />
-        </TabsContent>
-
-        <TabsContent value="errors" className="space-y-6">
-          <ErrorLogViewer projectId={project.id} />
+        {/* AI Task Generator Tab */}
+        <TabsContent value="ai-tasks" className="space-y-6">
+          <AITaskGenerator 
+            projectId={project.id} 
+            onTasksGenerated={(newTasks) => {
+              console.log(`🤖 AI generated ${newTasks.length} tasks successfully!`)
+              // Optionally switch to schedule tab to see the new tasks
+              setActiveTab('schedule')
+            }}
+          />
         </TabsContent>
       </Tabs>
     </main>

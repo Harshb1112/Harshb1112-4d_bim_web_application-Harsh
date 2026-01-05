@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import IfcScheduleWorkflow from "./IfcScheduleWorkflow"
-import { FileBox } from "lucide-react"
+import AITaskGenerator from "./AITaskGenerator"
+import { FileBox, Bot } from "lucide-react"
 
 interface Model {
   id: number
@@ -52,47 +54,79 @@ export default function ScheduleManager({ projectId }: ScheduleManagerProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileBox className="h-5 w-5" />
-          Schedule Manager
-        </CardTitle>
-        <CardDescription>
-          Select IFC elements and assign construction tasks
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="model-select">Select BIM Model</Label>
-          <Select
-            value={selectedModelId?.toString()}
-            onValueChange={(value) => setSelectedModelId(parseInt(value))}
-          >
-            <SelectTrigger id="model-select">
-              <SelectValue placeholder="Choose a model..." />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map((model) => (
-                <SelectItem key={model.id} value={model.id.toString()}>
-                  {model.name || `Model ${model.id}`} ({model.format})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="space-y-4">
+      {/* Debug info - FORCE UPDATE */}
+      <div className="bg-red-100 p-4 rounded-lg border-2 border-red-500">
+        <h3 className="font-bold text-red-800">🚨 FORCE UPDATE - AI TASK GENERATOR LOADED!</h3>
+        <p>Project ID: {projectId}</p>
+        <p>Models loaded: {models.length}</p>
+        <p>Timestamp: {new Date().toLocaleTimeString()}</p>
+        <p className="font-bold text-green-600">✅ AI Task Generator is working!</p>
+      </div>
+      
+      <Tabs defaultValue="schedule" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="schedule">IFC Schedule Manager</TabsTrigger>
+          <TabsTrigger value="ai-generator" className="flex items-center space-x-2">
+            <Bot className="h-4 w-4" />
+            <span>🤖 AI Task Generator</span>
+          </TabsTrigger>
+        </TabsList>
+      
+      <TabsContent value="ai-generator" className="mt-6">
+        <AITaskGenerator 
+          projectId={projectId} 
+          onTasksGenerated={(newTasks) => {
+            console.log(`🤖 AI generated ${newTasks.length} tasks successfully!`)
+          }}
+        />
+      </TabsContent>
+      
+      <TabsContent value="schedule" className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileBox className="h-5 w-5" />
+              Schedule Manager
+            </CardTitle>
+            <CardDescription>
+              Select IFC elements and assign construction tasks
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="model-select">Select BIM Model</Label>
+              <Select
+                value={selectedModelId?.toString()}
+                onValueChange={(value) => setSelectedModelId(parseInt(value))}
+              >
+                <SelectTrigger id="model-select">
+                  <SelectValue placeholder="Choose a model..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.id} value={model.id.toString()}>
+                      {model.name || `Model ${model.id}`} ({model.format})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {selectedModelId ? (
-          <IfcScheduleWorkflow
-            projectId={projectId}
-            modelId={selectedModelId}
-          />
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            {loading ? "Loading models..." : "Please select a model to continue"}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            {selectedModelId ? (
+              <IfcScheduleWorkflow
+                projectId={projectId}
+                modelId={selectedModelId}
+              />
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                {loading ? "Loading models..." : "Please select a model to continue"}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+    </div>
   )
 }

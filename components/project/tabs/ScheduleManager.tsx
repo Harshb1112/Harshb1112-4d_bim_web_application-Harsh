@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { Calendar, Edit, Save, X, RefreshCw, AlertTriangle, PlusCircle } from 'lucide-react'
+import { Calendar, Edit, Save, X, RefreshCw, AlertTriangle, PlusCircle, Bot } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -18,11 +18,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import GanttChart from '../GanttChart'
 import { formatDate, calculateCriticalPath } from '@/lib/utils'
 import { toast } from 'sonner'
 import TaskCommentSection from '../TaskCommentSection'
 import EditTaskDialog from '../EditTaskDialog'
+import AITaskGenerator from '../AITaskGenerator'
 
 interface ScheduleManagerProps {
   project: any
@@ -419,6 +421,27 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
 
   return (
     <div className="space-y-6">
+      {/* AI Task Generator Section */}
+      <Tabs defaultValue="schedule" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="schedule">Schedule Management</TabsTrigger>
+          <TabsTrigger value="ai-generator" className="flex items-center space-x-2">
+            <Bot className="h-4 w-4" />
+            <span>AI Task Generator</span>
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="ai-generator" className="mt-6">
+          <AITaskGenerator 
+            projectId={project.id} 
+            onTasksGenerated={(newTasks) => {
+              fetchTasks() // Refresh tasks after AI generation
+              toast.success(`🤖 AI generated ${newTasks.length} tasks successfully!`)
+            }}
+          />
+        </TabsContent>
+        
+        <TabsContent value="schedule" className="mt-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Project Schedule</h2>
@@ -641,6 +664,8 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
           }}
         />
       )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
