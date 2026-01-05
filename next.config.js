@@ -8,31 +8,40 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   
-  eslint: {
-    ignoreDuringBuilds: true,
+  // Turbopack configuration (Next.js 16+)
+  turbopack: {
+    resolveAlias: {
+      '#lodash': 'lodash-es',
+    },
   },
-  
+
   // Experimental features
   experimental: {
-    serverComponentsExternalPackages: ['@prisma/client'],
     serverActions: {
       bodySizeLimit: '100mb',
     },
   },
 
-  // File upload configuration
-  api: {
-    bodyParser: {
-      sizeLimit: '100mb',
-    },
-  },
-
   // Optimize images for production
   images: {
-    domains: ['localhost', 'app.speckle.systems', 'developer.api.autodesk.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'localhost',
+      },
+      {
+        protocol: 'https',
+        hostname: 'app.speckle.systems',
+      },
+      {
+        protocol: 'https',
+        hostname: 'developer.api.autodesk.com',
+      },
+    ],
     unoptimized: false,
   },
 
+  // Webpack fallback for compatibility
   webpack: (config, { isServer }) => {
     // Handle web-ifc and other BIM libraries
     config.resolve.fallback = {
