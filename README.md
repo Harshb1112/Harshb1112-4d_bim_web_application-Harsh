@@ -9,11 +9,17 @@
 - **Admin**: admin@company.com / admin123
 - **Manager**: manager@company.com / manager123
 
+**📊 Deployment Status:**
+- ✅ **Production**: Live on Vercel
+- ✅ **Database**: PostgreSQL Cloud
+- ✅ **Status**: Fully Operational
+
 [![Next.js](https://img.shields.io/badge/Next.js-16.0-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748)](https://www.prisma.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Cloud-336791)](https://www.postgresql.org/)
 [![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://4d-bim-web-app-new.vercel.app)
+[![Deployment](https://img.shields.io/badge/Deployment-Active-success)](https://4d-bim-web-app-new.vercel.app)
 
 ---
 
