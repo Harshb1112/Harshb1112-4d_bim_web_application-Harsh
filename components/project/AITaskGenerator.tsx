@@ -108,8 +108,8 @@ export default function AITaskGenerator({ projectId, onTasksGenerated }: AITaskG
           totalElements: 8, // Default sample elements count
           elementGroups: 8, // Different types
           tasksGenerated: convertedTasks.length,
-          phases: [...new Set(convertedTasks.map(task => task.phase))],
-          estimatedDuration: Math.max(...convertedTasks.map(task => task.durationDays))
+          phases: [...new Set(convertedTasks.map((task: any) => task.phase))] as string[],
+          estimatedDuration: Math.max(...convertedTasks.map((task: any) => task.durationDays))
         }
 
         setGeneratedTasks(convertedTasks)

@@ -250,7 +250,7 @@ export default function AIInsights({ project }: AIInsightsProps) {
 
       // Find original end date
       const taskEndDates = tasks.filter((t: any) => t.endDate).map((t: any) => new Date(t.endDate))
-      const originalEndDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map(d => d.getTime()))) : new Date()
+      const originalEndDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map((d: Date) => d.getTime()))) : new Date()
 
       // Calculate predicted completion based on current progress
       let predictedDate = new Date(originalEndDate)
@@ -307,7 +307,7 @@ export default function AIInsights({ project }: AIInsightsProps) {
 
       // Get base duration
       const taskEndDates = tasks.filter((t: any) => t.endDate).map((t: any) => new Date(t.endDate))
-      const baseEndDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map(d => d.getTime()))) : new Date()
+      const baseEndDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map((d: Date) => d.getTime()))) : new Date()
       const baseDays = Math.ceil((baseEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
 
       // Calculate risk factors
@@ -460,7 +460,7 @@ export default function AIInsights({ project }: AIInsightsProps) {
         response += `\n\n**Recommendation:** Focus on completing overdue tasks and monitor resource utilization.`
       } else if (question.includes('deadline') || question.includes('complete') || question.includes('finish')) {
         const taskEndDates = tasks.filter((t: any) => t.endDate).map((t: any) => new Date(t.endDate))
-        const latestDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map(d => d.getTime()))) : null
+        const latestDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map((d: Date) => d.getTime()))) : null
         response = `**Completion Analysis:**\n\n`
         response += latestDate ? `• Planned End Date: ${latestDate.toLocaleDateString()}\n` : '• No end date defined\n'
         response += `• Current Progress: ${avgProgress}%\n`

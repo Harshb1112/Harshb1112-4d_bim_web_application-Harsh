@@ -120,7 +120,7 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
       zoomMax: 1000 * 60 * 60 * 24 * 365 * 2, // 2 years maximum
       tooltip: {
         followMouse: true,
-        overflowMethod: 'cap'
+        overflowMethod: 'cap' as const
       },
       format: {
         minorLabels: {

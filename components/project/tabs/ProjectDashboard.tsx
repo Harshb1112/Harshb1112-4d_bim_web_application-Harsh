@@ -186,7 +186,7 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
                         outerRadius={100}
                         paddingAngle={2}
                         dataKey="value"
-                        label={({ name, percent }) => `${Math.round(percent * 100)}%`}
+                        label={({ name, percent }) => `${Math.round((percent || 0) * 100)}%`}
                         labelLine={false}
                       >
                         {[

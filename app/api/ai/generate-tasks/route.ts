@@ -77,7 +77,7 @@ const CONSTRUCTION_PHASES = [
 ]
 
 // Task templates based on element types
-const TASK_TEMPLATES = {
+const TASK_TEMPLATES: Record<string, { name: string; factor: number }[]> = {
   "Foundation": [
     { name: "Excavate Foundation", factor: 0.3 },
     { name: "Install Reinforcement", factor: 0.4 },

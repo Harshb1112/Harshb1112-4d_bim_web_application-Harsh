@@ -41,14 +41,9 @@ export default function GetStartedPage() {
 
         {/* Company Logo */}
         <div className={`mb-4 transition-all duration-1000 delay-200 ${isAnimating ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}>
-          <Image
-            src="/assets/bimboss-logo.png"
-            alt="BimBoss Logo"
-            width={250}
-            height={250}
-            className="drop-shadow-lg"
-            priority
-          />
+          <div className="w-64 h-32 bg-white/90 rounded-2xl flex items-center justify-center shadow-lg">
+            <h1 className="text-4xl font-bold text-teal-600">4D BIM</h1>
+          </div>
         </div>
 
         {/* Tagline */}

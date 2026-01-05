@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # 4D BIM Web Application
+  app:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - UPLOAD_DIR=/app/uploads
+      # Email Configuration
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      # Speckle Configuration
+      - NEXT_PUBLIC_SPECKLE_TOKEN=${NEXT_PUBLIC_SPECKLE_TOKEN}
+      - NEXT_PUBLIC_SPECKLE_SERVER_URL=${NEXT_PUBLIC_SPECKLE_SERVER_URL}
+      - NEXT_PUBLIC_SPECKLE_PROJECT_ID=${NEXT_PUBLIC_SPECKLE_PROJECT_ID}
+      - NEXT_PUBLIC_SPECKLE_MODEL_ID=${NEXT_PUBLIC_SPECKLE_MODEL_ID}
+      # Autodesk Configuration
+      - AUTODESK_CLIENT_ID=${AUTODESK_CLIENT_ID}
+      - AUTODESK_CLIENT_SECRET=${AUTODESK_CLIENT_SECRET}
+      - AUTODESK_CALLBACK_URL=${AUTODESK_CALLBACK_URL}
+      - NEXT_PUBLIC_AUTODESK_CLIENT_ID=${NEXT_PUBLIC_AUTODESK_CLIENT_ID}
+      - AUTODESK_AUTH_URL=${AUTODESK_AUTH_URL}
+      - AUTODESK_API_BASE_URL=${AUTODESK_API_BASE_URL}
+      - NEXT_PUBLIC_AUTODESK_VIEWER_URL=${NEXT_PUBLIC_AUTODESK_VIEWER_URL}
+      - NEXT_PUBLIC_AUTODESK_VIEWER_CSS=${NEXT_PUBLIC_AUTODESK_VIEWER_CSS}
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ../uploads:/app/uploads
+      - ../backups:/app/backups
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - bim-network
+
+  # PostgreSQL Database (Optional - if not using cloud)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=bim_database
+      - POSTGRES_USER=bim_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backups:/backups
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - bim-network
+
+  # Redis for Caching (Optional)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - bim-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - bim-network
+
+volumes:
+  postgres_data:
+
+networks:
+  bim-network:
+    driver: bridge

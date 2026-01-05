@@ -88,6 +88,27 @@ export function getTokenFromRequest(request: NextRequest): string | null {
   return null
 }
 
+// Helper function for API routes
+export async function verifyAuth(request?: NextRequest): Promise<User | null> {
+  if (!request) {
+    // If no request provided, try to get from headers context
+    const { headers } = await import('next/headers')
+    const headersList = headers()
+    const authHeader = (await headersList).get('authorization')
+    
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim()
+      return verifyToken(token)
+    }
+    return null
+  }
+  
+  const token = getTokenFromRequest(request)
+  if (!token) return null
+  
+  return verifyToken(token)
+}
+
 export function generateRandomPassword(length = 12): string {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
   let password = "";

@@ -367,7 +367,7 @@ export default function EditTaskDialog({
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(elementsByType).map(([type, count]) => (
                       <Badge key={type} variant="secondary">
-                        {type}: {count}
+                        {type}: {String(count)}
                       </Badge>
                     ))}
                   </div>

@@ -60,3 +60,6 @@ prisma/dev.db
 # Backups
 /backups
 *.backup
+
+.vercel
+.env*.local

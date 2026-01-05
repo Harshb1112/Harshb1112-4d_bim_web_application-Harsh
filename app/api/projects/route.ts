@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
           projectName: name, 
           teamId, 
           teamLeaderId,
-          bimSource 
+          bimSource: 'manual' 
         }
       }
     })
