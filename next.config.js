@@ -18,8 +18,10 @@ const nextConfig = {
   // Experimental features
   experimental: {
     serverActions: {
-      bodySizeLimit: '100mb',
+      bodySizeLimit: '20gb', // Support large IFC/RVT files
     },
+    // Increase proxy body size limit for large file uploads
+    proxyClientMaxBodySize: '20gb',
   },
 
   // Optimize images for production

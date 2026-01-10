@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
-import { Plus, Trash2, Edit, Users, Wrench, Package, Building2, DollarSign, Calendar as CalendarIcon, Upload, Sparkles, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Edit, Users, Wrench, Package, Building2, DollarSign, Calendar as CalendarIcon, Upload, Sparkles, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Resource {
@@ -511,7 +511,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
     return results
   }
 
-  // AI Generate from prompt
+  // AI Generate from prompt - REAL OpenAI Integration
   const handleAIGenerate = async () => {
     if (!aiPrompt.trim()) {
       toast.error('Please describe the resources you want to create')
@@ -520,53 +520,111 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
 
     setAiGenerating(true)
     
-    const parsedResources = parseAIPrompt(aiPrompt)
-    
-    if (parsedResources.length === 0) {
-      toast.error('Could not understand the request. Try: "Add 5 masons at ₹800/day"')
-      setAiGenerating(false)
-      return
-    }
-
-    let created = 0
-    for (const resource of parsedResources) {
-      // Check if already exists
-      const exists = resources.find(r => r.name.toLowerCase() === resource.name.toLowerCase())
-      if (exists) {
-        toast.info(`${resource.name} already exists, skipping`)
-        continue
-      }
-
-      try {
-        const res = await fetch('/api/resources', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            projectId: project.id,
-            name: resource.name,
-            type: resource.type,
-            unit: resource.unit,
-            hourlyRate: resource.hourlyRate,
-            dailyRate: resource.dailyRate,
-            capacity: resource.quantity,
-            description: `AI created: ${resource.quantity} ${resource.name}${resource.duration ? ` for ${resource.duration}` : ''}`
-          })
+    try {
+      // Call real OpenAI API
+      const response = await fetch('/api/resources/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          prompt: aiPrompt,
+          projectId: project.id
         })
-        if (res.ok) created++
-      } catch (error) {
-        console.error('Failed to create:', resource.name)
-      }
-    }
+      });
 
-    if (created > 0) {
-      toast.success(`✨ AI created ${created} resources!`)
-      fetchResources()
+      if (!response.ok) {
+        const error = await response.json();
+        
+        // Handle specific error cases
+        if (error.invalidKey) {
+          toast.error('❌ Invalid OpenAI API Key', {
+            description: 'Please update your API key in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else if (error.noCredits) {
+          toast.error('❌ No OpenAI Credits Available', {
+            description: 'Add payment method at OpenAI',
+            duration: 5000,
+            action: {
+              label: 'Add Payment',
+              onClick: () => window.open('https://platform.openai.com/account/billing', '_blank')
+            }
+          });
+        } else if (error.apiKeyMissing) {
+          toast.error('❌ OpenAI API Key Not Configured', {
+            description: 'Add your API key in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else if (!error.aiEnabled) {
+          toast.error('❌ AI Features Disabled', {
+            description: 'Enable AI in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else {
+          toast.error(`❌ ${error.error || 'AI generation failed'}`);
+        }
+        
+        setAiGenerating(false);
+        return;
+      }
+
+      const data = await response.json();
+      const parsedResources = data.resources;
+
+      if (!parsedResources || parsedResources.length === 0) {
+        toast.error('AI could not generate resources from your request. Try being more specific.')
+        setAiGenerating(false)
+        return
+      }
+
+      toast.info(`AI generated ${parsedResources.length} resource(s). Creating...`)
+
+      let created = 0
+      for (const resource of parsedResources) {
+        // Check if already exists
+        const exists = resources.find(r => r.name.toLowerCase() === resource.name.toLowerCase())
+        if (exists) {
+          toast.info(`${resource.name} already exists, skipping`)
+          continue
+        }
+
+        try {
+          const res = await fetch('/api/resources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              projectId: project.id,
+              name: resource.name,
+              type: resource.type,
+              unit: resource.unit || 'day',
+              hourlyRate: resource.hourlyRate || null,
+              dailyRate: resource.dailyRate || null,
+              capacity: resource.quantity || 1,
+              description: `AI created: ${resource.quantity || 1} ${resource.name}${resource.duration ? ` for ${resource.duration}` : ''}`
+            })
+          })
+          if (res.ok) created++
+        } catch (error) {
+          console.error('Failed to create:', resource.name)
+        }
+      }
+
+      if (created > 0) {
+        toast.success(`✨ AI created ${created} resources using OpenAI!`)
+        fetchResources()
+      } else {
+        toast.warning('No new resources were created')
+      }
+      
+      setAiPrompt('')
+      setAiDialogOpen(false)
+    } catch (error: any) {
+      console.error('AI generation error:', error)
+      toast.error(error.message || 'Failed to generate resources with AI')
+    } finally {
+      setAiGenerating(false)
     }
-    
-    setAiPrompt('')
-    setAiGenerating(false)
-    setAiDialogOpen(false)
   }
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
@@ -819,26 +877,30 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Sparkles className="h-5 w-5 text-yellow-500" />
-                      Create Resources with AI
+                      Create Resources with AI (Powered by OpenAI)
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <p className="text-sm text-muted-foreground">
-                      Describe the resources you want to create. For example:
+                      Describe the resources you need in natural language. AI will understand and create them for you.
                     </p>
-                    <ul className="text-sm space-y-1 text-muted-foreground list-disc list-inside">
-                      <li>"Add 3 cranes for 3 months starting from 2024-03-15"</li>
-                      <li>"Add 5 excavators at ₹150/hour"</li>
-                      <li>"Add 10 laborers at ₹25/hour for 6 months"</li>
-                    </ul>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                      <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">Example prompts:</p>
+                      <ul className="text-xs space-y-1 text-blue-600 dark:text-blue-400 list-disc list-inside">
+                        <li>"I need 5 masons at ₹800 per day"</li>
+                        <li>"Add 2 excavators and 3 dumpers for earthwork"</li>
+                        <li>"10 skilled laborers and 15 helpers for 3 months"</li>
+                        <li>"Concrete mixer, vibrator, and 500 kg cement"</li>
+                      </ul>
+                    </div>
                     
                     <div className="border-t pt-4">
                       <div className="flex gap-2">
                         <Textarea
-                          placeholder="Describe the resources you want to create..."
+                          placeholder="E.g., 'I need 3 tower cranes and 10 skilled workers for high-rise construction'"
                           value={aiPrompt}
                           onChange={(e) => setAiPrompt(e.target.value)}
-                          className="flex-1 min-h-[80px] resize-none border-2 border-orange-200 focus:border-orange-400"
+                          className="flex-1 min-h-[100px] resize-none border-2 border-yellow-200 focus:border-yellow-400"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault()
@@ -849,15 +911,25 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                         <Button 
                           onClick={handleAIGenerate} 
                           disabled={aiGenerating || !aiPrompt.trim()}
-                          className="bg-orange-400 hover:bg-orange-500 text-white px-6"
+                          className="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white px-6"
                         >
-                          {aiGenerating ? '...' : 'Send'}
+                          {aiGenerating ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-4 w-4 mr-2" />
+                              Generate
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
                     
-                    <div className="bg-amber-50 p-3 rounded-lg text-xs text-amber-700">
-                      💡 Market rates will be auto-applied based on resource names (Indian construction rates 2024)
+                    <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-xs text-green-700 dark:text-green-300">
+                      ✨ <strong>Real AI:</strong> Using OpenAI GPT-4 to understand your requirements and suggest appropriate rates based on Indian construction standards.
                     </div>
                   </div>
                 </DialogContent>

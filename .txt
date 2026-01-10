@@ -25,3 +25,11 @@ fetch('/api/teams', {credentials: 'include'})
 
       
 
+Build Error
+
+
+
+Parsing ecmascript source code failed
+./app/dashboard/settings/page.tsx (133:3)
+
+ 

@@ -6,7 +6,19 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { LayoutDashboard, Box, Calendar, Play, Link2, Users, Briefcase, Brain, Bot } from 'lucide-react'
+import { LayoutDashboard, Box, Calendar, Play, Link2, Users, Briefcase, Brain, Bot, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import UnifiedModelViewer from './UnifiedModelViewer'
 import EnhancedScheduleManager from './tabs/EnhancedScheduleManager'
 import FourDSimulation from './tabs/FourDSimulation'
@@ -31,11 +43,13 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
   const [selectedElements, setSelectedElements] = useState<string[]>([])
   const [selectedTasks, setSelectedTasks] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [modelToDelete, setModelToDelete] = useState<any>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Handle tab from URL query param
   useEffect(() => {
     const tabParam = searchParams.get('tab')
-    if (tabParam && ['dashboard', 'schedule', 'models', 'linking', 'simulation', 'resources', 'team', 'ai-insights', 'ai-tasks'].includes(tabParam)) {
+    if (tabParam && ['dashboard', 'schedule', 'models', 'linking', 'simulation', 'resources', 'team', 'ai-insights'].includes(tabParam)) {
       setActiveTab(tabParam)
     }
   }, [searchParams])
@@ -43,6 +57,32 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
   const handleModelAdded = () => {
     // Refresh the page to show new model
     router.refresh()
+  }
+
+  const handleDeleteModel = async () => {
+    if (!modelToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/models/${modelToDelete.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete model')
+      }
+
+      toast.success(`Model "${modelToDelete.name}" deleted successfully`)
+      setModelToDelete(null)
+      router.refresh()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete model')
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   function handleElementSelection(elementId: string, element: any): void {
@@ -60,8 +100,8 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className={`grid w-full max-w-full bg-gray-100 dark:bg-gray-800 ${
           currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader' 
-            ? 'grid-cols-9' 
-            : 'grid-cols-8'
+            ? 'grid-cols-8' 
+            : 'grid-cols-7'
         }`}>
           <TabsTrigger value="dashboard" className="flex items-center space-x-2">
             <LayoutDashboard className="h-4 w-4" />
@@ -97,10 +137,6 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
             <Brain className="h-4 w-4" />
             <span>AI Insights</span>
           </TabsTrigger>
-          <TabsTrigger value="ai-tasks" className="flex items-center space-x-2">
-            <Bot className="h-4 w-4" />
-            <span>🤖 AI Tasks</span>
-          </TabsTrigger>
         </TabsList>
 
         {/* Dashboard Tab - Project Overview */}
@@ -132,11 +168,23 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
                     {project.models.map((model: any) => (
                       <div 
                         key={model.id} 
-                        className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                        className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 group"
                       >
-                        <div className="flex items-center gap-2">
-                          <Box className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm font-medium truncate">{model.name || `Model ${model.id}`}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Box className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                            <span className="text-sm font-medium truncate">{model.name || `Model ${model.id}`}</span>
+                          </div>
+                          {(currentUserRole === 'admin' || currentUserRole === 'manager' || currentUserRole === 'team_leader') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => setModelToDelete(model)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
                           Source: {model.source || 'Unknown'}
@@ -210,18 +258,32 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
           <AIInsights project={project} />
         </TabsContent>
 
-        {/* AI Task Generator Tab */}
-        <TabsContent value="ai-tasks" className="space-y-6">
-          <AITaskGenerator 
-            projectId={project.id} 
-            onTasksGenerated={(newTasks) => {
-              console.log(`🤖 AI generated ${newTasks.length} tasks successfully!`)
-              // Optionally switch to schedule tab to see the new tasks
-              setActiveTab('schedule')
-            }}
-          />
-        </TabsContent>
       </Tabs>
+
+      {/* Delete Model Confirmation Dialog */}
+      <AlertDialog open={!!modelToDelete} onOpenChange={() => setModelToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Model?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{modelToDelete?.name}</strong>?
+              <br />
+              <br />
+              This will permanently remove the model and all associated data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteModel}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   )
 }

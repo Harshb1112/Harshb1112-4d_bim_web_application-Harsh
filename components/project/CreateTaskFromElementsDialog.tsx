@@ -97,6 +97,32 @@ export default function CreateTaskFromElementsDialog({
 
       const data = await response.json()
       
+      // Handle no credits error
+      if (data.noCredits || response.status === 429) {
+        toast.error('❌ OpenAI API has no credits. Add payment method to continue.', {
+          duration: 5000,
+          action: {
+            label: 'Add Payment',
+            onClick: () => window.open('https://platform.openai.com/account/billing', '_blank')
+          }
+        });
+        return;
+      }
+
+      // Handle invalid key error
+      if (data.invalidKey || response.status === 401) {
+        toast.error('❌ Invalid OpenAI API key. Please update in Settings → AI Configuration');
+        return;
+      }
+
+      // Handle rate limit fallback
+      if (data.fallback) {
+        console.log('⚠️ Rate limit reached, using fallback');
+        toast.warning('⚠️ AI rate limit reached. Using automatic task generation instead.');
+        generateBasicSuggestions();
+        return;
+      }
+      
       if (!response.ok) {
         throw new Error(data.error || 'Failed to generate AI suggestions')
       }

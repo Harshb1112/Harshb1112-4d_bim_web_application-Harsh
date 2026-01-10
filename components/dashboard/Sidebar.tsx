@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { LayoutDashboard, User, Sun, Moon, Monitor, BarChart3, LogOut, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, User, BarChart3, LogOut, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 
 interface SidebarProps {
   user: {
@@ -16,44 +16,15 @@ interface SidebarProps {
   }
 }
 
-type Theme = 'light' | 'dark' | 'system'
-
 export default function Sidebar({ user }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [theme, setTheme] = useState<Theme>('light')
-  const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as Theme || 'light'
     const savedCollapsed = localStorage.getItem('sidebarCollapsed') === 'true'
-    setTheme(savedTheme)
     setCollapsed(savedCollapsed)
-    applyTheme(savedTheme)
   }, [])
-
-  const applyTheme = (newTheme: Theme) => {
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else if (newTheme === 'light') {
-      document.documentElement.classList.remove('dark')
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      if (prefersDark) {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-      }
-    }
-  }
-
-  const handleThemeChange = (newTheme: Theme) => {
-    setTheme(newTheme)
-    localStorage.setItem('theme', newTheme)
-    applyTheme(newTheme)
-    setShowThemeMenu(false)
-  }
 
   const toggleCollapse = () => {
     const newCollapsed = !collapsed
@@ -64,12 +35,6 @@ export default function Sidebar({ user }: SidebarProps) {
   const handleLogout = () => {
     document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT'
     router.push('/login')
-  }
-
-  const getThemeIcon = () => {
-    if (theme === 'dark') return <Moon className="h-5 w-5" />
-    if (theme === 'light') return <Sun className="h-5 w-5" />
-    return <Monitor className="h-5 w-5" />
   }
 
   const getRoleLabel = (role: string) => {
@@ -95,8 +60,8 @@ export default function Sidebar({ user }: SidebarProps) {
         {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
 
-      {/* User Profile Section - Top */}
-      <Link href="/profile" className={`p-4 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${collapsed ? 'flex justify-center' : ''}`}>
+      {/* User Profile Section - Top (Clickable to Settings) */}
+      <Link href="/dashboard/settings" className={`p-4 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${collapsed ? 'flex justify-center' : ''}`}>
         <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
           {user.profileImage ? (
             <div className="w-11 h-11 rounded-full overflow-hidden border-2 border-blue-500 shadow-lg flex-shrink-0">
@@ -136,20 +101,6 @@ export default function Sidebar({ user }: SidebarProps) {
           </li>
           <li>
             <Link
-              href="/profile"
-              className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
-                pathname === '/profile'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-              }`}
-              title="Profile"
-            >
-              <User className="h-5 w-5 flex-shrink-0" />
-              {!collapsed && <span className="font-medium">Profile</span>}
-            </Link>
-          </li>
-          <li>
-            <Link
               href="/dashboard/gantt"
               className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
                 pathname === '/dashboard/gantt'
@@ -162,48 +113,19 @@ export default function Sidebar({ user }: SidebarProps) {
               {!collapsed && <span className="font-medium">Gantt Chart</span>}
             </Link>
           </li>
-
-          {/* Theme Toggle */}
-          <li className="relative pt-2">
-            <button
-              onClick={() => setShowThemeMenu(!showThemeMenu)}
-              className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all`}
-              title="Theme"
+          <li>
+            <Link
+              href="/dashboard/settings"
+              className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
+                pathname === '/dashboard/settings'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+              title="Settings"
             >
-              {getThemeIcon()}
-              {!collapsed && (
-                <>
-                  <span className="font-medium">Theme</span>
-                  <span className="ml-auto text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-md capitalize">{theme}</span>
-                </>
-              )}
-            </button>
-            
-            {showThemeMenu && (
-              <div className={`absolute ${collapsed ? 'left-full ml-2' : 'left-0 right-0'} top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg py-2 z-50`}>
-                <button
-                  onClick={() => handleThemeChange('light')}
-                  className={`w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 ${theme === 'light' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-700 dark:text-gray-300'}`}
-                >
-                  <Sun className="h-4 w-4" />
-                  Light
-                </button>
-                <button
-                  onClick={() => handleThemeChange('dark')}
-                  className={`w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 ${theme === 'dark' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-700 dark:text-gray-300'}`}
-                >
-                  <Moon className="h-4 w-4" />
-                  Dark
-                </button>
-                <button
-                  onClick={() => handleThemeChange('system')}
-                  className={`w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 ${theme === 'system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-gray-700 dark:text-gray-300'}`}
-                >
-                  <Monitor className="h-4 w-4" />
-                  System
-                </button>
-              </div>
-            )}
+              <Settings className="h-5 w-5 flex-shrink-0" />
+              {!collapsed && <span className="font-medium">Settings</span>}
+            </Link>
           </li>
         </ul>
       </nav>
@@ -222,7 +144,13 @@ export default function Sidebar({ user }: SidebarProps) {
 
       {/* Bottom Logo */}
       <div className="p-3 border-t border-gray-100 dark:border-gray-800">
-           <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={140} height={120} />
+        <Image 
+          src="/assets/bimboss-logo.png" 
+          alt="BimBoss Logo" 
+          width={140} 
+          height={0}
+          style={{ width: 140, height: 'auto' }}
+        />
       </div>
     </aside>
   )

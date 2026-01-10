@@ -171,8 +171,8 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
             {stats.totalTasks > 0 ? (
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {/* Pie Chart */}
-                <div className="w-full md:w-2/3 h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="w-full md:w-2/3 h-[280px] min-h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={280}>
                     <PieChart>
                       <Pie
                         data={[

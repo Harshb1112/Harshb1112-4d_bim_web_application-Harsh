@@ -123,7 +123,7 @@ const UnifiedModelViewer = forwardRef<UnifiedModelViewerRef, UnifiedModelViewerP
     if (!selectedModel) return { type: 'none', detail: '' }
     
     // Local IFC file (uploaded)
-    if (selectedModel.source === 'local' && selectedModel.filePath) {
+    if ((selectedModel.source === 'local' || selectedModel.source === 'local_ifc') && selectedModel.filePath) {
       return { type: 'ifc', detail: 'local_ifc' }
     }
     
@@ -165,9 +165,22 @@ const UnifiedModelViewer = forwardRef<UnifiedModelViewerRef, UnifiedModelViewerP
     const hasSpeckleData = !!(selectedModel.speckleUrl || selectedModel.streamId)
     const hasAutodeskData = !!(selectedModel.sourceId && (selectedModel.source === 'autodesk_construction_cloud' || selectedModel.source === 'autodesk_drive'))
     const hasIFCData = !!(selectedModel.filePath || selectedModel.sourceUrl || selectedModel.fileUrl)
-    const hasLocalFile = !!(selectedModel.source === 'local' && selectedModel.filePath)
+    const hasLocalFile = !!(selectedModel.source === 'local_ifc' || selectedModel.source === 'local_rvt')
     
     return hasSpeckleData || hasAutodeskData || hasIFCData || hasLocalFile
+  }, [selectedModel])
+
+  // Generate file URL for local files
+  const modelFileUrl = useMemo(() => {
+    if (!selectedModel) return null
+    
+    // For local IFC/RVT files, use API endpoint
+    if ((selectedModel.source === 'local_ifc' || selectedModel.source === 'local_rvt') && selectedModel.id) {
+      return `/api/models/${selectedModel.id}/file`
+    }
+    
+    // For other sources, use existing URLs
+    return selectedModel.fileUrl || selectedModel.sourceUrl || null
   }, [selectedModel])
 
   // Debug logs
@@ -308,7 +321,10 @@ const UnifiedModelViewer = forwardRef<UnifiedModelViewerRef, UnifiedModelViewerP
         {modelHasData && (selectedModelSource.type === 'ifc' || selectedModelSource.detail === 'local_ifc') && (
           <IFCViewer
             ref={ifcViewerRef}
-            model={selectedModel}
+            model={{
+              ...selectedModel,
+              fileUrl: modelFileUrl
+            }}
             onElementSelect={onElementSelect}
           />
         )}

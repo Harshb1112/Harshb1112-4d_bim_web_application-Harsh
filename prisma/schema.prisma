@@ -21,6 +21,8 @@ model User {
   invitedBy         Int?             @map("invited_by")
   createdAt         DateTime         @default(now()) @map("created_at")
   profileImage      String?          @map("profile_image")
+  aiEnabled         Boolean          @default(false) @map("ai_enabled")
+  openaiApiKey      String?          @map("openai_api_key")
   activityLogs      ActivityLog[]
   errorLogs         ErrorLog[]       @relation("ErrorReporter")
   uploadedModels    Model[]          @relation("ModelUploader")
@@ -53,6 +55,8 @@ model Project {
   latitude          Float?
   location          String?
   longitude         Float?
+  aiEnabled         Boolean             @default(false) @map("ai_enabled")
+  openaiApiKey      String?             @map("openai_api_key")
   activityLogs      ActivityLog[]
   dailySiteCosts    DailySiteCost[]
   dailySiteProgress DailySiteProgress[]
@@ -113,6 +117,7 @@ model Element {
   level         String?
   geometryRef   String?           @map("geometry_ref")
   parameters    Json?
+  resource      String?
   createdAt     DateTime          @default(now()) @map("created_at")
   properties    ElementProperty[]
   elementStatus ElementStatus[]

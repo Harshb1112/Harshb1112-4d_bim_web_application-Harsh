@@ -142,6 +142,31 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
                   : 'Set dates in edit'}
               </span>
             </div>
+            {currentProject.startDate && currentProject.endDate && (() => {
+              const start = new Date(currentProject.startDate);
+              const end = new Date(currentProject.endDate);
+              const diffTime = Math.abs(end.getTime() - start.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              const years = Math.floor(diffDays / 365);
+              const months = Math.floor((diffDays % 365) / 30);
+              
+              let durationText = '';
+              if (years > 0 && months > 0) {
+                durationText = `${years} year${years > 1 ? 's' : ''} ${months} month${months > 1 ? 's' : ''}`;
+              } else if (years > 0) {
+                durationText = `${years} year${years > 1 ? 's' : ''}`;
+              } else if (months > 0) {
+                durationText = `${months} month${months > 1 ? 's' : ''}`;
+              } else {
+                durationText = `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+              }
+              
+              return (
+                <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                  Duration: {durationText}
+                </Badge>
+              );
+            })()}
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               <span className="text-gray-600 dark:text-gray-400">

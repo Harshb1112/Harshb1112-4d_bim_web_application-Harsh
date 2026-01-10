@@ -41,7 +41,10 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
       onElementSelectRef.current = onElementSelect
     }, [onElementSelect])
 
-    const fileUrl = model?.fileUrl || model?.filePath || model?.sourceUrl
+    // Construct proper file URL for IFC files
+    const fileUrl = model?.fileUrl || 
+                    (model?.filePath && model?.id ? `/api/models/${model.id}/file` : null) || 
+                    model?.sourceUrl
 
     // Expose imperative methods for simulation control
     useImperativeHandle(ref, () => ({
@@ -149,9 +152,9 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           const container = containerRef.current
           if (!container || disposed) return
 
-          // Scene setup - Dark professional background like Speckle
+          // Scene setup - White background like Autodesk
           const scene = new THREE.Scene()
-          scene.background = new THREE.Color(0x2d2d2d)
+          scene.background = new THREE.Color(0xffffff)  // White background
           sceneRef.current = scene
 
           // Camera
@@ -190,8 +193,8 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           directionalLight.castShadow = true
           scene.add(directionalLight)
 
-          // Grid - dark style like Speckle
-          const gridHelper = new THREE.GridHelper(200, 40, 0x555555, 0x3a3a3a)
+          // Grid - light style like Autodesk
+          const gridHelper = new THREE.GridHelper(200, 40, 0xcccccc, 0xe8e8e8)
           gridHelper.name = 'grid'
           scene.add(gridHelper)
 
@@ -206,8 +209,13 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           console.log('[SimulationIFCViewer] Loading IFC file:', fileUrl)
           
           try {
-            const response = await fetch(fileUrl)
-            if (!response.ok) throw new Error(`Failed to fetch IFC file: ${response.status}`)
+            const response = await fetch(fileUrl, {
+              credentials: 'include', // Include cookies for authentication
+            })
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Unknown error')
+              throw new Error(`Failed to fetch IFC file (${response.status}): ${errorText}`)
+            }
             
             setProgress(60)
             const arrayBuffer = await response.arrayBuffer()
@@ -330,10 +338,10 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
               camera.lookAt(center)
               controls.target.copy(center)
               
-              // Reposition grid to model center - dark style
+              // Reposition grid to model center - light style
               const gridSize = Math.max(maxDim * 2, 100)
               scene.remove(gridHelper)
-              const newGrid = new THREE.GridHelper(gridSize, 40, 0x555555, 0x3a3a3a)
+              const newGrid = new THREE.GridHelper(gridSize, 40, 0xcccccc, 0xe8e8e8)
               newGrid.position.set(center.x, box.min.y - 0.1, center.z)
               newGrid.name = 'grid'
               scene.add(newGrid)
@@ -446,38 +454,38 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
 
     if (error) {
       return (
-        <div className="flex items-center justify-center h-full bg-[#2d2d2d] rounded-lg border border-gray-700">
-          <Alert className="max-w-md bg-gray-800 border-red-500/50">
+        <div className="flex items-center justify-center h-full bg-white rounded-lg border border-gray-300">
+          <Alert className="max-w-md bg-white border-red-500/50">
             <AlertCircle className="h-4 w-4 text-red-400" />
-            <AlertDescription className="text-gray-300">{error}</AlertDescription>
+            <AlertDescription className="text-gray-700">{error}</AlertDescription>
           </Alert>
         </div>
       )
     }
 
     return (
-      <div className="h-full w-full rounded-lg border border-gray-700 overflow-hidden bg-[#2d2d2d]">
+      <div className="h-full w-full rounded-lg border border-gray-300 overflow-hidden bg-white">
         <div ref={containerRef} className="h-full w-full relative" style={{ minHeight: '450px' }}>
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#2d2d2d] z-10">
-              <div className="text-center bg-gray-800/90 p-6 rounded-xl border border-gray-700">
+            <div className="absolute inset-0 flex items-center justify-center bg-white z-10">
+              <div className="text-center bg-white p-6 rounded-xl border border-gray-300 shadow-lg">
                 <Loader2 className="h-10 w-10 animate-spin text-blue-400 mx-auto mb-3" />
-                <p className="text-white font-medium">Loading IFC Model</p>
-                <div className="w-48 bg-gray-700 rounded-full h-2 mt-4 mx-auto overflow-hidden">
+                <p className="text-gray-900 font-medium">Loading IFC Model</p>
+                <div className="w-48 bg-gray-200 rounded-full h-2 mt-4 mx-auto overflow-hidden">
                   <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
                 </div>
-                <p className="text-gray-500 text-xs mt-2">{progress}%</p>
+                <p className="text-gray-600 text-xs mt-2">{progress}%</p>
               </div>
             </div>
           )}
           
           {selectedElement && selectedElementInfo && (
-            <div className="absolute top-3 left-3 bg-gray-800/95 backdrop-blur-sm text-white px-3 py-2 rounded-lg text-sm z-10 border border-gray-600">
+            <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-gray-900 px-3 py-2 rounded-lg text-sm z-10 border border-gray-300 shadow-md">
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-medium">
+                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-600 rounded text-xs font-medium">
                   {selectedElementInfo.type}
                 </span>
-                <span className="text-gray-400">#{selectedElementInfo.id}</span>
+                <span className="text-gray-600">#{selectedElementInfo.id}</span>
               </div>
             </div>
           )}

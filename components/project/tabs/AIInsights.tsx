@@ -414,7 +414,7 @@ export default function AIInsights({ project }: AIInsightsProps) {
     }
   }
 
-  // Ask AI
+  // Ask AI - REAL OpenAI Implementation
   const askAI = async () => {
     if (!aiQuestion.trim()) {
       toast.error('Please enter a question')
@@ -423,66 +423,63 @@ export default function AIInsights({ project }: AIInsightsProps) {
 
     setAiLoading(true)
     try {
-      const tasks = project.tasks || []
-      const completedTasks = tasks.filter((t: any) => t.status === 'completed').length
-      const inProgressTasks = tasks.filter((t: any) => t.status === 'in_progress').length
-      const overdueTasks = tasks.filter((t: any) => t.endDate && new Date(t.endDate) < new Date() && t.status !== 'completed').length
-      const avgProgress = tasks.length > 0 ? Math.round(tasks.reduce((sum: number, t: any) => sum + (t.progress || 0), 0) / tasks.length) : 0
+      // Call REAL OpenAI API
+      const response = await fetch('/api/ai/project-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId: project.id,
+          question: aiQuestion,
+          projectData: {
+            name: project.name,
+            tasks: project.tasks || [],
+            resources: project.resources || [],
+            models: project.models || []
+          }
+        })
+      });
 
-      // Generate contextual response based on question
-      const question = aiQuestion.toLowerCase()
-      let response = ''
+      const data = await response.json();
 
-      if (question.includes('status') || question.includes('progress') || question.includes('how')) {
-        response = `**Project Status Summary:**\n\n`
-        response += `• Total Tasks: ${tasks.length}\n`
-        response += `• Completed: ${completedTasks} (${tasks.length > 0 ? Math.round((completedTasks/tasks.length)*100) : 0}%)\n`
-        response += `• In Progress: ${inProgressTasks}\n`
-        response += `• Overdue: ${overdueTasks}\n`
-        response += `• Average Progress: ${avgProgress}%\n\n`
-        response += overdueTasks > 0 
-          ? `⚠️ There are ${overdueTasks} overdue tasks that need attention.`
-          : `✅ Project is currently on track.`
-      } else if (question.includes('risk') || question.includes('problem') || question.includes('issue')) {
-        response = `**Risk Assessment:**\n\n`
-        if (overdueTasks > 0) {
-          response += `🔴 **High Risk:** ${overdueTasks} tasks are overdue\n`
-        }
-        if (inProgressTasks > 5) {
-          response += `🟡 **Medium Risk:** High number of concurrent tasks (${inProgressTasks})\n`
-        }
-        if (avgProgress < 50 && tasks.length > 0) {
-          response += `🟡 **Medium Risk:** Overall progress is below 50%\n`
-        }
-        if (overdueTasks === 0 && avgProgress >= 50) {
-          response += `🟢 No significant risks identified at this time.`
-        }
-        response += `\n\n**Recommendation:** Focus on completing overdue tasks and monitor resource utilization.`
-      } else if (question.includes('deadline') || question.includes('complete') || question.includes('finish')) {
-        const taskEndDates = tasks.filter((t: any) => t.endDate).map((t: any) => new Date(t.endDate))
-        const latestDate = taskEndDates.length > 0 ? new Date(Math.max(...taskEndDates.map((d: Date) => d.getTime()))) : null
-        response = `**Completion Analysis:**\n\n`
-        response += latestDate ? `• Planned End Date: ${latestDate.toLocaleDateString()}\n` : '• No end date defined\n'
-        response += `• Current Progress: ${avgProgress}%\n`
-        response += `• Tasks Remaining: ${tasks.length - completedTasks}\n\n`
-        response += overdueTasks > 0 
-          ? `Based on current progress and ${overdueTasks} overdue tasks, the project may be delayed by approximately ${overdueTasks * 3}-${overdueTasks * 5} days.`
-          : `Based on current progress, the project is on track to meet the deadline.`
-      } else {
-        response = `**Project Overview:**\n\n`
-        response += `Project "${project.name}" has ${tasks.length} tasks with ${avgProgress}% average progress.\n\n`
-        response += `• Completed: ${completedTasks}\n`
-        response += `• In Progress: ${inProgressTasks}\n`
-        response += `• Overdue: ${overdueTasks}\n\n`
-        response += `For specific insights, try asking about:\n`
-        response += `• "What is the project status?"\n`
-        response += `• "What are the risks?"\n`
-        response += `• "When will the project complete?"`
+      // Handle errors
+      if (data.noCredits || response.status === 429) {
+        toast.error('❌ No OpenAI Credits', {
+          description: 'Add payment method to continue',
+          action: {
+            label: 'Add Payment',
+            onClick: () => window.open('https://platform.openai.com/account/billing', '_blank')
+          }
+        });
+        setAiLoading(false);
+        return;
       }
 
-      setAiResponse(response)
-    } catch (error) {
-      toast.error('Failed to process question')
+      if (data.invalidKey) {
+        toast.error('❌ Invalid API Key', {
+          description: 'Update your key in Settings'
+        });
+        setAiLoading(false);
+        return;
+      }
+
+      if (!data.aiEnabled) {
+        toast.error('❌ AI Disabled', {
+          description: 'Enable AI in Settings → AI Configuration'
+        });
+        setAiLoading(false);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get AI response');
+      }
+
+      setAiResponse(data.response || 'No response from AI');
+      toast.success('✅ AI Response Generated');
+    } catch (error: any) {
+      console.error('AI Insights error:', error);
+      toast.error(`❌ ${error.message || 'Failed to process question'}`);
     } finally {
       setAiLoading(false)
     }

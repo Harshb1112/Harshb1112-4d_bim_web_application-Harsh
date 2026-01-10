@@ -263,7 +263,7 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
       return
     }
     if (bimSource === "local" && !selectedFile) {
-      toast.error("Please select an IFC file")
+      toast.error("Please select an IFC or RVT file")
       return
     }
     if ((bimSource === "acc" || bimSource === "drive") && !autodeskUrn) {
@@ -326,7 +326,13 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
       resetForm()
       onModelAdded?.()
     } catch (error: any) {
-      toast.error(error.message || "Failed to add model")
+      console.error('Add model error:', error)
+      // Handle JSON parse errors
+      if (error.message?.includes('JSON')) {
+        toast.error("Server response error. Please check your network connection and try again.")
+      } else {
+        toast.error(error.message || "Failed to add model")
+      }
     } finally {
       setLoading(false)
     }
@@ -372,7 +378,7 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="speckle">Speckle</SelectItem>
-                <SelectItem value="local">Local IFC File</SelectItem>
+                <SelectItem value="local">Local IFC/RVT File</SelectItem>
                 <SelectItem value="acc">Autodesk Construction Cloud</SelectItem>
                 <SelectItem value="drive">Autodesk Drive</SelectItem>
               </SelectContent>
@@ -407,14 +413,37 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
                 onChange={(e) => {
                   const file = e.target.files?.[0]
                   if (file) {
+                    const sizeMB = file.size / 1024 / 1024
+                    const sizeGB = sizeMB / 1024
+                    
+                    // Check file size
+                    if (sizeGB > 10) {
+                      toast.error(`File too large (${sizeGB.toFixed(1)}GB). Maximum 10GB allowed.`)
+                      e.target.value = ''
+                      return
+                    }
+                    
+                    // Warning for large files
+                    if (sizeMB > 500) {
+                      toast.warning(`Large file (${sizeGB.toFixed(1)}GB). This will be processed on server. Browser viewing may be limited.`, {
+                        duration: 5000
+                      })
+                    } else if (sizeMB > 100) {
+                      toast.warning(`File size: ${sizeMB.toFixed(0)}MB. Loading may take time.`)
+                    }
+                    
                     setSelectedFile(file)
                     if (!modelName) setModelName(file.name.replace(/\.[^/.]+$/, ""))
                   }
                 }}
               />
               <p className="text-xs text-gray-500">
-                Upload your IFC model file (max 500MB)
+                Upload your IFC model file (max 10GB)
               </p>
+              <div className="text-xs space-y-1 mt-2">
+                <p className="text-green-600">✓ Files up to 500MB: Full browser viewing</p>
+                <p className="text-yellow-600">⚠ Files 500MB-10GB: Server processing, limited preview</p>
+              </div>
             </div>
           )}
 
@@ -437,56 +466,38 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
                   )}
                   Browse Autodesk
                 </Button>
-                <label className="flex-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    disabled={uploadingForUrn}
-                    asChild
-                  >
-                    <span>
-                      {uploadingForUrn ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4 mr-2" />
-                      )}
-                      Upload & Generate URN
-                    </span>
-                  </Button>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".rvt,.dwg,.ifc,.nwd,.nwc,.3dm,.skp,.stp,.step,.iges,.igs,.obj,.fbx"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        uploadFileForUrn(file)
-                        if (!modelName) setModelName(file.name.replace(/\.[^/.]+$/, ""))
-                      }
-                    }}
-                  />
-                </label>
               </div>
-
-              {translationStatus && (
-                <div className="flex items-center gap-2 text-sm">
-                  <RefreshCw className={`h-4 w-4 ${translationStatus.includes('Processing') ? 'animate-spin' : ''}`} />
-                  <span className={translationStatus === 'Ready!' ? 'text-green-500' : translationStatus === 'Failed' ? 'text-red-500' : 'text-blue-500'}>
-                    {translationStatus}
-                  </span>
-                </div>
-              )}
 
               {/* Autodesk Browser */}
               {showAutodeskBrowser && (
                 <div className="border rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900">
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Select from Autodesk</span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setShowAutodeskBrowser(false)}>
-                      ✕
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => {
+                          setShowAutodeskBrowser(false)
+                          setHubs([])
+                          setProjects([])
+                          setFolders([])
+                          setFiles([])
+                          setSelectedHub("")
+                          setSelectedProject("")
+                          setSelectedFolder("")
+                          initAutodeskBrowser()
+                        }}
+                        title="Refresh accounts"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-7 px-2" onClick={() => setShowAutodeskBrowser(false)}>
+                        ✕
+                      </Button>
+                    </div>
                   </div>
                   
                   <Select value={selectedHub} onValueChange={loadProjects}>
@@ -497,6 +508,19 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
                       {hubs.map((hub) => (
                         <SelectItem key={hub.id} value={hub.id}>{hub.name}</SelectItem>
                       ))}
+                      <div className="border-t mt-1 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.open('https://acc.autodesk.com/', '_blank')
+                            toast.info('Opening Autodesk Construction Cloud. Please sign in or create a new account.')
+                          }}
+                          className="w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center gap-2"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Add New Account
+                        </button>
+                      </div>
                     </SelectContent>
                   </Select>
 

@@ -151,23 +151,31 @@ export default function LinkingPanel({
 
   const loadElements = async () => {
     try {
+      console.log('🔍 Loading elements from project models:', project.models?.length);
       if (project.models && project.models.length > 0) {
         // Load elements from all models
         const allElements: any[] = []
         for (const model of project.models) {
           try {
+            console.log(`📦 Fetching elements from model ${model.id}...`);
             const response = await fetch(`/api/models/${model.id}/elements`, {
               credentials: 'include'
             })
             if (response.ok) {
               const data = await response.json()
+              console.log(`✅ Loaded ${data.elements?.length || 0} elements from model ${model.id}`);
               allElements.push(...(data.elements || []))
+            } else {
+              console.error(`❌ Failed to load elements from model ${model.id}:`, response.status);
             }
           } catch (e) {
             console.error(`Failed to load elements from model ${model.id}:`, e)
           }
         }
+        console.log(`✅ Total elements loaded: ${allElements.length}`);
         setElements(allElements)
+      } else {
+        console.log('⚠️ No models found in project');
       }
     } catch (error) {
       console.error('Failed to load elements:', error)
@@ -176,13 +184,16 @@ export default function LinkingPanel({
 
   const loadTasks = async () => {
     try {
+      console.log('🔍 Loading tasks from project:', project.id);
       const response = await fetch(`/api/projects/${project.id}/tasks`, {
         credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
+        console.log(`✅ Loaded ${data.tasks?.length || 0} tasks`);
         setTasks(data.tasks || [])
       } else {
+        console.error('❌ Failed to load tasks:', response.status);
         toast.error('Failed to load tasks.')
       }
     } catch (error) {

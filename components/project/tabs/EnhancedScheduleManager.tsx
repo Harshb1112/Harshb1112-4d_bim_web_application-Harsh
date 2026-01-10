@@ -24,14 +24,17 @@ import {
   Target,
   Calendar,
   BarChart3,
-  AlertTriangle
+  AlertTriangle,
+  Bot
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
+import AITaskGenerator from '../AITaskGenerator'
+import { CardDescription } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Slider } from '@/components/ui/slider'
 import { Progress } from '@/components/ui/progress'
-import { toast } from 'sonner'
 import GanttChart from '../GanttChart'
 import UnifiedModelViewer from '../UnifiedModelViewer'
 import CreateTaskFromElementsDialog from '../CreateTaskFromElementsDialog'
@@ -532,6 +535,9 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
           <TabsTrigger value="4dbim">
             <Box className="h-4 w-4 mr-2" />4D BIM
           </TabsTrigger>
+          <TabsTrigger value="aitasks">
+            <Bot className="h-4 w-4 mr-2" />🤖 AI Tasks
+          </TabsTrigger>
           <TabsTrigger value="tasklist">
             <List className="h-4 w-4 mr-2" />Task List
           </TabsTrigger>
@@ -565,6 +571,31 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
               ) : (
                 <GanttChart tasks={tasks} onTaskClick={handleTaskClick} />
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* AI TASKS TAB */}
+        <TabsContent value="aitasks">
+          <Card className="border-2 border-dashed border-purple-300 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/10 dark:to-blue-900/10">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-300">
+                <Bot className="h-5 w-5" />
+                🤖 AI Task Generator
+              </CardTitle>
+              <CardDescription>
+                Generate tasks automatically using AI - describe your project needs in natural language
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AITaskGenerator 
+                projectId={project.id} 
+                onTasksGenerated={(newTasks) => {
+                  console.log(`🤖 AI generated ${newTasks.length} tasks successfully!`)
+                  toast.success(`✨ ${newTasks.length} tasks generated! Refreshing...`)
+                  window.location.reload()
+                }}
+              />
             </CardContent>
           </Card>
         </TabsContent>

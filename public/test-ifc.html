@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IFC Test</title>
+    <style>
+        body { margin: 0; font-family: Arial; }
+        #container { width: 100vw; height: 100vh; }
+        #info { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div id="info">Loading web-ifc test...</div>
+    <div id="container"></div>
+    
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+        
+        const info = document.getElementById('info');
+        
+        async function testWebIFC() {
+            try {
+                info.textContent = 'Loading web-ifc...';
+                
+                // Import web-ifc from CDN
+                const WebIFC = await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.59/web-ifc-api.js');
+                
+                info.textContent = 'web-ifc loaded! Initializing...';
+                
+                const ifcApi = new WebIFC.IfcAPI();
+                
+                // Set WASM path to local
+                ifcApi.SetWasmPath('/wasm/', true);
+                
+                info.textContent = 'Initializing web-ifc API...';
+                
+                await ifcApi.Init();
+                
+                info.textContent = '✅ web-ifc initialized successfully! WASM files loaded correctly.';
+                
+                // Setup Three.js scene
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x2d2d2d);
+                
+                const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(50, 50, 50);
+                
+                const renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                document.getElementById('container').appendChild(renderer.domElement);
+                
+                const controls = new OrbitControls(camera, renderer.domElement);
+                
+                const light = new THREE.DirectionalLight(0xffffff, 1);
+                light.position.set(100, 100, 50);
+                scene.add(light);
+                scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+                
+                const gridHelper = new THREE.GridHelper(100, 20, 0x555555, 0x3a3a3a);
+                scene.add(gridHelper);
+                
+                // Add test cube
+                const geometry = new THREE.BoxGeometry(10, 10, 10);
+                const material = new THREE.MeshPhongMaterial({ color: 0x4a90d9 });
+                const cube = new THREE.Mesh(geometry, material);
+                cube.position.y = 5;
+                scene.add(cube);
+                
+                function animate() {
+                    requestAnimationFrame(animate);
+                    controls.update();
+                    renderer.render(scene, camera);
+                }
+                animate();
+                
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+                
+            } catch (error) {
+                info.textContent = '❌ Error: ' + error.message;
+                info.style.background = 'rgba(255,0,0,0.8)';
+                console.error('Test failed:', error);
+            }
+        }
+        
+        testWebIFC();
+    </script>
+</body>
+</html>

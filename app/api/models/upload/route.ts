@@ -4,26 +4,50 @@ import { join } from 'path';
 import { existsSync } from 'fs';
 import prisma from '@/lib/db';
 
+// Route segment config for large file uploads
+export const maxDuration = 300; // 5 minutes timeout
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const projectId = parseInt(formData.get('projectId') as string);
+    const modelName = formData.get('name') as string;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Validate file type
+    if (!projectId || isNaN(projectId)) {
+      return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 });
+    }
+
+    // Validate file type - Only IFC files
     const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith('.ifc') && !fileName.endsWith('.ifczip')) {
+    const isIFC = fileName.endsWith('.ifc') || fileName.endsWith('.ifczip');
+    
+    if (!isIFC) {
       return NextResponse.json({ error: 'Only IFC files are supported' }, { status: 400 });
     }
 
-    // Validate file size (500MB max)
-    const maxSize = 500 * 1024 * 1024;
+    // Validate file size (10GB max)
+    const maxSize = 10 * 1024 * 1024 * 1024; // 10GB
     if (file.size > maxSize) {
-      return NextResponse.json({ error: 'File too large (max 500MB)' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'File too large (max 10GB for IFC files)' 
+      }, { status: 400 });
+    }
+
+    // Log file size
+    const sizeMB = file.size / 1024 / 1024;
+    const sizeGB = sizeMB / 1024;
+    console.log(`[Upload] IFC file: ${sizeGB > 1 ? sizeGB.toFixed(2) + 'GB' : sizeMB.toFixed(0) + 'MB'}`);
+    
+    // Mark large files for server-side processing
+    const needsServerProcessing = file.size > 500 * 1024 * 1024; // > 500MB
+    if (needsServerProcessing) {
+      console.log('[Upload] Large file - will require server-side processing for viewing');
     }
 
     // Create uploads directory if it doesn't exist
@@ -46,7 +70,7 @@ export async function POST(request: NextRequest) {
     const model = await prisma.model.create({
       data: {
         projectId,
-        name: file.name,
+        name: modelName || file.name,
         source: 'local_ifc',
         filePath: filePath,
         fileSize: file.size,
@@ -54,6 +78,9 @@ export async function POST(request: NextRequest) {
         metadata: {
           originalName: file.name,
           uploadedAt: new Date().toISOString(),
+          fileType: 'ifc',
+          needsServerProcessing: needsServerProcessing,
+          sizeMB: sizeMB,
         },
       },
     });
