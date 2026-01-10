@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 import { sendEmail, generateInviteEmail } from '@/lib/email'
+import { getBaseUrl } from '@/lib/url-helper'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Send invite email
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl(request)
     const teamName = invitedUser.teamMemberships[0]?.team.name || null
     const emailContent = generateInviteEmail(
       currentUser.fullName,

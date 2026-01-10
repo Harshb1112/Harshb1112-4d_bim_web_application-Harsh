@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/auth'
 import { sendEmail, generateVerificationEmail } from '@/lib/email'
+import { getBaseUrl } from '@/lib/url-helper'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Send verification email
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    const baseUrl = getBaseUrl(request)
     const emailContent = generateVerificationEmail(fullName, emailVerifyToken, baseUrl)
     await sendEmail({
       to: email,
