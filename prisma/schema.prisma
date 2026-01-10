@@ -375,6 +375,7 @@ model SiteCamera {
   project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   captures    SiteCapture[]
 
+  @@index([projectId])
   @@map("site_cameras")
 }
 
@@ -398,6 +399,8 @@ model SiteCapture {
   camera       SiteCamera? @relation(fields: [cameraId], references: [id])
   project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([capturedAt])
+  @@index([projectId])
   @@map("site_captures")
 }
 
@@ -418,6 +421,7 @@ model DailySiteCost {
   createdAt   DateTime @default(now()) @map("created_at")
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([projectId, date])
   @@map("daily_site_costs")
 }
 
@@ -436,6 +440,7 @@ model DailySiteProgress {
   createdAt       DateTime @default(now()) @map("created_at")
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@index([projectId, date])
   @@map("daily_site_progress")
 }
 
@@ -452,5 +457,7 @@ model SiteViewLog {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([projectId])
+  @@index([userId])
   @@map("site_view_logs")
 }
