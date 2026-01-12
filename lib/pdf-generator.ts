@@ -1,8 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+// TEMPORARILY DISABLED - jspdf causing deployment issues
+// import { jsPDF } from 'jspdf'
+// import autoTable from 'jspdf-autotable'
 
 export async function generateSchedulePDF(project: any): Promise<Buffer> {
+  // TODO: Re-enable after fixing jspdf version conflict
+  throw new Error('PDF generation temporarily disabled')
+  
+  /* COMMENTED OUT FOR DEPLOYMENT
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -137,4 +142,5 @@ export async function generateSchedulePDF(project: any): Promise<Buffer> {
   // Convert to Buffer
   const pdfArrayBuffer = doc.output('arraybuffer')
   return Buffer.from(pdfArrayBuffer)
+  */
 }
