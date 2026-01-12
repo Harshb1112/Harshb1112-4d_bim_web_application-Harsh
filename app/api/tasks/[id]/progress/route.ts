@@ -59,6 +59,14 @@ export async function PUT(
         actualStartDate: actualStartDate ? new Date(actualStartDate) : null,
         actualEndDate: actualEndDate ? new Date(actualEndDate) : null,
       },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            fullName: true
+          }
+        }
+      }
     })
 
     await prisma.activityLog.create({
@@ -72,6 +80,28 @@ export async function PUT(
         },
       },
     })
+    
+    // 🔔 AUTOMATIC NOTIFICATION: Notify assignee about progress update
+    if (updatedTask.assigneeId && updatedTask.assigneeId !== user.id) {
+      try {
+        const { createNotification } = await import('@/lib/create-notification')
+        const updaterUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { fullName: true }
+        })
+        
+        await createNotification({
+          userId: updatedTask.assigneeId,
+          type: 'task_updated',
+          title: '✏️ Task Progress Updated',
+          body: `${updaterUser?.fullName || 'Someone'} updated progress to ${progress}% for: ${updatedTask.name}`,
+          url: `/dashboard/tasks`
+        })
+        console.log('[Task Progress] ✅ Notification sent to assignee:', updatedTask.assigneeId)
+      } catch (notifError) {
+        console.error('[Task Progress] Failed to send notification:', notifError)
+      }
+    }
 
     return NextResponse.json({ task: updatedTask })
   } catch (error) {

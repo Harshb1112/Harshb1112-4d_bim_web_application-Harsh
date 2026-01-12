@@ -6,10 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Sun, Moon, Monitor, Settings as SettingsIcon, Bot, User, Mail, Shield, Camera, Key, AlertCircle } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sun, Moon, Monitor, Settings as SettingsIcon, Bot, User, Mail, Shield, Camera, Key, AlertCircle, Bell, Lock, Globe, Database, Zap, Clock, Download, Trash2, Smartphone, Laptop, MapPin, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import Image from 'next/image'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -41,13 +44,305 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
 
+  // Notification Settings
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [taskNotifications, setTaskNotifications] = useState(true)
+  const [projectNotifications, setProjectNotifications] = useState(true)
+  const [weeklyDigest, setWeeklyDigest] = useState(false)
+
+  // Security Settings
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [sessions, setSessions] = useState<any[]>([])
+  const [show2FADialog, setShow2FADialog] = useState(false)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [verifying2FA, setVerifying2FA] = useState(false)
+  
+  // Login History
+  const [loginHistory, setLoginHistory] = useState<any[]>([])
+  const [loadingLoginHistory, setLoadingLoginHistory] = useState(true)
+  
+  // Push Notifications
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushSupported, setPushSupported] = useState(false)
+  const [enablingPush, setEnablingPush] = useState(false)
+
+  // API Keys & Integrations
+  const [apiKeys, setApiKeys] = useState<any[]>([])
+  const [integrations, setIntegrations] = useState<any[]>([])
+  const [loadingApiKeys, setLoadingApiKeys] = useState(true)
+  const [loadingIntegrations, setLoadingIntegrations] = useState(true)
+  const [showNewApiKeyDialog, setShowNewApiKeyDialog] = useState(false)
+  const [newApiKeyName, setNewApiKeyName] = useState('')
+  const [generatedApiKey, setGeneratedApiKey] = useState('')
+
+  // Language & Region
+  const [language, setLanguage] = useState('en')
+  const [timezone, setTimezone] = useState('UTC')
+  const [dateFormat, setDateFormat] = useState('MM/DD/YYYY')
+  const [currentTime, setCurrentTime] = useState(new Date())
+
   useEffect(() => {
     setMounted(true)
     const savedTheme = localStorage.getItem('theme') as Theme || 'light'
     setTheme(savedTheme)
     fetchUserProfile()
     fetchAIConfig()
+    fetchNotificationSettings()
+    fetchSecuritySettings()
+    fetchLanguageSettings()
+    fetchSessions()
+    fetchLoginHistory()
+    fetchApiKeys()
+    fetchIntegrations()
+    checkPushNotificationSupport()
+
+    // Update current time every second
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+
+    return () => clearInterval(timer)
   }, [])
+
+  const fetchNotificationSettings = async () => {
+    try {
+      const response = await fetch('/api/settings/notifications', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setEmailNotifications(data.emailNotifications)
+        setTaskNotifications(data.taskNotifications)
+        setProjectNotifications(data.projectNotifications)
+        setWeeklyDigest(data.weeklyDigest)
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification settings:', error)
+    }
+  }
+
+  const fetchSecuritySettings = async () => {
+    try {
+      const response = await fetch('/api/settings/security', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setTwoFactorEnabled(data.twoFactorEnabled)
+      }
+    } catch (error) {
+      console.error('Failed to fetch security settings:', error)
+    }
+  }
+
+  const fetchLanguageSettings = async () => {
+    try {
+      const response = await fetch('/api/settings/language', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setLanguage(data.language)
+        setTimezone(data.timezone)
+        setDateFormat(data.dateFormat)
+      }
+    } catch (error) {
+      console.error('Failed to fetch language settings:', error)
+    }
+  }
+
+  const fetchSessions = async () => {
+    try {
+      const response = await fetch('/api/settings/sessions', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setSessions(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error)
+    }
+  }
+  
+  const fetchLoginHistory = async () => {
+    setLoadingLoginHistory(true)
+    try {
+      const response = await fetch('/api/auth/login-history', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setLoginHistory(data.sessions || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch login history:', error)
+    } finally {
+      setLoadingLoginHistory(false)
+    }
+  }
+  
+  const fetchApiKeys = async () => {
+    setLoadingApiKeys(true)
+    try {
+      const response = await fetch('/api/api-keys', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setApiKeys(data.apiKeys || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch API keys:', error)
+    } finally {
+      setLoadingApiKeys(false)
+    }
+  }
+  
+  const fetchIntegrations = async () => {
+    setLoadingIntegrations(true)
+    try {
+      const response = await fetch('/api/integrations', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setIntegrations(data.integrations || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch integrations:', error)
+    } finally {
+      setLoadingIntegrations(false)
+    }
+  }
+  
+  const handleGenerateApiKey = async () => {
+    if (!newApiKeyName.trim()) {
+      toast.error('❌ Please enter a name for the API key')
+      return
+    }
+    
+    setIsSaving(true)
+    try {
+      const response = await fetch('/api/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newApiKeyName,
+          expiresInDays: 365 // 1 year expiry
+        })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setGeneratedApiKey(data.apiKey.key)
+        setNewApiKeyName('')
+        fetchApiKeys()
+        toast.success('✅ API key generated successfully!')
+      } else {
+        const error = await response.json()
+        toast.error(`❌ ${error.error || 'Failed to generate API key'}`)
+      }
+    } catch (error) {
+      console.error('Failed to generate API key:', error)
+      toast.error('❌ Failed to generate API key')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+  
+  const handleRevokeApiKey = async (keyId: number) => {
+    if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/api-keys/${keyId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      
+      if (response.ok) {
+        fetchApiKeys()
+        toast.success('✅ API key revoked successfully!')
+      } else {
+        toast.error('❌ Failed to revoke API key')
+      }
+    } catch (error) {
+      console.error('Failed to revoke API key:', error)
+      toast.error('❌ Failed to revoke API key')
+    }
+  }
+  
+  const handleConnectIntegration = async (type: string) => {
+    // For now, just show a coming soon message
+    // In the future, this will open integration-specific dialogs
+    toast.info(`🔗 ${type} integration coming soon!`)
+  }
+  
+  const handleDisconnectIntegration = async (integrationId: number) => {
+    if (!confirm('Are you sure you want to disconnect this integration?')) {
+      return
+    }
+    
+    try {
+      const response = await fetch(`/api/integrations/${integrationId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      
+      if (response.ok) {
+        fetchIntegrations()
+        toast.success('✅ Integration disconnected successfully!')
+      } else {
+        toast.error('❌ Failed to disconnect integration')
+      }
+    } catch (error) {
+      console.error('Failed to disconnect integration:', error)
+      toast.error('❌ Failed to disconnect integration')
+    }
+  }
+  
+  const checkPushNotificationSupport = async () => {
+    try {
+      const { isNotificationSupported, getNotificationPermission } = await import('@/lib/push-notifications')
+      const supported = isNotificationSupported()
+      setPushSupported(supported)
+      
+      if (supported) {
+        const permission = getNotificationPermission()
+        setPushEnabled(permission === 'granted')
+      }
+    } catch (error) {
+      console.error('Failed to check push notification support:', error)
+    }
+  }
+  
+  const handleEnablePushNotifications = async () => {
+    setEnablingPush(true)
+    try {
+      const { initializePushNotifications, sendTestNotification } = await import('@/lib/push-notifications')
+      
+      const success = await initializePushNotifications()
+      if (success) {
+        setPushEnabled(true)
+        toast.success('✅ Push notifications enabled!')
+        
+        // Send test notification
+        setTimeout(async () => {
+          await sendTestNotification()
+        }, 1000)
+      } else {
+        toast.error('❌ Failed to enable push notifications. Please check browser permissions.')
+      }
+    } catch (error: any) {
+      console.error('Failed to enable push notifications:', error)
+      toast.error('❌ ' + error.message)
+    } finally {
+      setEnablingPush(false)
+    }
+  }
 
   const fetchUserProfile = async () => {
     try {
@@ -291,18 +586,30 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-7 gap-2">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
-            Profile
+            <span className="hidden sm:inline">Profile</span>
           </TabsTrigger>
           <TabsTrigger value="appearance" className="flex items-center gap-2">
             <Sun className="h-4 w-4" />
-            Appearance
+            <span className="hidden sm:inline">Appearance</span>
           </TabsTrigger>
           <TabsTrigger value="ai" className="flex items-center gap-2">
             <Bot className="h-4 w-4" />
-            AI Configuration
+            <span className="hidden sm:inline">AI Config</span>
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            <span className="hidden sm:inline">Notifications</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <Lock className="h-4 w-4" />
+            <span className="hidden sm:inline">Security</span>
+          </TabsTrigger>
+          <TabsTrigger value="advanced" className="flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            <span className="hidden sm:inline">Advanced</span>
           </TabsTrigger>
         </TabsList>
 
@@ -680,7 +987,777 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Notifications Settings */}
+        <TabsContent value="notifications" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-blue-600" />
+                Email Notifications
+              </CardTitle>
+              <CardDescription>
+                Choose what email notifications you want to receive
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-lg border">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold">Task Assignments</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Get notified when you're assigned to a new task
+                  </p>
+                </div>
+                <Switch
+                  checked={taskNotifications}
+                  onCheckedChange={setTaskNotifications}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-lg border">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold">Project Updates</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Receive updates about project changes and milestones
+                  </p>
+                </div>
+                <Switch
+                  checked={projectNotifications}
+                  onCheckedChange={setProjectNotifications}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-lg border">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold">Weekly Digest</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Get a weekly summary of your tasks and projects
+                  </p>
+                </div>
+                <Switch
+                  checked={weeklyDigest}
+                  onCheckedChange={setWeeklyDigest}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-lg border">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold">All Email Notifications</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Master toggle for all email notifications
+                  </p>
+                </div>
+                <Switch
+                  checked={emailNotifications}
+                  onCheckedChange={setEmailNotifications}
+                />
+              </div>
+
+              <Button 
+                className="w-full" 
+                disabled={isSaving}
+                onClick={async () => {
+                  setIsSaving(true)
+                  try {
+                    const response = await fetch('/api/settings/notifications', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({
+                        emailNotifications,
+                        taskNotifications,
+                        projectNotifications,
+                        weeklyDigest
+                      })
+                    })
+                    if (response.ok) {
+                      toast.success('✅ Notification preferences saved!')
+                    } else {
+                      throw new Error('Failed to save')
+                    }
+                  } catch (error) {
+                    toast.error('❌ Failed to save notification preferences')
+                  } finally {
+                    setIsSaving(false)
+                  }
+                }}
+              >
+                {isSaving ? 'Saving...' : 'Save Notification Preferences'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Smartphone className="h-5 w-5 text-green-600" />
+                Push Notifications
+              </CardTitle>
+              <CardDescription>
+                Real-time notifications in your browser
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!pushSupported ? (
+                <Alert className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-900 dark:text-yellow-100">
+                    <strong>Not Supported:</strong> Your browser doesn't support push notifications.
+                  </AlertDescription>
+                </Alert>
+              ) : pushEnabled ? (
+                <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-900 dark:text-green-100">
+                    <strong>Enabled:</strong> You will receive real-time notifications for tasks, projects, and updates.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-900 dark:text-blue-100">
+                    <strong>Enable Notifications:</strong> Click the button below to receive real-time updates.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              <div className="flex items-center justify-between p-4 rounded-lg border">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold">Browser Notifications</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Get notified about tasks, projects, and important updates
+                  </p>
+                </div>
+                <Button
+                  onClick={handleEnablePushNotifications}
+                  disabled={!pushSupported || pushEnabled || enablingPush}
+                  variant={pushEnabled ? "outline" : "default"}
+                  className={pushEnabled ? "" : "bg-green-600 hover:bg-green-700"}
+                >
+                  {enablingPush ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Enabling...
+                    </>
+                  ) : pushEnabled ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Enabled
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="h-4 w-4 mr-2" />
+                      Enable
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {pushEnabled && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    try {
+                      const { sendTestNotification } = await import('@/lib/push-notifications')
+                      await sendTestNotification()
+                      toast.success('Test notification sent!')
+                    } catch (error) {
+                      toast.error('Failed to send test notification')
+                    }
+                  }}
+                >
+                  <Bell className="h-4 w-4 mr-2" />
+                  Send Test Notification
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Security Settings */}
+        <TabsContent value="security" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-red-600" />
+                Two-Factor Authentication
+              </CardTitle>
+              <CardDescription>
+                Add an extra layer of security to your account
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-semibold text-red-900 dark:text-red-100">Enable 2FA</Label>
+                  <p className="text-sm text-red-800 dark:text-red-200">
+                    Protect your account with two-factor authentication
+                  </p>
+                </div>
+                <Switch
+                  checked={twoFactorEnabled}
+                  onCheckedChange={async (checked) => {
+                    if (checked) {
+                      // Enable 2FA - send code
+                      try {
+                        const response = await fetch('/api/auth/2fa/enable', {
+                          method: 'POST',
+                          credentials: 'include'
+                        })
+                        if (response.ok) {
+                          setShow2FADialog(true)
+                          toast.success('📧 Verification code sent to your email!')
+                        } else {
+                          throw new Error('Failed to send code')
+                        }
+                      } catch (error) {
+                        toast.error('❌ Failed to enable 2FA')
+                      }
+                    } else {
+                      // Disable 2FA
+                      try {
+                        const response = await fetch('/api/auth/2fa/disable', {
+                          method: 'POST',
+                          credentials: 'include'
+                        })
+                        if (response.ok) {
+                          setTwoFactorEnabled(false)
+                          toast.success('❌ 2FA Disabled')
+                        } else {
+                          throw new Error('Failed to disable')
+                        }
+                      } catch (error) {
+                        toast.error('❌ Failed to disable 2FA')
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              {twoFactorEnabled && (
+                <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                  <AlertCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-900 dark:text-green-100">
+                    <strong>✅ 2FA is Active:</strong> Your account is protected with two-factor authentication.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Laptop className="h-5 w-5 text-purple-600" />
+                Active Sessions
+              </CardTitle>
+              <CardDescription>
+                Manage your active login sessions across devices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                {sessions.length > 0 ? (
+                  sessions.map((session: any, i: number) => (
+                    <div key={session.id} className={`flex items-center justify-between p-4 rounded-lg border ${i === 0 ? 'bg-green-50 dark:bg-green-900/20 border-green-200' : ''}`}>
+                      <div className="flex items-center gap-3">
+                        {session.deviceType === 'mobile' ? (
+                          <Smartphone className="h-5 w-5 text-gray-600" />
+                        ) : (
+                          <Laptop className="h-5 w-5 text-green-600" />
+                        )}
+                        <div>
+                          <p className="font-semibold">{session.deviceName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {session.browser} • {session.location} • {new Date(session.lastActive).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      {i === 0 ? (
+                        <span className="text-xs bg-green-600 text-white px-2 py-1 rounded-full">Active</span>
+                      ) : (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(`/api/settings/sessions?sessionId=${session.id}`, {
+                                method: 'DELETE',
+                                credentials: 'include'
+                              })
+                              if (response.ok) {
+                                toast.success('Session terminated')
+                                fetchSessions()
+                              }
+                            } catch (error) {
+                              toast.error('Failed to terminate session')
+                            }
+                          }}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center justify-between p-4 rounded-lg border bg-green-50 dark:bg-green-900/20 border-green-200">
+                    <div className="flex items-center gap-3">
+                      <Laptop className="h-5 w-5 text-green-600" />
+                      <div>
+                        <p className="font-semibold">Current Session</p>
+                        <p className="text-sm text-muted-foreground">Windows • Chrome • {new Date().toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs bg-green-600 text-white px-2 py-1 rounded-full">Active</span>
+                  </div>
+                )}
+              </div>
+
+              <Button 
+                variant="destructive" 
+                className="w-full" 
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/settings/sessions', {
+                      method: 'DELETE',
+                      credentials: 'include'
+                    })
+                    if (response.ok) {
+                      toast.success('All other sessions terminated')
+                      fetchSessions()
+                    }
+                  } catch (error) {
+                    toast.error('Failed to terminate sessions')
+                  }
+                }}
+              >
+                Terminate All Other Sessions
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-orange-600" />
+                Login History
+              </CardTitle>
+              <CardDescription>
+                Recent login activity on your account
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingLoginHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : loginHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                  <p>No login history found</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {loginHistory.map((login) => (
+                    <div key={login.id} className="flex items-center justify-between p-3 rounded-lg border text-sm">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${login.isActive ? 'bg-green-500' : 'bg-gray-400'}`} />
+                        <div>
+                          <p className="font-medium">
+                            {new Date(login.createdAt).toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {login.location || 'Unknown location'} • {login.deviceType} • {login.browser || 'Unknown browser'}
+                          </p>
+                        </div>
+                      </div>
+                      {login.isActive && (
+                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                          Active
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+
+        {/* Advanced Settings */}
+        <TabsContent value="advanced" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-purple-600" />
+                Data Management
+              </CardTitle>
+              <CardDescription>
+                Export or delete your account data
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                <div className="flex items-start gap-3">
+                  <Download className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-blue-900 dark:text-blue-100">Export Your Data</h4>
+                    <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                      Download a copy of all your data including projects, tasks, and settings
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      className="mt-3" 
+                      disabled={isSaving}
+                      onClick={async () => {
+                        setIsSaving(true)
+                        try {
+                          const response = await fetch('/api/user/export-data', {
+                            credentials: 'include'
+                          })
+                          if (response.ok) {
+                            const blob = await response.blob()
+                            const url = window.URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `4dbim-data-export-${new Date().toISOString().split('T')[0]}.json`
+                            document.body.appendChild(a)
+                            a.click()
+                            window.URL.revokeObjectURL(url)
+                            document.body.removeChild(a)
+                            toast.success('📦 Data exported successfully!')
+                          } else {
+                            throw new Error('Failed to export')
+                          }
+                        } catch (error) {
+                          toast.error('❌ Failed to export data')
+                        } finally {
+                          setIsSaving(false)
+                        }
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {isSaving ? 'Exporting...' : 'Request Data Export'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-200">
+                <div className="flex items-start gap-3">
+                  <Trash2 className="h-5 w-5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-red-900 dark:text-red-100">Delete Account</h4>
+                    <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                      Permanently delete your account and all associated data. This action cannot be undone.
+                    </p>
+                    <Button variant="destructive" className="mt-3" onClick={() => toast.error('⚠️ Account deletion requires admin approval')}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete My Account
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-orange-600" />
+                API Access
+              </CardTitle>
+              <CardDescription>
+                Generate API keys for external integrations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {user && !['admin', 'manager'].includes(user.role) ? (
+                <Alert className="bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800">
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <AlertDescription className="text-orange-900 dark:text-orange-100">
+                    <strong>Developer Feature:</strong> API access is only available for Admin and Manager roles.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Your API Keys</Label>
+                      <Button 
+                        size="sm" 
+                        onClick={() => setShowNewApiKeyDialog(true)}
+                        disabled={loadingApiKeys}
+                      >
+                        <Key className="h-4 w-4 mr-2" />
+                        Generate New Key
+                      </Button>
+                    </div>
+                    
+                    {loadingApiKeys ? (
+                      <div className="flex items-center justify-center py-8">
+                        <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                      </div>
+                    ) : apiKeys.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                        <Key className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                        <p>No API keys generated yet</p>
+                        <p className="text-xs mt-1">Generate your first API key to get started</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {apiKeys.map((key) => (
+                          <div key={key.id} className="flex items-center justify-between p-3 rounded-lg border">
+                            <div className="flex-1">
+                              <p className="font-medium">{key.name}</p>
+                              <p className="text-xs text-muted-foreground font-mono">
+                                {key.keyPrefix}••••••••••••••••••••
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Created: {new Date(key.createdAt).toLocaleDateString()}
+                                {key.lastUsedAt && ` • Last used: ${new Date(key.lastUsedAt).toLocaleDateString()}`}
+                              </p>
+                            </div>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => handleRevokeApiKey(key.id)}
+                            >
+                              Revoke
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <Button variant="outline" className="w-full" onClick={() => toast.info('📖 API documentation coming soon!')}>
+                    View API Documentation
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-yellow-600" />
+                Integrations
+              </CardTitle>
+              <CardDescription>
+                Connect with third-party services
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingIntegrations ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {[
+                    { type: 'slack', name: 'Slack', icon: '💬' },
+                    { type: 'teams', name: 'Microsoft Teams', icon: '👥' },
+                    { type: 'jira', name: 'Jira', icon: '📋' },
+                    { type: 'webhook', name: 'Webhooks', icon: '🔗' },
+                  ].map((integrationType) => {
+                    const connected = integrations.find(i => i.type === integrationType.type && i.isActive)
+                    return (
+                      <div key={integrationType.type} className="flex items-center justify-between p-4 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{integrationType.icon}</span>
+                          <div>
+                            <p className="font-semibold">{integrationType.name}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {connected ? `Connected as "${connected.name}"` : 'Not Connected'}
+                            </p>
+                          </div>
+                        </div>
+                        {connected ? (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleDisconnectIntegration(connected.id)}
+                          >
+                            Disconnect
+                          </Button>
+                        ) : (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleConnectIntegration(integrationType.name)}
+                          >
+                            Connect
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* New API Key Dialog */}
+      <Dialog open={showNewApiKeyDialog} onOpenChange={setShowNewApiKeyDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>🔑 Generate New API Key</DialogTitle>
+            <DialogDescription>
+              Create a new API key for external integrations
+            </DialogDescription>
+          </DialogHeader>
+          {generatedApiKey ? (
+            <div className="space-y-4 py-4">
+              <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <AlertDescription className="text-green-900 dark:text-green-100">
+                  <strong>API Key Generated!</strong> Copy it now - you won't be able to see it again.
+                </AlertDescription>
+              </Alert>
+              <div className="space-y-2">
+                <Label>Your API Key</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={generatedApiKey}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedApiKey)
+                      toast.success('✅ API key copied to clipboard!')
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  setGeneratedApiKey('')
+                  setShowNewApiKeyDialog(false)
+                }}
+              >
+                Done
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="api-key-name">API Key Name</Label>
+                <Input
+                  id="api-key-name"
+                  placeholder="e.g., Production API, Mobile App"
+                  value={newApiKeyName}
+                  onChange={(e) => setNewApiKeyName(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Give your API key a descriptive name to identify its purpose
+                </p>
+              </div>
+              <Button
+                className="w-full"
+                disabled={isSaving || !newApiKeyName.trim()}
+                onClick={handleGenerateApiKey}
+              >
+                {isSaving ? 'Generating...' : 'Generate API Key'}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 2FA Verification Dialog */}
+      <Dialog open={show2FADialog} onOpenChange={setShow2FADialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>🔐 Verify Two-Factor Authentication</DialogTitle>
+            <DialogDescription>
+              Enter the 6-digit code sent to your email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="2fa-code">Verification Code</Label>
+              <Input
+                id="2fa-code"
+                type="text"
+                maxLength={6}
+                placeholder="000000"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                className="text-center text-2xl tracking-widest font-mono"
+              />
+              <p className="text-xs text-muted-foreground text-center">
+                Code expires in 10 minutes
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              disabled={verifying2FA || twoFactorCode.length !== 6}
+              onClick={async () => {
+                setVerifying2FA(true)
+                try {
+                  const response = await fetch('/api/auth/2fa/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ code: twoFactorCode })
+                  })
+                  
+                  if (response.ok) {
+                    setTwoFactorEnabled(true)
+                    setShow2FADialog(false)
+                    setTwoFactorCode('')
+                    toast.success('✅ 2FA enabled successfully!')
+                  } else {
+                    const data = await response.json()
+                    toast.error(`❌ ${data.error || 'Invalid code'}`)
+                  }
+                } catch (error) {
+                  toast.error('❌ Failed to verify code')
+                } finally {
+                  setVerifying2FA(false)
+                }
+              }}
+            >
+              {verifying2FA ? 'Verifying...' : 'Verify & Enable 2FA'}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/auth/2fa/enable', {
+                    method: 'POST',
+                    credentials: 'include'
+                  })
+                  if (response.ok) {
+                    toast.success('📧 New code sent!')
+                  }
+                } catch (error) {
+                  toast.error('❌ Failed to resend code')
+                }
+              }}
+            >
+              Resend Code
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

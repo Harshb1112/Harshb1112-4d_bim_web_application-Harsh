@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client"
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Timeline } from 'vis-timeline'
 import { DataSet } from 'vis-data'
 import 'vis-timeline/styles/vis-timeline-graph2d.css'
@@ -30,7 +30,49 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
   const timeline = useRef<Timeline | null>(null)
 
   useEffect(() => {
-    if (!timelineRef.current || !tasks.length) return
+    if (!timelineRef.current) {
+      console.log('[GanttChart] No container ref')
+      return
+    }
+    
+    if (!tasks.length) {
+      console.log('[GanttChart] No tasks to display')
+      return
+    }
+    
+    console.log('[GanttChart] ===== RENDERING GANTT CHART =====')
+    console.log('[GanttChart] Total tasks:', tasks.length)
+    console.log('[GanttChart] Tasks data:', JSON.stringify(tasks.map(t => ({
+      id: t.id,
+      name: t.name,
+      startDate: t.startDate,
+      endDate: t.endDate,
+      status: t.status,
+      progress: t.progress
+    })), null, 2))
+    
+    // Check if container has valid dimensions
+    const container = timelineRef.current
+    console.log('[GanttChart] Container dimensions:', {
+      width: container.clientWidth,
+      height: container.clientHeight,
+      offsetWidth: container.offsetWidth,
+      offsetHeight: container.offsetHeight
+    })
+    
+    if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+      console.warn('[GanttChart] ⚠️ Container has invalid dimensions, will retry on next render')
+      // Force a re-render after a short delay
+      setTimeout(() => {
+        if (timelineRef.current) {
+          console.log('[GanttChart] Retrying with dimensions:', {
+            width: timelineRef.current.clientWidth,
+            height: timelineRef.current.clientHeight
+          })
+        }
+      }, 100)
+      return
+    }
 
     // Function to get color based on task status and index
     const getTaskColor = (status: string, progress: number, index: number) => {
@@ -184,9 +226,9 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
   }
 
   return (
-    <div className="gantt-wrapper rounded-xl overflow-hidden border border-gray-200">
+    <div className="gantt-wrapper rounded-xl overflow-hidden border border-gray-200" style={{ minHeight: '500px' }}>
       <style jsx global>{`
-        .gantt-wrapper { background: #f8fafc; }
+        .gantt-wrapper { background: #f8fafc; min-height: 500px; }
         .vis-timeline { border: none !important; font-family: system-ui, sans-serif !important; }
         
         /* Top & Bottom axis */
@@ -251,7 +293,7 @@ export default function GanttChart({ tasks, criticalPathTasks, onTaskClick }: Ga
         .vis-timeline::-webkit-scrollbar-track { background: #f1f5f9; }
         .vis-timeline::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
       `}</style>
-      <div ref={timelineRef} className="w-full" />
+      <div ref={timelineRef} className="w-full" style={{ minHeight: '500px', height: '500px' }} />
     </div>
   )
 }

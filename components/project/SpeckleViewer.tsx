@@ -57,6 +57,8 @@ export interface SpeckleViewerRef {
   applyFilter: (property: string, value: string | number | boolean) => void
   clearFilter: () => void
   setColorByProperty: (propertyName: string, colorMap: { [value: string]: string }, defaultColor?: string) => void
+  selectObjects: (guids: string[]) => void
+  fitToView: (guids?: string[]) => void
 }
 
 const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
@@ -245,6 +247,31 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
         multiple: colorFilters,
         default_color: defaultColor,
       })
+    },
+    selectObjects: (guids: string[]) => {
+      if (viewerRef.current && guids.length > 0) {
+        try {
+          // Select objects in Speckle viewer
+          viewerRef.current.selectObjects(guids)
+        } catch (e) {
+          console.warn('Speckle selection error:', e)
+        }
+      }
+    },
+    fitToView: (guids?: string[]) => {
+      if (viewerRef.current) {
+        try {
+          if (guids && guids.length > 0) {
+            // Fit to selected objects
+            viewerRef.current.zoom(guids)
+          } else {
+            // Fit to all
+            viewerRef.current.zoom()
+          }
+        } catch (e) {
+          console.warn('Speckle fit to view error:', e)
+        }
+      }
     }
   }))
 
@@ -332,6 +359,10 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
       controls.enablePan = true;
       controls.enableZoom = true;
       controls.enableRotate = true;
+      controls.minDistance = 1; // Allow very close zoom
+      controls.maxDistance = 10000; // Allow very far zoom
+      controls.zoomSpeed = 1.5; // Faster zoom
+      controls.panSpeed = 1.0;
       controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
@@ -344,12 +375,131 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
         e.stopPropagation();
       }, { passive: false });
       
-      // Raycaster for object selection
+      // Raycaster for object selection with multi-select and box selection support
       const raycaster = new THREE.Raycaster();
       const mouse = new THREE.Vector2();
-      let selectedObject: any = null;
+      const selectedObjects = new Set<any>();
+      
+      // Box selection variables
+      let isBoxSelecting = false;
+      let boxStartX = 0;
+      let boxStartY = 0;
+      let selectionBox: HTMLDivElement | null = null;
+      
+      const createSelectionBox = () => {
+        const box = document.createElement('div');
+        box.style.position = 'absolute';
+        box.style.border = '2px solid #0066ff';
+        box.style.backgroundColor = 'rgba(0, 102, 255, 0.1)';
+        box.style.pointerEvents = 'none';
+        box.style.zIndex = '1000';
+        container.appendChild(box);
+        return box;
+      };
+      
+      const onMouseDown = (event: MouseEvent) => {
+        // Only start box selection with Shift key
+        if (event.shiftKey && event.button === 0) {
+          isBoxSelecting = true;
+          const rect = renderer.domElement.getBoundingClientRect();
+          boxStartX = event.clientX - rect.left;
+          boxStartY = event.clientY - rect.top;
+          
+          selectionBox = createSelectionBox();
+          selectionBox.style.left = boxStartX + 'px';
+          selectionBox.style.top = boxStartY + 'px';
+          selectionBox.style.width = '0px';
+          selectionBox.style.height = '0px';
+          
+          event.preventDefault();
+        }
+      };
+      
+      const onMouseMove = (event: MouseEvent) => {
+        if (isBoxSelecting && selectionBox) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const currentX = event.clientX - rect.left;
+          const currentY = event.clientY - rect.top;
+          
+          const width = Math.abs(currentX - boxStartX);
+          const height = Math.abs(currentY - boxStartY);
+          const left = Math.min(currentX, boxStartX);
+          const top = Math.min(currentY, boxStartY);
+          
+          selectionBox.style.left = left + 'px';
+          selectionBox.style.top = top + 'px';
+          selectionBox.style.width = width + 'px';
+          selectionBox.style.height = height + 'px';
+        }
+      };
+      
+      const onMouseUp = (event: MouseEvent) => {
+        if (isBoxSelecting && selectionBox) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const endX = event.clientX - rect.left;
+          const endY = event.clientY - rect.top;
+          
+          // Calculate normalized device coordinates for box corners
+          const x1 = (Math.min(boxStartX, endX) / rect.width) * 2 - 1;
+          const y1 = -(Math.max(boxStartY, endY) / rect.height) * 2 + 1;
+          const x2 = (Math.max(boxStartX, endX) / rect.width) * 2 - 1;
+          const y2 = -(Math.min(boxStartY, endY) / rect.height) * 2 + 1;
+          
+          // Clear previous selection if not holding Ctrl
+          if (!event.ctrlKey && !event.metaKey) {
+            selectedObjects.forEach(obj => {
+              if (obj.material && obj.material.emissive) {
+                obj.material.emissive.setHex(0x000000);
+              }
+            });
+            selectedObjects.clear();
+          }
+          
+          // Find all objects within the box
+          scene.traverse((obj: any) => {
+            if (obj instanceof THREE.Mesh) {
+              // Project object position to screen space
+              const pos = obj.position.clone();
+              pos.project(camera);
+              
+              // Check if within selection box
+              if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2) {
+                if (obj.material && obj.material.emissive) {
+                  obj.material.emissive.setHex(0x555555);
+                }
+                selectedObjects.add(obj);
+              }
+            }
+          });
+          
+          // Update callback with all selected
+          if (selectedObjects.size > 0 && onElementSelect) {
+            const selectedIds = Array.from(selectedObjects).map((obj: any) => obj.uuid);
+            const firstObj: any = Array.from(selectedObjects)[0];
+            onElementSelect(firstObj.uuid, {
+              name: firstObj.name,
+              type: firstObj.type,
+              position: firstObj.position,
+              userData: firstObj.userData,
+              allSelected: selectedIds
+            });
+          }
+          
+          console.log('[SpeckleViewer] Box selected:', selectedObjects.size, 'objects');
+          
+          // Remove selection box
+          if (selectionBox && container.contains(selectionBox)) {
+            container.removeChild(selectionBox);
+          }
+          selectionBox = null;
+          isBoxSelecting = false;
+        }
+      };
       
       const onMouseClick = (event: MouseEvent) => {
+        // Skip if we just finished box selection
+        if (isBoxSelecting) return;
+        
         const rect = renderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -357,37 +507,62 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObjects(scene.children, true);
         
-        // Reset previous selection
-        if (selectedObject) {
-          if (selectedObject.material && selectedObject.material.emissive) {
-            selectedObject.material.emissive.setHex(0x000000);
-          }
+        // Check for Ctrl/Cmd key for multi-select
+        const isMultiSelect = event.ctrlKey || event.metaKey;
+        
+        // If not multi-select, clear previous selections
+        if (!isMultiSelect) {
+          selectedObjects.forEach(obj => {
+            if (obj.material && obj.material.emissive) {
+              obj.material.emissive.setHex(0x000000);
+            }
+          });
+          selectedObjects.clear();
         }
         
         if (intersects.length > 0) {
           const object = intersects[0].object;
           if (object instanceof THREE.Mesh) {
-            selectedObject = object;
-            // Highlight selected object
-            if (object.material && object.material.emissive) {
-              object.material.emissive.setHex(0x555555);
+            // Toggle selection if Ctrl is pressed and object already selected
+            if (isMultiSelect && selectedObjects.has(object)) {
+              // Deselect
+              if (object.material && object.material.emissive) {
+                object.material.emissive.setHex(0x000000);
+              }
+              selectedObjects.delete(object);
+            } else {
+              // Select
+              if (object.material && object.material.emissive) {
+                object.material.emissive.setHex(0x555555);
+              }
+              selectedObjects.add(object);
             }
             
-            // Call onElementSelect callback if provided
+            // Call onElementSelect callback with all selected
             if (onElementSelect) {
+              const selectedIds = Array.from(selectedObjects).map((obj: any) => obj.uuid);
               onElementSelect(object.uuid, {
                 name: object.name,
                 type: object.type,
                 position: object.position,
-                userData: object.userData
+                userData: object.userData,
+                allSelected: selectedIds
               });
             }
             
-            console.log('Selected object:', object.name);
+            console.log('Selected object:', object.name, 'Total selected:', selectedObjects.size);
+          }
+        } else if (!isMultiSelect) {
+          // Clicked on empty space without Ctrl - clear selection
+          if (onElementSelect) {
+            onElementSelect('', { allSelected: [] });
           }
         }
       };
       
+      renderer.domElement.addEventListener('mousedown', onMouseDown);
+      renderer.domElement.addEventListener('mousemove', onMouseMove);
+      renderer.domElement.addEventListener('mouseup', onMouseUp);
       renderer.domElement.addEventListener('click', onMouseClick);
       
       // Animation loop
@@ -417,11 +592,18 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
         axesHelper,
         dispose: () => {
           window.removeEventListener('resize', handleResize);
+          renderer.domElement.removeEventListener('mousedown', onMouseDown);
+          renderer.domElement.removeEventListener('mousemove', onMouseMove);
+          renderer.domElement.removeEventListener('mouseup', onMouseUp);
           renderer.domElement.removeEventListener('click', onMouseClick);
           controls.dispose();
           renderer.dispose();
           if (el.contains(renderer.domElement)) {
             el.removeChild(renderer.domElement);
+          }
+          // Clean up selection box if exists
+          if (selectionBox && el.contains(selectionBox)) {
+            el.removeChild(selectionBox);
           }
         },
         unloadAll: async () => {
@@ -614,6 +796,10 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
       
       console.log('✅ Three.js viewer initialized successfully');
       console.log('🎯 Setting viewerReady to true, autoConnectAttempted is:', autoConnectAttempted);
+      
+      // Store viewer globally for element extraction
+      (window as any).speckleViewer = viewerRef.current;
+      
       setViewerReady(true);
 
     } catch (err) {

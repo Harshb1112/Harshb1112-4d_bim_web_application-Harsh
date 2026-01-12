@@ -72,7 +72,7 @@ export function getTokenFromRequest(request: NextRequest): string | null {
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim()
     if (token && token !== 'undefined' && token !== 'null') {
-      console.log('[Auth] Token from Authorization header')
+      console.log('[Auth] ✅ Token from Authorization header')
       return token
     }
   }
@@ -80,11 +80,13 @@ export function getTokenFromRequest(request: NextRequest): string | null {
   // Fallback to cookie
   const cookieToken = request.cookies.get('token')?.value
   if (cookieToken && cookieToken !== 'undefined' && cookieToken !== 'null') {
-    console.log('[Auth] Token from cookie')
+    console.log('[Auth] ✅ Token from cookie')
     return cookieToken
   }
 
-  console.log('[Auth] No token found. Headers:', Array.from(request.headers.keys()).join(', '))
+  console.log('[Auth] ❌ No token found')
+  console.log('[Auth] Available cookies:', Array.from(request.cookies.getAll().map(c => c.name)).join(', '))
+  console.log('[Auth] Headers:', Array.from(request.headers.keys()).join(', '))
   return null
 }
 

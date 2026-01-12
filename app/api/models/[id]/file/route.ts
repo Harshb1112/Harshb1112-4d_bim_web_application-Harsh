@@ -33,9 +33,8 @@ export async function GET(
       include: {
         project: {
           include: {
-            projectUsers: {
-              where: { userId: decoded.id }
-            }
+            projectUsers: true,
+            createdBy: true
           }
         }
       }
@@ -46,7 +45,13 @@ export async function GET(
     }
 
     // Check if user has access to this project
-    if (model.project.projectUsers.length === 0) {
+    // Allow access if: user is project creator OR user is in projectUsers OR user is admin
+    const isCreator = model.project.createdBy?.id === decoded.id
+    const isProjectMember = model.project.projectUsers.some(pu => pu.userId === decoded.id)
+    const isAdmin = decoded.role === 'admin'
+    
+    if (!isCreator && !isProjectMember && !isAdmin) {
+      console.log('[File Route] Access denied for user:', decoded.id, 'to model:', modelId)
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
@@ -56,7 +61,12 @@ export async function GET(
     }
 
     // Read the file from the uploads directory
-    const filePath = join(process.cwd(), model.filePath)
+    // Check if filePath is already absolute or relative
+    const filePath = model.filePath.startsWith('C:') || model.filePath.startsWith('/') 
+      ? model.filePath 
+      : join(process.cwd(), model.filePath)
+    
+    console.log('[File Route] Reading file from:', filePath)
     const fileBuffer = await readFile(filePath)
 
     // Determine content type based on file extension

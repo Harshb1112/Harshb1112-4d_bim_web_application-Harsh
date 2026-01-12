@@ -8,6 +8,12 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 export interface IFCViewerRef {
   isolateObjects: (guids: string[], ghost?: boolean) => void
   unIsolateObjects: () => void
+  selectObjects: (guids: string[]) => void
+  fitToView: (guids?: string[]) => void
+  hideObjects: (guids: string[]) => void
+  showAllObjects: () => void
+  applyFilter: (property: string, value: any) => void
+  clearFilter: () => void
 }
 
 interface IFCViewerProps {
@@ -32,17 +38,34 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
 
   // Expose methods via ref for external control
   useImperativeHandle(ref, () => ({
-    isolateObjects: (guids: string[]) => {
-      // IFC viewer isolation - highlight selected elements
+    isolateObjects: (guids: string[], ghost = false) => {
+      // IFC viewer isolation - hide non-selected elements
       if (viewerRef.current && guids.length > 0) {
         try {
-          const viewer = viewerRef.current
-          // Try to select/highlight the elements
-          const expressIds = guids.map(g => parseInt(g)).filter(id => !isNaN(id))
-          if (expressIds.length > 0 && viewer.IFC) {
-            // Highlight the elements
-            viewer.IFC.selector?.pickIfcItemsByID(0, expressIds, true)
-          }
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          const selectedIds = guids.map(g => g.replace('IFC_', '')).map(id => parseInt(id)).filter(id => !isNaN(id))
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              const expressID = obj.userData?.expressID
+              if (expressID) {
+                const isSelected = selectedIds.includes(expressID)
+                if (ghost) {
+                  // Ghost mode: make non-selected transparent
+                  obj.visible = true
+                  if (obj.material) {
+                    obj.material.transparent = true
+                    obj.material.opacity = isSelected ? 1.0 : 0.2
+                  }
+                } else {
+                  // Hide mode: hide non-selected
+                  obj.visible = isSelected
+                }
+              }
+            }
+          })
         } catch (e) {
           console.warn('IFC isolation error:', e)
         }
@@ -51,12 +74,173 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
     unIsolateObjects: () => {
       if (viewerRef.current) {
         try {
-          const viewer = viewerRef.current
-          if (viewer.IFC) {
-            viewer.IFC.selector?.unpickIfcItems()
-          }
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              obj.visible = true
+              if (obj.material) {
+                obj.material.transparent = true
+                obj.material.opacity = 0.9
+              }
+            }
+          })
         } catch (e) {
           console.warn('IFC un-isolation error:', e)
+        }
+      }
+    },
+    selectObjects: (guids: string[]) => {
+      if (viewerRef.current && guids.length > 0) {
+        try {
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          const selectedIds = guids.map(g => g.replace('IFC_', '')).map(id => parseInt(id)).filter(id => !isNaN(id))
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              const expressID = obj.userData?.expressID
+              if (expressID && selectedIds.includes(expressID)) {
+                // Highlight selected
+                if (obj.material) {
+                  obj.material = obj.material.clone()
+                  obj.material.color.setHex(0x00ff00)
+                  obj.material.emissive.setHex(0x003300)
+                }
+              }
+            }
+          })
+        } catch (e) {
+          console.warn('IFC selection error:', e)
+        }
+      }
+    },
+    fitToView: (guids?: string[]) => {
+      if (viewerRef.current) {
+        try {
+          const { scene, camera, controls } = viewerRef.current
+          if (!scene || !camera || !controls) return
+          
+          const THREE = (window as any).THREE
+          if (!THREE) return
+          
+          if (guids && guids.length > 0) {
+            // Fit to selected objects
+            const selectedIds = guids.map(g => g.replace('IFC_', '')).map(id => parseInt(id)).filter(id => !isNaN(id))
+            const group = new THREE.Group()
+            
+            scene.traverse((obj: any) => {
+              if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+                const expressID = obj.userData?.expressID
+                if (expressID && selectedIds.includes(expressID)) {
+                  group.add(obj.clone())
+                }
+              }
+            })
+            
+            if (group.children.length > 0) {
+              const box = new THREE.Box3().setFromObject(group)
+              const center = box.getCenter(new THREE.Vector3())
+              const size = box.getSize(new THREE.Vector3())
+              const maxDim = Math.max(size.x, size.y, size.z)
+              
+              camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim)
+              camera.lookAt(center)
+              controls.target.copy(center)
+              controls.update()
+            }
+          } else {
+            // Fit to all
+            const box = new THREE.Box3().setFromObject(scene)
+            if (!box.isEmpty()) {
+              const center = box.getCenter(new THREE.Vector3())
+              const size = box.getSize(new THREE.Vector3())
+              const maxDim = Math.max(size.x, size.y, size.z)
+              
+              camera.position.set(center.x + maxDim, center.y + maxDim, center.z + maxDim)
+              camera.lookAt(center)
+              controls.target.copy(center)
+              controls.update()
+            }
+          }
+        } catch (e) {
+          console.warn('IFC fit to view error:', e)
+        }
+      }
+    },
+    hideObjects: (guids: string[]) => {
+      if (viewerRef.current && guids.length > 0) {
+        try {
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          const hideIds = guids.map(g => g.replace('IFC_', '')).map(id => parseInt(id)).filter(id => !isNaN(id))
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              const expressID = obj.userData?.expressID
+              if (expressID && hideIds.includes(expressID)) {
+                obj.visible = false
+              }
+            }
+          })
+        } catch (e) {
+          console.warn('IFC hide error:', e)
+        }
+      }
+    },
+    showAllObjects: () => {
+      if (viewerRef.current) {
+        try {
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              obj.visible = true
+            }
+          })
+        } catch (e) {
+          console.warn('IFC show all error:', e)
+        }
+      }
+    },
+    applyFilter: (property: string, value: any) => {
+      if (viewerRef.current) {
+        try {
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              const userData = obj.userData
+              if (userData && userData[property] !== undefined) {
+                obj.visible = userData[property] === value || String(userData[property]) === String(value)
+              } else {
+                obj.visible = false
+              }
+            }
+          })
+        } catch (e) {
+          console.warn('IFC filter error:', e)
+        }
+      }
+    },
+    clearFilter: () => {
+      if (viewerRef.current) {
+        try {
+          const scene = viewerRef.current.scene
+          if (!scene) return
+          
+          scene.traverse((obj: any) => {
+            if (obj.isMesh && obj.name && obj.name.startsWith('IFC_')) {
+              obj.visible = true
+            }
+          })
+        } catch (e) {
+          console.warn('IFC clear filter error:', e)
         }
       }
     }
@@ -97,9 +281,9 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
         const container = containerRef.current
         if (!container || disposed) return
         
-        // Scene setup - Dark professional background like Speckle
+        // Scene setup - White background like Autodesk
         const scene = new THREE.Scene()
-        scene.background = new THREE.Color(0x2d2d2d) // Dark gray like Speckle viewer
+        scene.background = new THREE.Color(0xffffff) // White background
 
         // Camera
         const camera = new THREE.PerspectiveCamera(
@@ -123,26 +307,28 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
         const controls = new OrbitControls(camera, renderer.domElement)
         controls.enableDamping = true
         controls.dampingFactor = 0.05
+        controls.minDistance = 1
+        controls.maxDistance = 5000
+        controls.enableZoom = true
+        controls.zoomSpeed = 1.5
+        controls.enablePan = true
+        controls.panSpeed = 1.0
 
-        // Lights - brighter for dark background
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+        // Lights - adjusted for white background
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
         scene.add(ambientLight)
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
         directionalLight.position.set(100, 100, 50)
         directionalLight.castShadow = true
         scene.add(directionalLight)
 
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5)
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4)
         directionalLight2.position.set(-50, 50, -50)
         scene.add(directionalLight2)
 
-        // Hemisphere light for better ambient
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4)
-        scene.add(hemiLight)
-
-        // Grid - dark style like Speckle, will be repositioned after model loads
-        const gridHelper = new THREE.GridHelper(200, 40, 0x555555, 0x3a3a3a)
+        // Grid - light style like Autodesk, will be repositioned after model loads
+        const gridHelper = new THREE.GridHelper(200, 40, 0xcccccc, 0xe8e8e8)
         gridHelper.name = 'grid'
         scene.add(gridHelper)
 
@@ -156,7 +342,6 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
         // Raycaster for selection
         const raycaster = new THREE.Raycaster()
         const mouse = new THREE.Vector2()
-        let selectedObject: any = null
         const originalMaterials = new Map<string, any>()
 
         // Load IFC file and create geometry
@@ -312,28 +497,33 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
               maxDim: maxDim.toFixed(2)
             })
             
-            // Calculate optimal camera distance
+            // Calculate optimal camera distance for better view
             const fov = camera.fov * (Math.PI / 180)
-            const cameraDistance = Math.abs(maxDim / Math.sin(fov / 2)) * 0.8
+            const cameraDistance = Math.abs(maxDim / Math.sin(fov / 2)) * 0.7
             
-            // Position camera to see entire model
-            camera.position.set(
-              center.x + cameraDistance * 0.7,
-              center.y + cameraDistance * 0.5,
-              center.z + cameraDistance * 0.7
+            // Position camera at optimal distance
+            const cameraOffset = new THREE.Vector3(
+              cameraDistance * 0.7,
+              cameraDistance * 0.5,
+              cameraDistance * 0.7
             )
-            camera.lookAt(center)
-            controls.target.copy(center)
             
-            // Update camera near/far planes based on model size
-            camera.near = maxDim * 0.001
+            camera.position.copy(center).add(cameraOffset)
+            camera.lookAt(center)
+            
+            // Set controls target to model center
+            controls.target.copy(center)
+            controls.update()
+            
+            // Adjust camera near/far planes based on model size
+            camera.near = maxDim / 100
             camera.far = maxDim * 100
             camera.updateProjectionMatrix()
             
-            // Reposition grid to model center (at bottom of model) - dark style
-            const gridSize = Math.max(maxDim * 1.5, 50)
+            // Reposition grid to model center (at bottom of model) - light style
+            const gridSize = Math.max(maxDim * 2, 100)
             scene.remove(gridHelper)
-            const newGrid = new THREE.GridHelper(gridSize, 40, 0x555555, 0x3a3a3a)
+            const newGrid = new THREE.GridHelper(gridSize, 40, 0xcccccc, 0xe8e8e8)
             newGrid.position.set(center.x, box.min.y - 0.1, center.z)
             newGrid.name = 'grid'
             scene.add(newGrid)
@@ -341,8 +531,11 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
             // Reposition axes to model center
             axesHelper.position.set(center.x - gridSize/2, box.min.y, center.z - gridSize/2)
             
-            // Force controls update
-            controls.update()
+            console.log('[IFCViewer] Camera positioned:', {
+              cameraDistance: cameraDistance.toFixed(2),
+              cameraPosition: camera.position.toArray().map(v => v.toFixed(2)),
+              controlsTarget: controls.target.toArray().map(v => v.toFixed(2))
+            })
           } else {
             console.warn('[IFCViewer] Model bounding box is empty!')
           }
@@ -482,8 +675,139 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           }
         }
 
-        // Click handler for selection
+        // Click handler for selection with multi-select support
+        const selectedObjects = new Set<any>()
+        
+        // Box selection variables
+        let isBoxSelecting = false
+        let boxStartX = 0
+        let boxStartY = 0
+        let selectionBox: HTMLDivElement | null = null
+        
+        const createSelectionBox = () => {
+          const box = document.createElement('div')
+          box.style.position = 'absolute'
+          box.style.border = '2px solid #0066ff'
+          box.style.backgroundColor = 'rgba(0, 102, 255, 0.1)'
+          box.style.pointerEvents = 'none'
+          box.style.zIndex = '1000'
+          container.appendChild(box)
+          return box
+        }
+        
+        const onMouseDown = (event: MouseEvent) => {
+          // Only start box selection with Shift key
+          if (event.shiftKey && event.button === 0) {
+            isBoxSelecting = true
+            const rect = renderer.domElement.getBoundingClientRect()
+            boxStartX = event.clientX - rect.left
+            boxStartY = event.clientY - rect.top
+            
+            selectionBox = createSelectionBox()
+            selectionBox.style.left = boxStartX + 'px'
+            selectionBox.style.top = boxStartY + 'px'
+            selectionBox.style.width = '0px'
+            selectionBox.style.height = '0px'
+            
+            event.preventDefault()
+          }
+        }
+        
+        const onMouseMove = (event: MouseEvent) => {
+          if (isBoxSelecting && selectionBox) {
+            const rect = renderer.domElement.getBoundingClientRect()
+            const currentX = event.clientX - rect.left
+            const currentY = event.clientY - rect.top
+            
+            const width = Math.abs(currentX - boxStartX)
+            const height = Math.abs(currentY - boxStartY)
+            const left = Math.min(currentX, boxStartX)
+            const top = Math.min(currentY, boxStartY)
+            
+            selectionBox.style.left = left + 'px'
+            selectionBox.style.top = top + 'px'
+            selectionBox.style.width = width + 'px'
+            selectionBox.style.height = height + 'px'
+          }
+        }
+        
+        const onMouseUp = (event: MouseEvent) => {
+          if (isBoxSelecting && selectionBox) {
+            const rect = renderer.domElement.getBoundingClientRect()
+            const endX = event.clientX - rect.left
+            const endY = event.clientY - rect.top
+            
+            // Calculate normalized device coordinates for box corners
+            const x1 = (Math.min(boxStartX, endX) / rect.width) * 2 - 1
+            const y1 = -(Math.max(boxStartY, endY) / rect.height) * 2 + 1
+            const x2 = (Math.max(boxStartX, endX) / rect.width) * 2 - 1
+            const y2 = -(Math.min(boxStartY, endY) / rect.height) * 2 + 1
+            
+            // Clear previous selection if not holding Ctrl
+            if (!event.ctrlKey && !event.metaKey) {
+              selectedObjects.forEach(obj => {
+                const originalMat = originalMaterials.get(obj.uuid)
+                if (originalMat) {
+                  obj.material = originalMat
+                }
+              })
+              selectedObjects.clear()
+            }
+            
+            // Find all objects within the box
+            scene.traverse((obj: any) => {
+              if (obj.isMesh && obj.name && obj.name.startsWith('IFC_') && obj.userData.expressID) {
+                // Project object position to screen space
+                const pos = obj.position.clone()
+                pos.project(camera)
+                
+                // Check if within selection box
+                if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2) {
+                  if (!originalMaterials.has(obj.uuid)) {
+                    originalMaterials.set(obj.uuid, obj.material)
+                  }
+                  
+                  // Highlight
+                  obj.material = new THREE.MeshPhongMaterial({
+                    color: 0x00ff00,
+                    emissive: 0x003300,
+                    side: THREE.DoubleSide
+                  })
+                  
+                  selectedObjects.add(obj)
+                }
+              }
+            })
+            
+            // Update callback with all selected
+            if (selectedObjects.size > 0 && onElementSelectRef.current) {
+              const selectedIds = Array.from(selectedObjects).map((obj: any) => `IFC_${obj.userData.expressID}`)
+              const firstObj: any = Array.from(selectedObjects)[0]
+              onElementSelectRef.current(`IFC_${firstObj.userData.expressID}`, {
+                id: `IFC_${firstObj.userData.expressID}`,
+                expressID: firstObj.userData.expressID,
+                type: firstObj.userData.typeName,
+                name: firstObj.name,
+                userData: firstObj.userData,
+                allSelected: selectedIds
+              })
+            }
+            
+            console.log('[IFCViewer] Box selected:', selectedObjects.size, 'objects')
+            
+            // Remove selection box
+            if (selectionBox && container.contains(selectionBox)) {
+              container.removeChild(selectionBox)
+            }
+            selectionBox = null
+            isBoxSelecting = false
+          }
+        }
+        
         const onClick = (event: MouseEvent) => {
+          // Skip if we just finished box selection
+          if (isBoxSelecting) return
+          
           const rect = renderer.domElement.getBoundingClientRect()
           mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
           mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
@@ -491,54 +815,86 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           raycaster.setFromCamera(mouse, camera)
           const intersects = raycaster.intersectObjects(scene.children, true)
 
-          // Reset previous selection
-          if (selectedObject) {
-            const originalMat = originalMaterials.get(selectedObject.uuid)
-            if (originalMat) {
-              selectedObject.material = originalMat
-            }
-            selectedObject = null
+          // Check for Ctrl/Cmd key for multi-select
+          const isMultiSelect = event.ctrlKey || event.metaKey
+          
+          // If not multi-select, clear previous selections
+          if (!isMultiSelect) {
+            selectedObjects.forEach(obj => {
+              const originalMat = originalMaterials.get(obj.uuid)
+              if (originalMat) {
+                obj.material = originalMat
+              }
+            })
+            selectedObjects.clear()
           }
 
           // Find first mesh intersection
+          let foundObject = null
           for (const intersect of intersects) {
             if (intersect.object instanceof THREE.Mesh && intersect.object.userData.expressID) {
-              selectedObject = intersect.object
-              
-              // Store original material
-              originalMaterials.set(selectedObject.uuid, selectedObject.material)
+              foundObject = intersect.object
+              break
+            }
+          }
+
+          if (foundObject) {
+            // Toggle selection if Ctrl is pressed and object already selected
+            if (isMultiSelect && selectedObjects.has(foundObject)) {
+              // Deselect
+              const originalMat = originalMaterials.get(foundObject.uuid)
+              if (originalMat) {
+                foundObject.material = originalMat
+              }
+              selectedObjects.delete(foundObject)
+            } else {
+              // Select
+              if (!originalMaterials.has(foundObject.uuid)) {
+                originalMaterials.set(foundObject.uuid, foundObject.material)
+              }
               
               // Highlight
-              selectedObject.material = new THREE.MeshPhongMaterial({
+              foundObject.material = new THREE.MeshPhongMaterial({
                 color: 0x00ff00,
                 emissive: 0x003300,
                 side: THREE.DoubleSide
               })
               
-              const elementId = `IFC_${selectedObject.userData.expressID}`
-              setSelectedElement(elementId)
-              setSelectedElementInfo({
-                type: selectedObject.userData.typeName || 'Element',
-                id: selectedObject.userData.expressID
-              })
-              
-              // Call callback using ref to avoid re-renders
-              if (onElementSelectRef.current) {
-                onElementSelectRef.current(elementId, {
-                  id: elementId,
-                  expressID: selectedObject.userData.expressID,
-                  type: selectedObject.userData.typeName,
-                  name: selectedObject.name,
-                  userData: selectedObject.userData
-                })
-              }
-              
-              console.log('[IFCViewer] Selected:', selectedObject.userData)
-              break
+              selectedObjects.add(foundObject)
             }
+            
+            // Update selected element info
+            const elementId = `IFC_${foundObject.userData.expressID}`
+            setSelectedElement(elementId)
+            setSelectedElementInfo({
+              type: foundObject.userData.typeName || 'Element',
+              id: foundObject.userData.expressID
+            })
+            
+            // Call callback with all selected elements
+            if (onElementSelectRef.current) {
+              const selectedIds = Array.from(selectedObjects).map((obj: any) => `IFC_${obj.userData.expressID}`)
+              onElementSelectRef.current(elementId, {
+                id: elementId,
+                expressID: foundObject.userData.expressID,
+                type: foundObject.userData.typeName,
+                name: foundObject.name,
+                userData: foundObject.userData,
+                allSelected: selectedIds
+              })
+            }
+            
+            console.log('[IFCViewer] Selected:', foundObject.userData, 'Total selected:', selectedObjects.size)
+          } else if (!isMultiSelect) {
+            // Clicked on empty space without Ctrl - clear selection
+            setSelectedElement(null)
+            setSelectedElementInfo(null)
           }
         }
 
+        renderer.domElement.addEventListener('mousedown', onMouseDown)
+        renderer.domElement.addEventListener('mousemove', onMouseMove)
+        renderer.domElement.addEventListener('mouseup', onMouseUp)
         renderer.domElement.addEventListener('click', onClick)
 
         // Animation loop
@@ -566,14 +922,24 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           controls,
           dispose: () => {
             window.removeEventListener('resize', handleResize)
+            renderer.domElement.removeEventListener('mousedown', onMouseDown)
+            renderer.domElement.removeEventListener('mousemove', onMouseMove)
+            renderer.domElement.removeEventListener('mouseup', onMouseUp)
             renderer.domElement.removeEventListener('click', onClick)
             controls.dispose()
             renderer.dispose()
             if (container.contains(renderer.domElement)) {
               container.removeChild(renderer.domElement)
             }
+            // Clean up selection box if exists
+            if (selectionBox && container.contains(selectionBox)) {
+              container.removeChild(selectionBox)
+            }
           }
-        }
+        };
+        
+        // Store scene globally for element extraction
+        (window as any).ifcScene = scene
 
       } catch (err: any) {
         console.error('[IFCViewer] Error:', err)

@@ -95,8 +95,34 @@ export async function POST(
             role: true 
           },
         },
+        team: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
       },
     })
+    
+    // 🔔 AUTOMATIC NOTIFICATION: Notify new member about team addition
+    try {
+      const { createNotification } = await import('@/lib/create-notification')
+      const adderUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { fullName: true }
+      })
+      
+      await createNotification({
+        userId: userToAdd.id,
+        type: 'team_added',
+        title: '👥 Added to Team',
+        body: `${adderUser?.fullName || 'Someone'} added you to team: ${membership.team.name}`,
+        url: `/dashboard/teams`
+      })
+      console.log('[Team Member Add] ✅ Notification sent to new member:', userToAdd.id)
+    } catch (notifError) {
+      console.error('[Team Member Add] Failed to send notification:', notifError)
+    }
 
     return NextResponse.json({ 
       member: membership, 

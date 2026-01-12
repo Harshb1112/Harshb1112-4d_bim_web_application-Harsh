@@ -4,10 +4,16 @@ import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 import OpenAI from 'openai'
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Initialize OpenAI lazily
+let openai: OpenAI | null = null
+function getOpenAI() {
+  if (!openai && process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+  return openai
+}
 
 export async function POST(request: NextRequest) {
   try {

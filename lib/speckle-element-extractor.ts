@@ -1,139 +1,49 @@
-import ObjectLoader from '@speckle/objectloader'
+// Client-side Speckle element extractor
+// Note: This requires the Speckle viewer to be loaded first
 
-interface SpeckleObject {
-  id: string
-  speckle_type: string
-  name?: string
-  children?: SpeckleObject[]
-  displayValue?: any
-  [key: string]: any
-}
-
-interface ExtractedElement {
-  guid: string
-  category: string
-  family: string
-  typeName: string
-  level: string | null
-  parameters: object
-}
-
-export async function fetchAndExtractElements(
-  serverUrl: string,
-  token: string,
-  streamId: string,
-  commitId: string
-): Promise<ExtractedElement[]> {
-  // Get commit object ID
-  const commitResponse = await fetch(`${serverUrl}/api/stream/${streamId}/commits/${commitId}`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+export async function extractElementsFromSpeckleViewer(modelId: number): Promise<any[]> {
+  try {
+    console.log('[Speckle Extractor] Extracting elements for model:', modelId)
+    
+    // For Speckle, we need to access the viewer's scene
+    // This is a simplified version - actual implementation depends on how Speckle viewer is set up
+    
+    // Check if there's a global viewer reference
+    const viewer = (window as any).speckleViewer
+    if (!viewer) {
+      throw new Error('Speckle Viewer not loaded. Please wait for the 3D viewer to load first.')
     }
-  })
-
-  if (!commitResponse.ok) {
-    throw new Error('Failed to fetch commit details')
-  }
-
-  const commitData = await commitResponse.json()
-  const referencedObject = commitData.commit.referencedObject
-
-  // Load the object data using the object loader
-  const loader = new ObjectLoader({
-    serverUrl,
-    streamId,
-    objectId: referencedObject,
-    token,
-    options: {
-      enableCaching: true,
-      customLogger: (...args: unknown[]) => console.log(...args),
-      customWarner: (...args: unknown[]) => console.warn(...args)
-    }
-  })
-
-  const objectData = await loader.getAndConstructObject(() => {})
-
-  if (!objectData) {
-    throw new Error('Failed to load object data from the project')
-  }
-
-  return extractElementsFromSpeckle(objectData as SpeckleObject)
-}
-
-function extractElementsFromSpeckle(obj: SpeckleObject): ExtractedElement[] {
-  const elements: ExtractedElement[] = []
-  const visitedIds = new Set<string>()
-
-  const extractRecursive = (object: SpeckleObject, category = 'General', depth = 0) => {
-    if (!object || !object.id || visitedIds.has(object.id) || depth > 20) {
-      return
-    }
-    visitedIds.add(object.id)
-
-    const isElement =
-      object.displayValue ||
-      object.speckle_type?.includes('Element') ||
-      object.speckle_type?.includes('Object') ||
-      object.speckle_type?.includes('Instance') ||
-      object.speckle_type?.includes('Family') ||
-      (object.speckle_type && !object.speckle_type.includes('Collection'))
-
-    if (isElement) {
-      let elementCategory = category
-      if (object.category) {
-        elementCategory = object.category
-      } else if (object.speckle_type) {
-        const type = object.speckle_type
-        if (type.includes('Wall')) elementCategory = 'Walls'
-        else if (type.includes('Floor')) elementCategory = 'Floors'
-        else if (type.includes('Column')) elementCategory = 'Structural Columns'
-        else if (type.includes('Beam')) elementCategory = 'Structural Framing'
-        else if (type.includes('Door')) elementCategory = 'Doors'
-        else if (type.includes('Window')) elementCategory = 'Windows'
-        else if (type.includes('Roof')) elementCategory = 'Roofs'
-        else if (type.includes('Stair')) elementCategory = 'Stairs'
-        else if (type.includes('Pipe')) elementCategory = 'Pipes'
-        else if (type.includes('Duct')) elementCategory = 'Ducts'
-      }
-
-      elements.push({
-        guid: object.id,
-        category: elementCategory,
-        family: object.family || object.speckle_type || 'Unknown',
-        typeName: object.name || object.type || 'Unnamed',
-        level: object.level?.name || object.baseLevel || null,
-        parameters: {
-          ...object
-        }
-      })
-    }
-
-    if (object.children && Array.isArray(object.children)) {
-      object.children.forEach(child => {
-        if (child && typeof child === 'object') {
-          const childCategory = child.category || child.name || category
-          extractRecursive(child, childCategory, depth + 1)
-        }
-      })
-    }
-
-    Object.keys(object).forEach(key => {
-      const value = object[key]
-      if (value && typeof value === 'object' && value.speckle_type && key !== 'children') {
-        if (Array.isArray(value)) {
-          value.forEach(item => {
-            if (item && typeof item === 'object' && item.speckle_type) {
-              extractRecursive(item, category, depth + 1)
-            }
+    
+    console.log('[Speckle Extractor] Found Speckle viewer')
+    
+    const elements: any[] = []
+    
+    // Get all objects from the scene
+    if (viewer.scene) {
+      viewer.scene.traverse((object: any) => {
+        if (object.userData && object.userData.id) {
+          const speckleType = object.userData.speckle_type || 'Element'
+          const typeParts = speckleType.split('.')
+          const category = typeParts[typeParts.length - 1].replace('Revit', '')
+          
+          elements.push({
+            id: object.userData.id,
+            guid: object.userData.id,
+            type: category,
+            name: object.name || object.userData.name || `${category}_${object.userData.id.slice(0, 8)}`,
+            category: category,
+            properties: object.userData
           })
-        } else {
-          extractRecursive(value, category, depth + 1)
         }
-      }
-    })
+      })
+    }
+    
+    console.log('[Speckle Extractor] Extracted', elements.length, 'elements')
+    
+    return elements
+    
+  } catch (error) {
+    console.error('[Speckle Extractor] Error:', error)
+    throw error
   }
-
-  extractRecursive(obj)
-  return elements
 }

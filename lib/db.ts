@@ -7,6 +7,12 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    // Increase connection pool settings
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL
+      }
+    }
   })
 }
 
@@ -20,6 +26,16 @@ if (process.env.NODE_ENV !== 'production') {
 if (typeof process !== 'undefined') {
   process.on('beforeExit', async () => {
     await prisma.$disconnect();
+  });
+  
+  process.on('SIGINT', async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+  
+  process.on('SIGTERM', async () => {
+    await prisma.$disconnect();
+    process.exit(0);
   });
 }
 

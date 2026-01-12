@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Sidebar from '@/components/dashboard/Sidebar'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
+import NotificationPoller from '@/components/NotificationPoller'
 
 interface DashboardLayoutClientProps {
   user: {
@@ -47,6 +48,9 @@ export default function DashboardLayoutClient({ user, children }: DashboardLayou
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      {/* Real-time Notification Poller */}
+      <NotificationPoller userId={user.id} />
+      
       {/* Sidebar - Desktop */}
       <div className="hidden lg:block">
         <Sidebar user={user} />

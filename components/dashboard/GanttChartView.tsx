@@ -46,7 +46,7 @@ interface GanttChartViewProps {
   userId: number
 }
 
-type ViewMode = "week" | "month" | "year" | "2years" | "3years"
+type ViewMode = "day" | "week" | "month" | "year" | "2years" | "3years"
 
 export default function GanttChartView({ projectId: initialProjectId, userRole, userId }: GanttChartViewProps) {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -87,13 +87,15 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
       if (taskDates.length > 0) {
         const earliestDate = new Date(Math.min(...taskDates))
         // Only adjust if current view doesn't show any tasks
-        const timelineStart = viewMode === "week" 
+        const timelineStart = viewMode === "day"
+          ? startOfMonth(currentDate)  // Show full month in day view
+          : viewMode === "week" 
           ? startOfWeek(currentDate)
           : viewMode === "month"
           ? startOfMonth(currentDate)
           : startOfYear(currentDate)
         
-        const daysToShow = viewMode === "week" ? 7 : viewMode === "month" ? 30 : viewMode === "year" ? 365 : viewMode === "2years" ? 730 : 1095
+        const daysToShow = viewMode === "day" ? 30 : viewMode === "week" ? 7 : viewMode === "month" ? 30 : viewMode === "year" ? 365 : viewMode === "2years" ? 730 : 1095
         const timelineEnd = addDays(timelineStart, daysToShow)
         
         // Check if any task is visible in current timeline
@@ -210,6 +212,21 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
 
   // Calculate timeline based on tasks' actual date range
   const timeline = useMemo(() => {
+    // For Day/Week/Month views, ALWAYS use fixed current date range
+    if (viewMode === "day" || viewMode === "week" || viewMode === "month") {
+      const start = viewMode === "day"
+        ? startOfMonth(currentDate)
+        : viewMode === "week" 
+        ? startOfWeek(currentDate)
+        : startOfMonth(currentDate)
+
+      const daysToShow = viewMode === "day" ? 30 : viewMode === "week" ? 7 : 30
+      const end = addDays(start, daysToShow)
+      
+      return eachDayOfInterval({ start, end })
+    }
+    
+    // For Year views, calculate based on tasks
     const tasksToUse = tasks.length > 0 ? tasks : filteredTasks
     
     if (tasksToUse.length > 0) {
@@ -236,7 +253,7 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
         // Calculate total days
         const totalDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
         
-        // For very long ranges (> 90 days), show months instead of days
+        // For year views with very long ranges (> 90 days), show months instead of days
         if (totalDays > 90) {
           return eachMonthOfInterval({ start, end })
         } else {
@@ -245,48 +262,80 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
       }
     }
     
-    // Fallback: use current date based view if no tasks
-    const start = viewMode === "week" 
-      ? startOfWeek(currentDate)
-      : viewMode === "month"
-      ? startOfMonth(currentDate)
-      : startOfYear(currentDate)
-
-    const daysToShow = viewMode === "week" 
-      ? 7 
-      : viewMode === "month" 
-      ? 30 
-      : viewMode === "year"
-      ? 365
-      : viewMode === "2years"
-      ? 730
-      : 1095
-
+    // Fallback for year views: use current date
+    const start = startOfYear(currentDate)
+    const daysToShow = viewMode === "year" ? 365 : viewMode === "2years" ? 730 : 1095
     const end = addDays(start, daysToShow)
-
-    if (viewMode === "week" || viewMode === "month") {
-      return eachDayOfInterval({ start, end })
-    } else {
-      return eachMonthOfInterval({ start, end })
-    }
+    
+    return eachMonthOfInterval({ start, end })
   }, [tasks, filteredTasks, currentDate, viewMode])
 
   const getTaskPosition = (task: Task) => {
-    const timelineStart = timeline[0]
-    const timelineEnd = timeline[timeline.length - 1]
+    if (timeline.length === 0) return { left: '0%', width: '10%' }
     
-    // Handle case where endDate is before startDate (swap them)
-    const taskStartTime = Math.min(task.startDate.getTime(), task.endDate.getTime())
-    const taskEndTime = Math.max(task.startDate.getTime(), task.endDate.getTime())
+    // Normalize dates to start of day for accurate comparison
+    const taskStart = new Date(task.startDate)
+    taskStart.setHours(0, 0, 0, 0)
     
-    const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
-    const taskStartDays = Math.max(0, Math.ceil((taskStartTime - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
-    const taskDuration = Math.max(1, Math.ceil((taskEndTime - taskStartTime) / (1000 * 60 * 60 * 24)))
+    const taskEnd = new Date(task.endDate)
+    taskEnd.setHours(0, 0, 0, 0)
     
-    const left = (taskStartDays / totalDays) * 100
-    const width = (taskDuration / totalDays) * 100
+    // Find the exact column index where task starts
+    let startColumnIndex = -1
+    let endColumnIndex = -1
     
-    return { left: `${Math.min(left, 100)}%`, width: `${Math.max(Math.min(width, 100 - left), 2)}%` }
+    for (let i = 0; i < timeline.length; i++) {
+      const columnDate = new Date(timeline[i])
+      columnDate.setHours(0, 0, 0, 0)
+      
+      // Check if this column matches task start date
+      if (startColumnIndex === -1 && columnDate.getTime() === taskStart.getTime()) {
+        startColumnIndex = i
+      }
+      
+      // Check if this column matches task end date
+      if (columnDate.getTime() === taskEnd.getTime()) {
+        endColumnIndex = i + 1 // End is inclusive, so +1
+      }
+    }
+    
+    // If exact match not found, calculate based on position
+    if (startColumnIndex === -1) {
+      const timelineStart = new Date(timeline[0])
+      timelineStart.setHours(0, 0, 0, 0)
+      const daysDiff = Math.floor((taskStart.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
+      startColumnIndex = Math.max(0, daysDiff)
+    }
+    
+    if (endColumnIndex === -1) {
+      const timelineStart = new Date(timeline[0])
+      timelineStart.setHours(0, 0, 0, 0)
+      const daysDiff = Math.ceil((taskEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
+      endColumnIndex = Math.max(startColumnIndex + 1, daysDiff + 1)
+    }
+    
+    // Ensure within bounds
+    const totalColumns = timeline.length
+    const safeStartColumn = Math.max(0, Math.min(startColumnIndex, totalColumns - 1))
+    const safeEndColumn = Math.max(safeStartColumn + 1, Math.min(endColumnIndex, totalColumns))
+    
+    const left = (safeStartColumn / totalColumns) * 100
+    const width = ((safeEndColumn - safeStartColumn) / totalColumns) * 100
+    
+    console.log('[Gantt] Task:', task.name, {
+      taskStart: taskStart.toISOString().split('T')[0],
+      taskEnd: taskEnd.toISOString().split('T')[0],
+      startColumnIndex: safeStartColumn,
+      endColumnIndex: safeEndColumn,
+      totalColumns,
+      left: `${left.toFixed(2)}%`,
+      width: `${width.toFixed(2)}%`
+    })
+    
+    return { 
+      left: `${Math.max(0, Math.min(left, 100))}%`, 
+      width: `${Math.max(2, Math.min(width, 100 - left))}%` 
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -299,7 +348,7 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
   }
 
   const navigate = (direction: "prev" | "next") => {
-    const days = viewMode === "week" ? 7 : viewMode === "month" ? 30 : 365
+    const days = viewMode === "day" ? 30 : viewMode === "week" ? 7 : viewMode === "month" ? 30 : 365
     setCurrentDate(prev => addDays(prev, direction === "next" ? days : -days))
   }
 
@@ -440,6 +489,7 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="day">Day</SelectItem>
                 <SelectItem value="week">Week</SelectItem>
                 <SelectItem value="month">Month</SelectItem>
                 <SelectItem value="year">1 Year</SelectItem>
@@ -458,7 +508,7 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="text-sm font-medium min-w-32 text-center">
-              {format(currentDate, viewMode === "week" ? "MMM dd, yyyy" : "MMMM yyyy")}
+              {format(currentDate, viewMode === "day" ? "MMM dd, yyyy" : viewMode === "week" ? "MMM dd, yyyy" : "MMMM yyyy")}
             </span>
             <Button variant="outline" size="sm" onClick={() => navigate("next")}>
               <ChevronRight className="h-4 w-4" />
@@ -536,9 +586,15 @@ export default function GanttChartView({ projectId: initialProjectId, userRole, 
                 {timeline.map((date, idx) => (
                   <div 
                     key={idx} 
-                    className="flex-1 p-3 text-center text-sm font-medium border-r last:border-r-0"
+                    className="flex-1 p-3 text-center text-sm font-medium border-r last:border-r-0 border-gray-200 dark:border-gray-700"
                   >
-                    {viewMode === "week" || viewMode === "month" ? (
+                    {viewMode === "day" ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">{format(date, "EEE")}</div>
+                        <div className="text-base font-bold text-gray-900 dark:text-white">{format(date, "dd")}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{format(date, "MMM")}</div>
+                      </div>
+                    ) : viewMode === "week" || viewMode === "month" ? (
                       <div className="flex flex-col gap-1">
                         <div className="text-xs text-gray-600 dark:text-gray-400">{format(date, "EEE")}</div>
                         <div className="text-gray-900 dark:text-white">{format(date, "dd MMM")}</div>

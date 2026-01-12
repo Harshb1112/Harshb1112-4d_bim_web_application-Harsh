@@ -55,6 +55,38 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Get device info from headers
+    const userAgent = request.headers.get('user-agent') || 'Unknown'
+    const ipAddress = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'Unknown'
+    
+    // Parse user agent for device info
+    const isMobile = /mobile|android|iphone|ipad|phone/i.test(userAgent)
+    const isTablet = /tablet|ipad/i.test(userAgent)
+    const deviceType = isMobile ? 'Mobile' : isTablet ? 'Tablet' : 'Desktop'
+    
+    // Extract browser name
+    let browser = 'Unknown'
+    if (userAgent.includes('Chrome')) browser = 'Chrome'
+    else if (userAgent.includes('Firefox')) browser = 'Firefox'
+    else if (userAgent.includes('Safari')) browser = 'Safari'
+    else if (userAgent.includes('Edge')) browser = 'Edge'
+    
+    // Create login session
+    await prisma.loginSession.create({
+      data: {
+        userId: user.id,
+        deviceName: `${deviceType} - ${browser}`,
+        deviceType,
+        browser,
+        ipAddress,
+        location: 'Unknown', // Can be enhanced with IP geolocation
+        isActive: true,
+        lastActive: new Date()
+      }
+    })
+
     // Generate token
     const token = generateToken({
       id: user.id,

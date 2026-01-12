@@ -156,6 +156,9 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           const scene = new THREE.Scene()
           scene.background = new THREE.Color(0xffffff)  // White background
           sceneRef.current = scene
+          
+          // Store scene globally for element extraction
+          (window as any).ifcScene = scene
 
           // Camera
           const camera = new THREE.PerspectiveCamera(
@@ -183,6 +186,12 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           const controls = new OrbitControls(camera, renderer.domElement)
           controls.enableDamping = true
           controls.dampingFactor = 0.05
+          controls.minDistance = 1
+          controls.maxDistance = 5000
+          controls.enableZoom = true
+          controls.zoomSpeed = 1.5
+          controls.enablePan = true
+          controls.panSpeed = 1.0
 
           // Lights
           const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
@@ -329,14 +338,28 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
               const size = box.getSize(new THREE.Vector3())
               const maxDim = Math.max(size.x, size.y, size.z)
               
-              // Position camera
-              camera.position.set(
-                center.x + maxDim * 1.5,
-                center.y + maxDim * 0.8,
-                center.z + maxDim * 1.5
+              // Calculate optimal camera distance for better view
+              const fov = camera.fov * (Math.PI / 180)
+              const cameraDistance = Math.abs(maxDim / Math.sin(fov / 2)) * 0.7
+              
+              // Position camera at optimal distance
+              const cameraOffset = new THREE.Vector3(
+                cameraDistance * 0.7,
+                cameraDistance * 0.5,
+                cameraDistance * 0.7
               )
+              
+              camera.position.copy(center).add(cameraOffset)
               camera.lookAt(center)
+              
+              // Set controls target to model center
               controls.target.copy(center)
+              controls.update()
+              
+              // Adjust camera near/far planes based on model size
+              camera.near = maxDim / 100
+              camera.far = maxDim * 100
+              camera.updateProjectionMatrix()
               
               // Reposition grid to model center - light style
               const gridSize = Math.max(maxDim * 2, 100)
@@ -345,6 +368,14 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
               newGrid.position.set(center.x, box.min.y - 0.1, center.z)
               newGrid.name = 'grid'
               scene.add(newGrid)
+              
+              console.log('[SimulationIFCViewer] Model bounds:', {
+                center: center.toArray(),
+                size: size.toArray(),
+                maxDim,
+                cameraDistance,
+                cameraPosition: camera.position.toArray()
+              })
             }
             
             ifcApi.CloseModel(modelID)
@@ -368,22 +399,29 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
             raycaster.setFromCamera(mouse, camera)
             const intersects = raycaster.intersectObjects(scene.children, true)
 
+            // Reset previous selection
             if (selectedObject && originalMaterialsRef.current.has(selectedObject.userData.guid)) {
-              selectedObject.material = originalMaterialsRef.current.get(selectedObject.userData.guid)
+              const originalMat = originalMaterialsRef.current.get(selectedObject.userData.guid)
+              selectedObject.material = originalMat
             }
 
+            // Find clicked element
             for (const intersect of intersects) {
               if (intersect.object instanceof THREE.Mesh && intersect.object.userData.expressID) {
                 selectedObject = intersect.object
                 
+                // Store original material if not already stored
                 if (!originalMaterialsRef.current.has(selectedObject.userData.guid)) {
                   originalMaterialsRef.current.set(selectedObject.userData.guid, selectedObject.material.clone())
                 }
                 
+                // Highlight selected element
                 selectedObject.material = new THREE.MeshPhongMaterial({
                   color: 0x00ff00,
-                  emissive: 0x003300,
-                  side: THREE.DoubleSide
+                  emissive: 0x00aa00,
+                  side: THREE.DoubleSide,
+                  transparent: false,
+                  opacity: 1
                 })
                 
                 const elementId = selectedObject.userData.guid
@@ -391,6 +429,12 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
                 setSelectedElementInfo({
                   type: selectedObject.userData.typeName || 'Element',
                   id: selectedObject.userData.expressID
+                })
+                
+                console.log('[SimulationIFCViewer] Selected element:', {
+                  guid: elementId,
+                  expressID: selectedObject.userData.expressID,
+                  type: selectedObject.userData.typeName
                 })
                 
                 if (onElementSelectRef.current) {

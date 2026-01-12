@@ -163,7 +163,28 @@ export async function POST(req: NextRequest) {
       }))
     }
 
-    // Create task with element links
+    // Create task with element links - OPTIMIZED for bulk operations
+    console.log(`[Task Creation] Creating task with ${elementIds.length} element links...`)
+    
+    // Step 1: Create all elements in bulk first (if they don't exist)
+    if (elementIds.length > 0) {
+      console.log('[Task Creation] Step 1: Creating elements in bulk...')
+      const elementsToCreate = elementIds.map((elementId: string) => ({
+        guid: elementId,
+        modelId: model.id,
+        category: 'BIM Element'
+      }))
+      
+      // Use createMany with skipDuplicates to avoid conflicts
+      await withRetry(() => prisma.element.createMany({
+        data: elementsToCreate,
+        skipDuplicates: true
+      }))
+      console.log('[Task Creation] Elements created/verified')
+    }
+    
+    // Step 2: Create the task
+    console.log('[Task Creation] Step 2: Creating task...')
     const task = await withRetry(() => prisma.task.create({
       data: {
         projectId: parseInt(projectId),
@@ -175,25 +196,41 @@ export async function POST(req: NextRequest) {
         teamId: teamId ? parseInt(teamId) : null,
         priority: priority || 'medium',
         status: status || 'todo',
-        progress: 0,
-        // Create element links if elementIds provided
-        elementLinks: elementIds.length > 0 ? {
-          create: elementIds.map((elementId: string) => ({
-            element: {
-              connectOrCreate: {
-                where: { guid: elementId },
-                create: {
-                  guid: elementId,
-                  modelId: model.id,
-                  category: 'BIM Element'
-                }
-              }
-            },
-            linkType: 'construction',
-            status: 'planned'
-          }))
-        } : undefined
-      },
+        progress: 0
+      }
+    }))
+    console.log('[Task Creation] Task created:', task.id)
+    
+    // Step 3: Create element links in bulk
+    if (elementIds.length > 0) {
+      console.log('[Task Creation] Step 3: Creating element links in bulk...')
+      
+      // Get all element IDs from database
+      const elements = await withRetry(() => prisma.element.findMany({
+        where: {
+          guid: { in: elementIds }
+        },
+        select: { id: true, guid: true }
+      }))
+      
+      // Create element links in bulk
+      const elementLinksToCreate = elements.map(element => ({
+        taskId: task.id,
+        elementId: element.id,
+        linkType: 'construction',
+        status: 'planned'
+      }))
+      
+      await withRetry(() => prisma.taskElementLink.createMany({
+        data: elementLinksToCreate
+      }))
+      console.log(`[Task Creation] Created ${elementLinksToCreate.length} element links`)
+    }
+    
+    // Step 4: Fetch the complete task with all relations
+    console.log('[Task Creation] Step 4: Fetching complete task data...')
+    const completeTask = await withRetry(() => prisma.task.findUnique({
+      where: { id: task.id },
       include: {
         elementLinks: {
           include: {
@@ -224,10 +261,35 @@ export async function POST(req: NextRequest) {
         }
       }
     }))
+    
+    // 🔔 AUTOMATIC NOTIFICATION: Send notification if task is assigned
+    if (assigneeId && parseInt(assigneeId) !== userId) {
+      try {
+        const { createNotification } = await import('@/lib/create-notification')
+        const assignerUser = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { fullName: true }
+        })
+        
+        await createNotification({
+          userId: parseInt(assigneeId),
+          type: 'task_assigned',
+          title: '📋 New Task Assigned',
+          body: `${assignerUser?.fullName || 'Someone'} assigned you: ${name}`,
+          url: `/dashboard/tasks`
+        })
+        console.log('[Task Creation] ✅ Notification sent to user:', assigneeId)
+      } catch (notifError) {
+        console.error('[Task Creation] Failed to send notification:', notifError)
+        // Don't fail task creation if notification fails
+      }
+    }
 
+    console.log('[Task Creation] ✅ Complete! Task created with', elementIds.length, 'elements')
+    
     return NextResponse.json({
       success: true,
-      task
+      task: completeTask
     })
   } catch (error) {
     console.error('Error creating task:', error)

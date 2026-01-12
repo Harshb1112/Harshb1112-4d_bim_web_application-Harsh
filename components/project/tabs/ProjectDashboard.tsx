@@ -171,9 +171,10 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
             {stats.totalTasks > 0 ? (
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {/* Pie Chart */}
-                <div className="w-full md:w-2/3 h-[280px] min-h-[280px]">
-                  <ResponsiveContainer width="100%" height="100%" minHeight={280}>
-                    <PieChart>
+                <div className="w-full md:w-2/3 h-[280px]">
+                  {stats.totalTasks > 0 ? (
+                    <ResponsiveContainer width="100%" height={280}>
+                      <PieChart>
                       <Pie
                         data={[
                           { name: 'Completed', value: stats.statusDistribution.completed, color: '#22c55e' },
@@ -208,6 +209,11 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
                       />
                     </PieChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400">
+                      No task data available
+                    </div>
+                  )}
                 </div>
                 
                 {/* Legend with percentages */}

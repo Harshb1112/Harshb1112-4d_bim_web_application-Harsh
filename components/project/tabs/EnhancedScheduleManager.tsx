@@ -196,6 +196,186 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
     }
   }
 
+  // Auto-isolate selected elements in viewer when selection changes
+  useEffect(() => {
+    if (selectedElements.length === 0) {
+      // If no elements selected, show all
+      const timer = setTimeout(() => {
+        try {
+          // Autodesk Viewer
+          const autodeskViewer = (window as any).autodeskViewer
+          if (autodeskViewer) {
+            autodeskViewer.showAll()
+            autodeskViewer.clearThemingColors(autodeskViewer.model)
+            autodeskViewer.setGhosting(true)
+            console.log('[Auto-isolate] ✅ Autodesk: Showing all elements')
+          }
+          
+          // IFC Viewer
+          const ifcViewer = (window as any).ifcViewer
+          if (ifcViewer?.IFC) {
+            // Show all IFC elements
+            const allIDs = ifcViewer.IFC.loader.ifcManager.getAllItemsOfType(0, ifcViewer.IFC.IFCPRODUCT, false)
+            if (allIDs?.length > 0) {
+              ifcViewer.IFC.loader.ifcManager.showItems(0, allIDs)
+              console.log('[Auto-isolate] ✅ IFC: Showing all elements')
+            }
+          }
+          
+          // Speckle Viewer
+          const speckleViewer = (window as any).speckleViewer
+          if (speckleViewer?.scene) {
+            speckleViewer.scene.traverse((obj: any) => {
+              if (obj.visible !== undefined) obj.visible = true
+            })
+            console.log('[Auto-isolate] ✅ Speckle: Showing all elements')
+          }
+        } catch (error) {
+          console.error('[Auto-isolate] Error clearing:', error)
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }
+    
+    // Debounce to avoid too many updates
+    const timer = setTimeout(() => {
+      try {
+        console.log('[Auto-isolate] 🔄 Starting auto-isolate for', selectedElements.length, 'elements')
+        
+        // Try Autodesk Viewer
+        const Autodesk = (window as any).Autodesk
+        const autodeskViewer = (window as any).autodeskViewer
+        
+        if (autodeskViewer && Autodesk && autodeskViewer.model) {
+          // Parse element IDs to dbIds
+          const selectedDbIds = selectedElements
+            .map(el => {
+              if (typeof el.id === 'number') return el.id
+              const parsed = parseInt(String(el.id))
+              if (!isNaN(parsed)) return parsed
+              if (String(el.id).startsWith('IFC_')) {
+                const id = parseInt(String(el.id).replace('IFC_', ''))
+                if (!isNaN(id)) return id
+              }
+              return null
+            })
+            .filter(id => id !== null) as number[]
+          
+          if (selectedDbIds.length > 0) {
+            console.log('[Auto-isolate] 📊 Autodesk: Processing', selectedDbIds.length, 'elements')
+            
+            // Get ALL dbIds in the model
+            const instanceTree = autodeskViewer.model.getInstanceTree()
+            const allDbIds: number[] = []
+            instanceTree.enumNodeChildren(instanceTree.getRootId(), (dbId: number) => {
+              allDbIds.push(dbId)
+            }, true)
+            
+            // Find elements to HIDE
+            const selectedSet = new Set(selectedDbIds)
+            const toHide = allDbIds.filter(id => !selectedSet.has(id))
+            
+            console.log('[Auto-isolate] 🎯 Autodesk: Show', selectedDbIds.length, '| Hide', toHide.length)
+            
+            // Disable ghosting for complete removal
+            autodeskViewer.setGhosting(false)
+            
+            // Show all, then hide non-selected
+            autodeskViewer.showAll()
+            autodeskViewer.hide(toHide)
+            autodeskViewer.show(selectedDbIds)
+            
+            // Fit view
+            setTimeout(() => autodeskViewer.fitToView(selectedDbIds), 100)
+            
+            // Highlight
+            const THREE = Autodesk.Viewing.Private.THREE
+            if (THREE?.Color) {
+              const color = new THREE.Color(0.2, 0.6, 1.0)
+              selectedDbIds.forEach((dbId: number) => {
+                autodeskViewer.setThemingColor(dbId, color, autodeskViewer.model, true)
+              })
+            }
+            
+            console.log('[Auto-isolate] ✅ Autodesk: SUCCESS (NO GHOST!)')
+            return
+          }
+        }
+        
+        // Try IFC Viewer
+        const ifcViewer = (window as any).ifcViewer
+        if (ifcViewer?.IFC) {
+          const selectedExpressIDs = selectedElements
+            .map(el => {
+              if (String(el.id).startsWith('IFC_')) {
+                const id = parseInt(String(el.id).replace('IFC_', ''))
+                if (!isNaN(id)) return id
+              }
+              if (typeof el.id === 'number') return el.id
+              const parsed = parseInt(String(el.id))
+              if (!isNaN(parsed)) return parsed
+              return null
+            })
+            .filter(id => id !== null) as number[]
+          
+          if (selectedExpressIDs.length > 0) {
+            console.log('[Auto-isolate] 📊 IFC: Processing', selectedExpressIDs.length, 'elements')
+            
+            // Get all IFC elements
+            const allIDs = ifcViewer.IFC.loader.ifcManager.getAllItemsOfType(0, ifcViewer.IFC.IFCPRODUCT, false)
+            
+            if (allIDs?.length > 0) {
+              // Hide all first
+              ifcViewer.IFC.loader.ifcManager.hideItems(0, allIDs)
+              
+              // Show only selected
+              ifcViewer.IFC.loader.ifcManager.showItems(0, selectedExpressIDs)
+              
+              console.log('[Auto-isolate] ✅ IFC: SUCCESS! Showing', selectedExpressIDs.length, 'elements')
+              return
+            }
+          }
+        }
+        
+        // Try Speckle Viewer
+        const speckleViewer = (window as any).speckleViewer
+        if (speckleViewer?.scene) {
+          const selectedIds = selectedElements.map(el => String(el.id))
+          const selectedSet = new Set(selectedIds)
+          
+          console.log('[Auto-isolate] 📊 Speckle: Processing', selectedIds.length, 'elements')
+          
+          let hiddenCount = 0
+          let shownCount = 0
+          
+          speckleViewer.scene.traverse((obj: any) => {
+            if (obj.userData?.id || obj.userData?.speckleId) {
+              const objId = String(obj.userData.id || obj.userData.speckleId)
+              
+              if (selectedSet.has(objId)) {
+                obj.visible = true
+                shownCount++
+              } else {
+                obj.visible = false
+                hiddenCount++
+              }
+            }
+          })
+          
+          console.log('[Auto-isolate] ✅ Speckle: SUCCESS! Shown', shownCount, '| Hidden', hiddenCount)
+          return
+        }
+        
+        console.log('[Auto-isolate] ⚠️ No compatible viewer found')
+        
+      } catch (error) {
+        console.error('[Auto-isolate] ❌ Error:', error)
+      }
+    }, 1000)
+    
+    return () => clearTimeout(timer)
+  }, [selectedElements])
+
   const handleElementSelect = useCallback((elementId: string, element: any) => {
     console.log('Element selected:', elementId, element)
     console.log('Current selection mode:', selectionMode)
@@ -236,8 +416,14 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
     console.log('Processed element:', newElement)
 
     setSelectedElements(prev => {
+      // Check if element already exists
+      const exists = prev.find(el => el.id === elementId)
+      
       if (selectionMode === 'single') {
-        toast.info(`Selected: ${newElement.name}`)
+        // Single mode: Only show toast if it's a different element
+        if (!exists || prev.length !== 1) {
+          toast.info(`Selected: ${newElement.name}`, { duration: 2000 })
+        }
         return [newElement]
       } else if (selectionMode === 'layer') {
         // Layer mode: Smart type-based selection
@@ -259,22 +445,25 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
         }
       } else if (selectionMode === 'lasso') {
         // Lasso mode: Only adds, never removes (rapid selection)
-        const exists = prev.find(el => el.id === elementId)
         if (exists) {
-          toast.info(`⚡ ${newElement.name} already in selection`)
-          return prev // Don't remove, just keep it
+          // Don't show toast for already selected - reduces noise
+          return prev
         } else {
-          toast.info(`⚡ Added: ${newElement.name} (${prev.length + 1} total)`)
+          // Only show toast every 5 elements to reduce spam
+          if ((prev.length + 1) % 5 === 0) {
+            toast.info(`⚡ ${prev.length + 1} elements selected`, { duration: 1500 })
+          }
           return [...prev, newElement]
         }
       } else {
-        // Multi/box mode: Toggle on/off
-        const exists = prev.find(el => el.id === elementId)
+        // Multi/box mode: Toggle on/off (like Ctrl+Click)
         if (exists) {
-          toast.info(`❌ Removed: ${newElement.name}`)
+          // Removed - show brief toast
+          toast.info(`❌ Removed`, { duration: 1500 })
           return prev.filter(el => el.id !== elementId)
         } else {
-          toast.info(`✅ Added: ${newElement.name}`)
+          // Added - show brief toast
+          toast.info(`✅ Added (${prev.length + 1} total)`, { duration: 1500 })
           return [...prev, newElement]
         }
       }
@@ -385,13 +574,10 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
     }
   }
 
-  // Filter elements by type AND search text
+  // Filter elements ONLY by search text (NOT by type filter)
+  // The type filter is used to LOAD elements, not to hide them after loading
   const filteredElements = selectedElements.filter(el => {
-    // Filter by type
-    const typeMatch = elementTypeFilter === 'all' || 
-                     el.type?.toLowerCase().includes(elementTypeFilter.toLowerCase())
-    
-    // Filter by search text (trim whitespace and handle special chars)
+    // Only filter by search text
     const searchLower = searchText.trim().toLowerCase()
     const elementName = (el.name || '').toLowerCase()
     const elementType = (el.type || '').toLowerCase()
@@ -402,26 +588,60 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                        elementType.includes(searchLower) ||
                        elementId.includes(searchLower)
     
-    // Debug logging
-    if (searchText) {
-      console.log('Filter check:', {
-        element: el.name,
-        searchText: searchLower,
-        nameMatch: el.name?.toLowerCase().includes(searchLower),
-        typeMatch,
-        searchMatch
-      })
-    }
-    
-    return typeMatch && searchMatch
+    return searchMatch
   })
 
-  // Count elements by type
+  // Count elements by type from SELECTED elements
   const elementCounts = selectedElements.reduce((acc, el) => {
     const type = el.type || 'Unknown'
     acc[type] = (acc[type] || 0) + 1
     return acc
   }, {} as Record<string, number>)
+  
+  // Store ALL available types from model (for dropdown)
+  const [allAvailableTypes, setAllAvailableTypes] = useState<Record<string, number>>({})
+  
+  // Load all available types from model IMMEDIATELY when viewer is ready
+  useEffect(() => {
+    const loadAvailableTypes = async () => {
+      try {
+        // Check if viewer is loaded
+        const viewer = (window as any).autodeskViewer
+        if (!viewer) {
+          console.log('[Available Types] Viewer not ready yet, will retry...')
+          return
+        }
+        
+        console.log('[Available Types] Loading types from viewer...')
+        const { readElementsFromLoadedViewer } = await import('@/lib/universal-viewer-element-reader')
+        const allElements = await readElementsFromLoadedViewer()
+        
+        if (allElements.length > 0) {
+          const typeCounts = allElements.reduce((acc, el) => {
+            const type = el.type || 'Unknown'
+            acc[type] = (acc[type] || 0) + 1
+            return acc
+          }, {} as Record<string, number>)
+          
+          setAllAvailableTypes(typeCounts)
+          console.log('[Available Types] ✅ Loaded', Object.keys(typeCounts).length, 'types:', Object.keys(typeCounts))
+        } else {
+          console.log('[Available Types] No elements found, will retry...')
+        }
+      } catch (error) {
+        console.error('[Available Types] Error:', error)
+      }
+    }
+    
+    // Try multiple times with increasing delays
+    const timers = [
+      setTimeout(loadAvailableTypes, 1000),  // Try after 1s
+      setTimeout(loadAvailableTypes, 3000),  // Try after 3s
+      setTimeout(loadAvailableTypes, 5000),  // Try after 5s
+    ]
+    
+    return () => timers.forEach(t => clearTimeout(t))
+  }, [project.id])
 
   // Count elements by name
   const elementNameCounts = selectedElements.reduce((acc, el) => {
@@ -745,7 +965,8 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   size="sm"
                   onClick={() => {
                     setSelectionMode('single')
-                    toast.info('Single select mode: Click one element at a time')
+                    handleClearSelection()
+                    toast.info('👆 Single Mode: Each click replaces selection', { duration: 3000 })
                   }}
                   className="flex flex-col h-auto py-2"
                 >
@@ -758,7 +979,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   onClick={() => {
                     console.log('Setting selection mode to: box')
                     setSelectionMode('box')
-                    toast.info('Multi-select mode: Click multiple elements')
+                    toast.info('📦 Multi Mode: Click to add/remove (toggle)', { duration: 3000 })
                   }}
                   className="flex flex-col h-auto py-2"
                 >
@@ -770,7 +991,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   size="sm"
                   onClick={() => {
                     setSelectionMode('lasso')
-                    toast.info('Lasso mode: Rapid multi-select (click quickly to add multiple)')
+                    toast.info('⚡ Lasso Mode: Rapid add (no remove)', { duration: 3000 })
                   }}
                   className="flex flex-col h-auto py-2"
                 >
@@ -782,7 +1003,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   size="sm"
                   onClick={() => {
                     setSelectionMode('layer')
-                    toast.info('Layer mode: Select by type')
+                    toast.info('📚 Layer Mode: Group by type', { duration: 3000 })
                   }}
                   className="flex flex-col h-auto py-2"
                 >
@@ -829,39 +1050,209 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
               <div>
                 <Label className="text-xs text-gray-600 mb-1">Search by Name</Label>
                 <Input
-                  placeholder="Type to search... (e.g., F02_0)"
+                  placeholder="Type to search... (e.g., IFC_128906)"
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && searchText && selectedElements.length === 0) {
+                      // If Enter pressed and no elements selected, try to load from model
+                      try {
+                        const response = await fetch(`/api/projects/${project.id}/models`)
+                        if (response.ok) {
+                          const data = await response.json()
+                          const models = data.models || []
+                          
+                          if (models.length > 0) {
+                            const model = models[0]
+                            const elemResponse = await fetch(`/api/models/${model.id}/elements`)
+                            if (elemResponse.ok) {
+                              const elemData = await elemResponse.json()
+                              if (elemData.elements && elemData.elements.length > 0) {
+                                // Filter elements by search text
+                                const matching = elemData.elements.filter((el: any) => 
+                                  el.name?.toLowerCase().includes(searchText.toLowerCase()) ||
+                                  el.id?.toString().toLowerCase().includes(searchText.toLowerCase()) ||
+                                  el.guid?.toLowerCase().includes(searchText.toLowerCase())
+                                )
+                                
+                                if (matching.length > 0) {
+                                  setSelectedElements(matching.map((el: any) => ({
+                                    id: el.id?.toString() || el.guid || el.expressID?.toString() || 'unknown',
+                                    type: el.type || el.category || 'Element',
+                                    name: el.name || `Element_${el.id?.toString().slice(0, 8) || 'unknown'}`,
+                                    properties: el.properties || el
+                                  })))
+                                  toast.success(`Found ${matching.length} matching elements`)
+                                } else {
+                                  toast.info('No matching elements found')
+                                }
+                              }
+                            }
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error searching elements:', error)
+                      }
+                    }
+                  }}
                   className="h-8 text-sm"
                 />
                 {searchText && (
-                  <button
-                    onClick={() => setSearchText('')}
-                    className="text-xs text-blue-600 hover:underline mt-1"
-                  >
-                    Clear search
-                  </button>
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={() => setSearchText('')}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Clear search
+                    </button>
+                    {selectedElements.length === 0 && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            toast.info('Searching in loaded 3D viewer...')
+                            
+                            // Read elements from whatever viewer is loaded
+                            const { readElementsFromLoadedViewer } = await import('@/lib/universal-viewer-element-reader')
+                            const allElements = await readElementsFromLoadedViewer()
+                            
+                            console.log('[Search] Total elements in viewer:', allElements.length)
+                            
+                            if (allElements.length === 0) {
+                              toast.error('No 3D model loaded in viewer. Please wait for model to load.')
+                              return
+                            }
+                            
+                            // Filter by search text
+                            const searchLower = searchText.toLowerCase()
+                            const matching = allElements.filter((el: any) => {
+                              const nameMatch = el.name?.toLowerCase().includes(searchLower)
+                              const idMatch = el.id?.toString().toLowerCase().includes(searchLower)
+                              const guidMatch = el.guid?.toLowerCase().includes(searchLower)
+                              return nameMatch || idMatch || guidMatch
+                            })
+                            
+                            console.log('[Search] Matching elements:', matching.length)
+                            
+                            if (matching.length > 0) {
+                              setSelectedElements(matching.map((el: any) => ({
+                                id: el.id?.toString() || el.guid || 'unknown',
+                                type: el.type || 'Element',
+                                name: el.name || `Element_${el.id}`,
+                                properties: el
+                              })))
+                              toast.success(`Found ${matching.length} matching "${searchText}"`)
+                            } else {
+                              toast.error(`No elements matching "${searchText}" found in loaded model`)
+                            }
+                            
+                          } catch (error: any) {
+                            console.error('[Search] Error:', error)
+                            toast.error('Search failed: ' + error.message)
+                          }
+                        }}
+                        className="text-xs text-green-600 hover:underline font-medium"
+                      >
+                        🔍 Search in Model
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               
               {/* Quick filter by type */}
               <div>
-                <Label className="text-xs text-gray-600 mb-1">Quick Filter</Label>
-                <Select value={elementTypeFilter} onValueChange={setElementTypeFilter}>
+                <Label className="text-xs text-gray-600 mb-1">Quick Filter (Click type to load only those)</Label>
+                <Select value={elementTypeFilter} onValueChange={async (value) => {
+                  console.log('[Quick Filter] Selected type:', value)
+                  
+                  // If "all" is selected, just reset filter (don't clear selection)
+                  if (value === 'all') {
+                    setElementTypeFilter('all')
+                    console.log('[Quick Filter] Reset to show all types')
+                    return
+                  }
+                  
+                  // Set the filter value
+                  setElementTypeFilter(value)
+                  
+                  // When a type is selected, LOAD elements of that type from the model
+                  try {
+                    toast.info(`Loading ${value} elements from model...`)
+                    
+                    const { readElementsFromLoadedViewer } = await import('@/lib/universal-viewer-element-reader')
+                    const allElements = await readElementsFromLoadedViewer()
+                    
+                    console.log('[Quick Filter] Total elements in viewer:', allElements.length)
+                    
+                    if (allElements.length > 0) {
+                      const matching = allElements.filter((el: any) => 
+                        el.type?.toLowerCase() === value.toLowerCase()
+                      )
+                      
+                      console.log('[Quick Filter] Matching elements:', matching.length)
+                      
+                      if (matching.length > 0) {
+                        // REPLACE selection with elements of this type
+                        setSelectedElements(matching.map((el: any) => ({
+                          id: el.id?.toString() || el.guid || 'unknown',
+                          type: el.type || 'Element',
+                          name: el.name || `Element_${el.id}`,
+                          properties: el
+                        })))
+                        toast.success(`Loaded ${matching.length} ${value} elements`)
+                      } else {
+                        toast.info(`No ${value} elements found in model`)
+                      }
+                    } else {
+                      toast.error('No 3D model loaded. Please wait for viewer to load.')
+                    }
+                  } catch (error: any) {
+                    console.error('[Quick Filter] Error:', error)
+                    toast.error('Failed to load elements')
+                  }
+                }}>
                   <SelectTrigger className="h-8">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="door">Doors</SelectItem>
-                    <SelectItem value="wall">Walls</SelectItem>
-                    <SelectItem value="column">Columns</SelectItem>
-                    <SelectItem value="slab">Slabs</SelectItem>
-                    <SelectItem value="window">Windows</SelectItem>
-                    <SelectItem value="beam">Beams</SelectItem>
-                    <SelectItem value="mesh">Mesh</SelectItem>
+                    <SelectItem value="all">
+                      All Types ({Object.values(allAvailableTypes).reduce((sum, count) => sum + count, 0) || selectedElements.length} total)
+                    </SelectItem>
+                    {/* Show ALL available types from model, not just selected ones */}
+                    {Object.entries(allAvailableTypes).length > 0 ? (
+                      Object.entries(allAvailableTypes)
+                        .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                        .map(([type, totalCount]) => {
+                          const selectedCount = elementCounts[type] || 0
+                          return (
+                            <SelectItem key={type} value={type.toLowerCase()}>
+                              {type} ({totalCount} in model{selectedCount > 0 ? `, ${selectedCount} selected` : ''})
+                            </SelectItem>
+                          )
+                        })
+                    ) : (
+                      // Fallback: show types from selected elements if model types not loaded yet
+                      Object.entries(elementCounts).map(([type, count]) => (
+                        <SelectItem key={type} value={type.toLowerCase()}>
+                          {type} ({count})
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {elementTypeFilter !== 'all' && (
+                  <div className="text-xs mt-2 space-y-2">
+                    <div className="flex items-center justify-between text-blue-600">
+                      <span>✓ Showing {selectedElements.length} {elementTypeFilter} elements</span>
+                      <button
+                        onClick={() => setElementTypeFilter('all')}
+                        className="text-red-500 hover:underline"
+                      >
+                        Clear filter
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -876,22 +1267,64 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
             </CardHeader>
             <CardContent>
               {selectedElements.length === 0 ? (
-                <div className="text-center py-4 text-sm text-gray-500">
+                <div className="text-center py-4 text-sm text-gray-500 space-y-3">
                   <Box className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p>No elements selected</p>
-                  <p className="text-xs mt-1">Click elements in 3D viewer</p>
+                  <p className="text-xs mt-1">Click elements in 3D viewer or load from model</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        toast.info('Loading elements from viewer...')
+                        
+                        // Use universal reader for all model types
+                        const { readElementsFromLoadedViewer } = await import('@/lib/universal-viewer-element-reader')
+                        const elements = await readElementsFromLoadedViewer()
+                        
+                        if (elements.length > 0) {
+                          // Calculate type counts for dropdown
+                          const typeCounts = elements.reduce((acc, el) => {
+                            const type = el.type || 'Unknown'
+                            acc[type] = (acc[type] || 0) + 1
+                            return acc
+                          }, {} as Record<string, number>)
+                          
+                          setAllAvailableTypes(typeCounts)
+                          console.log('[Load All] Loaded', Object.keys(typeCounts).length, 'types')
+                          
+                          setSelectedElements(elements.map((el: any) => ({
+                            id: el.id?.toString() || el.guid || 'unknown',
+                            type: el.type || 'Element',
+                            name: el.name || `Element_${el.id}`,
+                            properties: el
+                          })))
+                          toast.success(`Loaded ${elements.length} elements from viewer`)
+                        } else {
+                          toast.error('No 3D model loaded in viewer. Please wait for model to load.')
+                        }
+                        
+                      } catch (error: any) {
+                        console.error('Error loading elements:', error)
+                        toast.error('Failed to load elements: ' + error.message)
+                      }
+                    }}
+                    className="mt-2"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Load All Elements from Model
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium text-gray-900">
-                      {elementTypeFilter === 'all' && searchText === '' ? (
+                      {searchText === '' ? (
                         <>{selectedElements.length} element{selectedElements.length !== 1 ? 's' : ''} selected</>
                       ) : (
                         <>
                           {filteredElements.length} of {selectedElements.length} elements
                           {searchText && <span className="text-blue-600"> (search: "{searchText}")</span>}
-                          {elementTypeFilter !== 'all' && <span className="text-green-600"> (type: {elementTypeFilter})</span>}
                         </>
                       )}
                     </div>
@@ -947,7 +1380,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   {duplicateNames.length > 0 && !searchText && (
                     <div className="pt-2 border-t space-y-2">
                       <div className="text-xs font-medium text-gray-700">
-                        Same Name Elements:
+                        Same Name Elements (Click to select all):
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {duplicateNames.slice(0, 8).map(([name, count]) => (
@@ -955,9 +1388,55 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                             key={name}
                             variant="outline"
                             className="text-xs cursor-pointer hover:bg-blue-50 transition-colors"
-                            onClick={() => {
-                              setSearchText(name)
-                              toast.info(`Found ${count} elements named "${name}"`)
+                            onClick={async () => {
+                              // Load all elements with this name from model
+                              try {
+                                toast.info(`Loading all "${name}" elements...`)
+                                const response = await fetch(`/api/projects/${project.id}/models`)
+                                
+                                if (response.ok) {
+                                  const data = await response.json()
+                                  const models = data.models || []
+                                  
+                                  if (models.length > 0) {
+                                    const model = models[0]
+                                    const elemResponse = await fetch(`/api/models/${model.id}/elements`)
+                                    
+                                    if (elemResponse.ok) {
+                                      const elemData = await elemResponse.json()
+                                      
+                                      if (elemData.elements && elemData.elements.length > 0) {
+                                        // Find all elements with this exact name
+                                        const matching = elemData.elements.filter((el: any) => 
+                                          el.name === name
+                                        )
+                                        
+                                        if (matching.length > 0) {
+                                          // Add to existing selection (don't replace)
+                                          const newElements = matching.map((el: any) => ({
+                                            id: el.id?.toString() || el.guid || el.expressID?.toString() || 'unknown',
+                                            type: el.type || el.category || 'Element',
+                                            name: el.name || `Element_${el.id?.toString().slice(0, 8) || 'unknown'}`,
+                                            properties: el.properties || el
+                                          }))
+                                          
+                                          // Merge with existing, avoid duplicates by id
+                                          setSelectedElements(prev => {
+                                            const existingIds = new Set(prev.map(e => e.id))
+                                            const toAdd = newElements.filter(e => !existingIds.has(e.id))
+                                            return [...prev, ...toAdd]
+                                          })
+                                          
+                                          toast.success(`Added ${matching.length} elements named "${name}"`)
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              } catch (error) {
+                                console.error('Error loading duplicate elements:', error)
+                                toast.error('Failed to load elements')
+                              }
                             }}
                           >
                             {name}: {count}
@@ -965,7 +1444,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                         ))}
                       </div>
                       <div className="text-xs text-gray-500">
-                        💡 Click name → Filter → "Keep Only These" → Add to task
+                        💡 Click name badge → Loads all elements with that name from model
                       </div>
                     </div>
                   )}
@@ -1008,30 +1487,38 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                     </div>
                   )}
 
-                  {/* Element list with names */}
-                  <div className="max-h-48 overflow-y-auto space-y-1 p-2 bg-gray-50 rounded border">
+                  {/* Element list with names - Show ALL elements with scroll */}
+                  <div className="max-h-96 overflow-y-auto space-y-1 p-2 bg-gray-50 rounded border">
                     {filteredElements.length === 0 ? (
                       <div className="text-xs text-center text-gray-500 py-4">
                         No elements match the filter
                       </div>
                     ) : (
                       <>
-                        {filteredElements.slice(0, 10).map((el, index) => (
-                          <div key={el.id} className="text-xs p-2 bg-white rounded border flex items-center justify-between">
+                        {filteredElements.map((el, index) => (
+                          <div key={`${el.id}-${index}`} className="text-xs p-2 bg-white rounded border flex items-center justify-between hover:bg-blue-50 transition-colors group">
                             <div className="flex-1 truncate">
                               <span className="font-medium">{index + 1}. </span>
                               <span className="text-gray-700">{el.name}</span>
                             </div>
-                            <Badge variant="outline" className="text-xs ml-2">
-                              {el.type}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {el.type}
+                              </Badge>
+                              {/* Remove single element button */}
+                              <button
+                                onClick={() => {
+                                  setSelectedElements(prev => prev.filter(e => e.id !== el.id))
+                                  toast.success(`Removed: ${el.name}`)
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1"
+                                title="Remove this element"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           </div>
                         ))}
-                        {filteredElements.length > 10 && (
-                          <div className="text-xs text-center text-gray-500 py-1">
-                            +{filteredElements.length - 10} more elements
-                          </div>
-                        )}
                       </>
                     )}
                   </div>
@@ -1066,7 +1553,98 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
         <div className={canCreateTasks ? "lg:col-span-3" : "lg:col-span-4"}>
           <Card className="h-[600px] overflow-hidden">
             <CardHeader className="pb-3 flex-shrink-0">
-              <CardTitle className="text-sm font-semibold">3D Model Viewer</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold">3D Model Viewer</CardTitle>
+                {selectedElements.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          toast.info(`Highlighting ${selectedElements.length} elements in viewer...`)
+                          
+                          // Get the viewer instance
+                          const Autodesk = (window as any).Autodesk
+                          const viewer = (window as any).autodeskViewer
+                          
+                          if (viewer && Autodesk) {
+                            // Get dbIds from element IDs
+                            const dbIds = selectedElements
+                              .map(el => parseInt(el.id))
+                              .filter(id => !isNaN(id))
+                            
+                            if (dbIds.length > 0) {
+                              // Isolate and highlight
+                              viewer.isolate(dbIds)
+                              viewer.fitToView(dbIds)
+                              
+                              // Apply blue highlight color
+                              const THREE = Autodesk.Viewing.Private.THREE
+                              if (THREE?.Color) {
+                                const highlightColor = new THREE.Color(0.2, 0.6, 1.0)
+                                dbIds.forEach((dbId: number) => {
+                                  viewer.setThemingColor(dbId, highlightColor, viewer.model, true)
+                                })
+                              }
+                              
+                              toast.success(`✅ Highlighted ${dbIds.length} elements`)
+                            } else {
+                              toast.error('Could not find elements in viewer')
+                            }
+                          } else {
+                            toast.error('3D viewer not ready. Please wait for model to load.')
+                          }
+                        } catch (error: any) {
+                          console.error('Error highlighting elements:', error)
+                          toast.error('Failed to highlight elements')
+                        }
+                      }}
+                      className="text-xs h-7"
+                    >
+                      👁️ Show in 3D ({selectedElements.length})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        toast.info(
+                          <div className="space-y-2">
+                            <div className="font-semibold">Multi-Select Tips:</div>
+                            <div>• <strong>Ctrl + Click</strong> - Add/remove elements</div>
+                            <div>• <strong>Shift + Drag</strong> - Box select (if available)</div>
+                            <div>• <strong>Click element</strong> - Single select</div>
+                          </div>,
+                          { duration: 6000 }
+                        )
+                      }}
+                      className="text-xs h-7"
+                    >
+                      🎯 Selection Help
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const viewer = (window as any).autodeskViewer
+                          if (viewer) {
+                            viewer.isolate([]) // Show all
+                            viewer.clearThemingColors(viewer.model)
+                            viewer.fitToView()
+                            toast.success('Reset viewer')
+                          }
+                        } catch (error) {
+                          console.error('Error resetting viewer:', error)
+                        }
+                      }}
+                      className="text-xs h-7"
+                    >
+                      🔄 Reset View
+                    </Button>
+                  </div>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="h-[calc(100%-60px)] overflow-hidden">
               <UnifiedModelViewer

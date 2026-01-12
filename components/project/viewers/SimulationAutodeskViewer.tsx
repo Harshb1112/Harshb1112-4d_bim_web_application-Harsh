@@ -343,8 +343,31 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
           }
 
           Autodesk.Viewing.Initializer(options, () => {
-            const viewer = new Autodesk.Viewing.GuiViewer3D(containerRef.current)
-            viewer.start()
+            let viewerInstance: any = null
+            
+            try {
+              viewerInstance = new Autodesk.Viewing.GuiViewer3D(containerRef.current)
+              
+              if (!viewerInstance || typeof viewerInstance.start !== 'function') {
+                console.error('[SimulationAutodeskViewer] Failed to create viewer instance')
+                setError('Failed to create viewer')
+                setLoading(false)
+                return
+              }
+              
+              viewerInstance.start()
+              
+              // Configure navigation settings for better zoom control
+              viewerInstance.navigation.setZoomTowardsPivot(true)
+              viewerInstance.navigation.setReverseZoomDirection(false)
+              
+              console.log('[SimulationAutodeskViewer] Viewer instance created successfully')
+            } catch (viewerError) {
+              console.error('[SimulationAutodeskViewer] Error creating viewer:', viewerError)
+              setError('Failed to create viewer instance')
+              setLoading(false)
+              return
+            }
 
             Autodesk.Viewing.Document.load(
               documentId,
@@ -356,43 +379,75 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
                   return
                 }
                 
-                await viewer.loadDocumentNode(doc, viewables)
-                
-                setLoading(false)
-                setViewerInitialized(true)
-                viewerRef.current = viewer
-
-                // Set canvas ref
-                if (viewerCanvasRef && containerRef.current) {
-                  const canvas = containerRef.current.querySelector('canvas')
-                  if (canvas) {
-                    viewerCanvasRef.current = canvas as HTMLCanvasElement
+                try {
+                  console.log('[SimulationAutodeskViewer] Loading document node...')
+                  console.log('[SimulationAutodeskViewer] viewerInstance type:', typeof viewerInstance)
+                  console.log('[SimulationAutodeskViewer] viewerInstance value:', viewerInstance)
+                  console.log('[SimulationAutodeskViewer] viewerInstance.loadDocumentNode type:', typeof viewerInstance?.loadDocumentNode)
+                  
+                  await viewerInstance.loadDocumentNode(doc, viewables)
+                  
+                  console.log('[SimulationAutodeskViewer] Document loaded successfully')
+                  console.log('[SimulationAutodeskViewer] About to store viewerInstance, type:', typeof viewerInstance)
+                  console.log('[SimulationAutodeskViewer] viewerRef:', viewerRef)
+                  console.log('[SimulationAutodeskViewer] viewerRef.current before:', viewerRef.current)
+                  
+                  setLoading(false)
+                  setViewerInitialized(true)
+                  
+                  // Store viewer reference - try direct assignment
+                  try {
+                    viewerRef.current = viewerInstance
+                    console.log('[SimulationAutodeskViewer] ✅ Stored in viewerRef.current successfully')
+                  } catch (refError) {
+                    console.error('[SimulationAutodeskViewer] ❌ Error storing in viewerRef:', refError)
+                    throw refError
                   }
-                }
+                  
+                  // Store viewer globally for element extraction
+                  try {
+                    (window as any).autodeskViewer = viewerInstance
+                    console.log('[SimulationAutodeskViewer] ✅ Stored globally successfully')
+                  } catch (globalError) {
+                    console.error('[SimulationAutodeskViewer] ❌ Error storing globally:', globalError)
+                  }
 
-                // Build element mapping after model loads
-                setTimeout(() => buildElementMapping(), 1000)
-
-                // Selection event
-                viewer.addEventListener(
-                  Autodesk.Viewing.SELECTION_CHANGED_EVENT,
-                  (event: any) => {
-                    const selection = event.dbIdArray
-                    if (selection && selection.length > 0) {
-                      const dbId = selection[0]
-                      viewer.getProperties(dbId, (props: any) => {
-                        const guid = dbIdToGuidMap.current.get(dbId) || dbId.toString()
-                        if (onElementSelectRef.current) {
-                          onElementSelectRef.current(guid, { ...props, dbId })
-                        }
-                      })
+                  // Set canvas ref
+                  if (viewerCanvasRef && containerRef.current) {
+                    const canvas = containerRef.current.querySelector('canvas')
+                    if (canvas) {
+                      viewerCanvasRef.current = canvas as HTMLCanvasElement
                     }
                   }
-                )
 
-                // Set initial appearance - no theming colors needed
-                // Elements will be colored by the simulation controller
-                viewer.setGhosting(false)
+                  // Build element mapping after model loads
+                  setTimeout(() => buildElementMapping(), 1000)
+
+                  // Selection event
+                  viewerInstance.addEventListener(
+                    Autodesk.Viewing.SELECTION_CHANGED_EVENT,
+                    (event: any) => {
+                      const selection = event.dbIdArray
+                      if (selection && selection.length > 0) {
+                        const dbId = selection[0]
+                        viewerInstance.getProperties(dbId, (props: any) => {
+                          const guid = dbIdToGuidMap.current.get(dbId) || dbId.toString()
+                          if (onElementSelectRef.current) {
+                            onElementSelectRef.current(guid, { ...props, dbId })
+                          }
+                        })
+                      }
+                    }
+                  )
+
+                  // Set initial appearance - no theming colors needed
+                  // Elements will be colored by the simulation controller
+                  viewerInstance.setGhosting(false)
+                } catch (loadError) {
+                  console.error('[SimulationAutodeskViewer] Error loading document node:', loadError)
+                  setError('Failed to load model geometry')
+                  setLoading(false)
+                }
               },
               (errCode: any, errorMsg: any) => {
                 console.error('Error loading document:', errCode, errorMsg)

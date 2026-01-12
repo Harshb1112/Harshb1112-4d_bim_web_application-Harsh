@@ -11,6 +11,10 @@ export interface AutodeskViewerRef {
   unIsolateObjects: () => void
   selectObjects: (guids: string[]) => void
   fitToView: (guids?: string[]) => void
+  hideObjects: (guids: string[]) => void
+  showAllObjects: () => void
+  applyFilter: (property: string, value: any) => void
+  clearFilter: () => void
 }
 
 interface AutodeskViewerProps {
@@ -89,6 +93,56 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
       } else {
         viewerRef.current.fitToView()
       }
+    },
+    hideObjects: (guids: string[]) => {
+      if (!viewerRef.current) return
+      const viewer = viewerRef.current
+      const dbIds = guids.map(g => parseInt(g)).filter(id => !isNaN(id))
+      if (dbIds.length > 0) {
+        viewer.hide(dbIds)
+      }
+    },
+    showAllObjects: () => {
+      if (!viewerRef.current) return
+      const viewer = viewerRef.current
+      viewer.show(viewer.model.getInstanceTree().getRootId())
+    },
+    applyFilter: (property: string, value: any) => {
+      if (!viewerRef.current) return
+      const viewer = viewerRef.current
+      
+      // Get all dbIds
+      const instanceTree = viewer.model.getInstanceTree()
+      if (!instanceTree) return
+      
+      const allDbIds: number[] = []
+      instanceTree.enumNodeChildren(instanceTree.getRootId(), (dbId: number) => {
+        allDbIds.push(dbId)
+      }, true)
+      
+      // Filter by property
+      const matchingIds: number[] = []
+      allDbIds.forEach((dbId: number) => {
+        viewer.getProperties(dbId, (props: any) => {
+          const prop = props.properties?.find((p: any) => p.displayName === property || p.attributeName === property)
+          if (prop && (prop.displayValue === value || prop.displayValue === String(value))) {
+            matchingIds.push(dbId)
+          }
+        })
+      })
+      
+      // Isolate matching elements
+      setTimeout(() => {
+        if (matchingIds.length > 0) {
+          viewer.isolate(matchingIds)
+        }
+      }, 500)
+    },
+    clearFilter: () => {
+      if (!viewerRef.current) return
+      const viewer = viewerRef.current
+      viewer.isolate([]) // Show all
+      viewer.clearThemingColors(viewer.model)
     }
   }))
 
@@ -206,6 +260,10 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
         Autodesk.Viewing.Initializer(options, () => {
           const viewer = new Autodesk.Viewing.GuiViewer3D(containerRef.current)
           viewer.start()
+          
+          // Configure navigation settings for better zoom control
+          viewer.navigation.setZoomTowardsPivot(true)
+          viewer.navigation.setReverseZoomDirection(false)
 
           Autodesk.Viewing.Document.load(
             documentId,
@@ -221,6 +279,11 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                 setLoading(false)
                 setViewerInitialized(true)
                 viewerRef.current = viewer
+                
+                // Store viewer globally for element extraction
+                if (viewer && typeof viewer === 'object') {
+                  (window as any).autodeskViewer = viewer
+                }
 
                 // Add selection event - use ref to avoid re-renders
                 viewer.addEventListener(
@@ -229,14 +292,20 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                     const selection = event.dbIdArray
                     if (selection && selection.length > 0) {
                       const dbId = selection[0]
-                      viewer.getProperties(dbId, (props: any) => {
-                        if (onElementSelectRef.current) {
-                          onElementSelectRef.current(dbId.toString(), props)
-                        }
-                      })
+                      if (viewer && viewer.getProperties) {
+                        viewer.getProperties(dbId, (props: any) => {
+                          if (onElementSelectRef.current) {
+                            onElementSelectRef.current(dbId.toString(), props)
+                          }
+                        })
+                      }
                     }
                   }
                 )
+              }).catch((err: any) => {
+                console.error('Error loading document node:', err)
+                setError('Failed to load model')
+                setLoading(false)
               })
             },
             (errCode: any, errorMsg: any) => {

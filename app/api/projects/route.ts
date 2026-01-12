@@ -314,6 +314,37 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+    
+    // 🔔 AUTOMATIC NOTIFICATION: Notify team members about new project
+    try {
+      const { createNotification } = await import('@/lib/create-notification')
+      const creatorUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { fullName: true }
+      })
+      
+      // Get all team members
+      const teamMembers = await prisma.teamMembership.findMany({
+        where: { teamId },
+        select: { userId: true }
+      })
+      
+      // Send notification to all team members (except creator)
+      for (const member of teamMembers) {
+        if (member.userId !== user.id) {
+          await createNotification({
+            userId: member.userId,
+            type: 'project_updated',
+            title: '🏗️ New Project Created',
+            body: `${creatorUser?.fullName || 'Someone'} created a new project: ${name}`,
+            url: `/project/${project.id}`
+          })
+        }
+      }
+      console.log('[Project Creation] ✅ Notifications sent to', teamMembers.length - 1, 'team members')
+    } catch (notifError) {
+      console.error('[Project Creation] Failed to send notifications:', notifError)
+    }
 
     return NextResponse.json({ project })
   } catch (error) {
