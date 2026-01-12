@@ -6,7 +6,7 @@ import { verifyToken } from '@/lib/auth'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Verify authentication
@@ -20,7 +20,9 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const modelId = parseInt(params.id)
+    // Await params (Next.js 15+ requirement)
+    const { id } = await params
+    const modelId = parseInt(id)
     if (isNaN(modelId)) {
       return NextResponse.json({ error: 'Invalid model ID' }, { status: 400 })
     }
