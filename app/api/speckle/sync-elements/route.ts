@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
-import { fetchAndExtractElements } from '@/lib/speckle-element-extractor'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,37 +20,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const elements = await fetchAndExtractElements(serverUrl, speckleToken, streamId, commitId)
-
-    const upsertPromises = elements.map(el =>
-      prisma.element.upsert({
-        where: { guid: el.guid },
-        update: {
-          modelId,
-          category: el.category,
-          family: el.family,
-          typeName: el.typeName,
-          level: el.level,
-          parameters: el.parameters
-        },
-        create: {
-          modelId,
-          guid: el.guid,
-          category: el.category,
-          family: el.family,
-          typeName: el.typeName,
-          level: el.level,
-          parameters: el.parameters
-        }
-      })
-    )
-
-    await prisma.$transaction(upsertPromises)
-
+    // TODO: Implement server-side Speckle element extraction
+    // For now, elements are extracted client-side via the viewer
     return NextResponse.json({
-      success: true,
-      message: `Synced ${elements.length} elements successfully.`
-    })
+      success: false,
+      message: 'Server-side Speckle sync not yet implemented. Use client-side extraction via the viewer.'
+    }, { status: 501 })
 
   } catch (error) {
     console.error('Element sync error:', error)

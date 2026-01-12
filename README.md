@@ -1,6 +1,6 @@
 # 🏗️ 4D BIM Web Application
 
-> **Complete Production-Ready 4D Building Information Modeling Platform**
+> **Complete Production-Ready 4D Building Information Modeling Platform with Real-Time Notifications**
 
 ## 🚀 **LIVE DEPLOYMENT**
 **🌐 Application URL:** https://4d-bim-web-application-harsh.vercel.app
@@ -12,20 +12,23 @@
 **📊 Deployment Status:**
 - ✅ **Production**: Live on Vercel
 - ✅ **Database**: PostgreSQL Cloud
+- ✅ **Real-Time Notifications**: Active
+- ✅ **Push Notifications**: Enabled
+- ✅ **API Management**: Operational
 - ✅ **Status**: Fully Operational
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.0-black)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.1-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748)](https://www.prisma.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Cloud-336791)](https://www.postgresql.org/)
-[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://4d-bim-web-app-new.vercel.app)
-[![Deployment](https://img.shields.io/badge/Deployment-Active-success)](https://4d-bim-web-app-new.vercel.app)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://4d-bim-web-application-harsh.vercel.app)
+[![Deployment](https://img.shields.io/badge/Deployment-Active-success)](https://4d-bim-web-application-harsh.vercel.app)
 
 ---
 
 ## 🎯 Overview
 
-A comprehensive 4D BIM web application that combines **3D Building Information Models** with **project scheduling** to create a powerful construction management platform.
+A comprehensive 4D BIM web application that combines **3D Building Information Models** with **project scheduling** to create a powerful construction management platform with **real-time notifications** and **advanced API management**.
 
 ### Key Capabilities
 
@@ -33,6 +36,10 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - ✅ **Advanced Gantt Chart** - Project timeline visualization with filters
 - ✅ **Team Management** - Role-based access control
 - ✅ **Task Scheduling** - Dependencies, progress tracking
+- ✅ **Real-time Notifications** - Browser push + in-app notifications
+- ✅ **API Key Management** - Secure API access for integrations
+- ✅ **Third-Party Integrations** - Slack, Teams, Jira, Webhooks
+- ✅ **Data Export** - GDPR-compliant user data export
 - ✅ **Real-time Analytics** - Project insights and statistics
 - ✅ **Secure Authentication** - JWT-based with role permissions
 - ✅ **Database Backup/Restore** - Safe data management
@@ -48,8 +55,58 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - **Role-based access control** (RBAC)
 - **Team-based data isolation**
 - **Secure password hashing** (bcrypt)
+- **Login session tracking** with device info
+- **Two-Factor Authentication** (2FA) support
 
-### 👥 Team Management
+### � Real-Time Notific*ations
+
+- **Browser Push Notifications** - Desktop + Mobile support
+- **In-App Notifications** - Real-time toast notifications
+- **Automatic Polling** - Checks every 30 seconds
+- **Notification Types**:
+  - Task assignments
+  - Task progress updates
+  - Project creation
+  - Team member additions
+  - System alerts
+- **Service Worker** - Background notification handling
+- **Email Notifications** - Important event alerts
+- **Weekly Digest** - Summary emails
+
+### 🔑 API Key Management
+
+- **Secure API Key Generation** - Admin/Manager only
+- **Key Lifecycle Management** - Create, view, revoke
+- **Usage Tracking** - Last used timestamps
+- **Expiry Management** - Optional key expiration
+- **Encrypted Storage** - AES-256 encryption
+- **API Documentation** - Coming soon
+
+### 🔗 Third-Party Integrations
+
+- **Slack Integration** - Team notifications
+- **Microsoft Teams** - Collaboration alerts
+- **Jira Integration** - Issue tracking sync
+- **Webhooks** - Custom event triggers
+- **Status Tracking** - Active/Inactive monitoring
+- **Configuration Management** - Secure credential storage
+
+### � Data Management
+
+- **Complete Data Export** - GDPR compliant
+- **Export Includes**:
+  - User profile & settings
+  - Projects & tasks
+  - Team memberships
+  - Activity logs
+  - Login history
+  - Notifications
+  - API keys
+  - Integrations
+- **JSON Format** - Easy to parse
+- **One-Click Download** - Instant export
+
+### � Team Management
 
 - Create and manage multiple teams
 - Assign team leaders and members
@@ -67,6 +124,16 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - Start/End date tracking
 - Progress monitoring
 - Team leader assignment
+- **Auto-notifications** on project events
+
+### 🎨 3D Viewer Enhancements
+
+- **Element Selection & Filtering** - Filter by type
+- **Auto-Isolation** - Hide non-selected elements
+- **Universal Element Reader** - Works with all viewer types
+- **Search & Filter** - Find elements quickly
+- **Element Properties** - Detailed information display
+- **Multi-Viewer Support** - Autodesk, IFC, Speckle
 
 ### 📊 Advanced Gantt Chart
 
@@ -97,8 +164,9 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - Priority levels
 - Assignee management
 - Link tasks to BIM elements
+- **Auto-notifications** on task events
 
-### 💰 Resource Management
+### � Resource Management
 
 - **Resource Library** - Labor, Equipment, Materials, Subcontractors
 - **Multi-Currency Support** - INR, USD, AED, GBP, EUR with real exchange rates
@@ -124,6 +192,7 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - Recent activity feed
 - Progress charts
 - Resource allocation
+- **Real-time updates** via notifications
 
 ### 💾 Database Management
 
@@ -131,18 +200,20 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - **Backup System**: JSON-based backups
 - **Restore System**: Point-in-time recovery
 - **Prisma Studio**: Visual database browser
+- **Connection Pool**: Optimized (20 connections, 60s timeout)
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **Next.js 16** - React framework with SSR
+- **Next.js 16.1** - React framework with SSR
 - **TypeScript** - Type-safe development
 - **Tailwind CSS** - Utility-first styling
 - **Shadcn/ui** - Beautiful UI components
 - **Lucide Icons** - Modern icon library
 - **date-fns** - Date manipulation
+- **Service Worker** - Push notification support
 
 ### Backend
 - **Next.js API Routes** - Serverless functions
@@ -150,11 +221,14 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 - **PostgreSQL** - Relational database
 - **JWT** - Authentication tokens
 - **bcryptjs** - Password hashing
+- **web-push** - Push notification delivery
+- **crypto** - AES-256 encryption
 
 ### 3D/BIM Integration
 - **Speckle Viewer** - 3D model visualization
 - **web-ifc** - IFC file parsing
 - **Autodesk Forge/APS** - ACC/Drive integration
+- **Universal Element Reader** - Multi-viewer support
 
 ### Development Tools
 - **ESLint** - Code linting
@@ -164,7 +238,7 @@ A comprehensive 4D BIM web application that combines **3D Building Information M
 
 ---
 
-## 🚀 Getting Started
+## � Getting Started
 
 ### Prerequisites
 
@@ -194,6 +268,10 @@ cp .env.example .env
 DATABASE_URL="postgresql://..."
 JWT_SECRET="your-secret-key"
 NEXTAUTH_URL="http://localhost:3000"
+ENCRYPTION_KEY="your-32-byte-hex-key"
+NEXT_PUBLIC_VAPID_PUBLIC_KEY="your-vapid-public-key"
+VAPID_PRIVATE_KEY="your-vapid-private-key"
+VAPID_SUBJECT="mailto:your-email@example.com"
 ```
 
 4. **Set up database**
@@ -202,7 +280,7 @@ NEXTAUTH_URL="http://localhost:3000"
 npx prisma generate
 
 # Run migrations
-npx prisma migrate dev
+npx prisma db push
 
 # Seed database (safe - no deletion)
 npm run seed
@@ -227,17 +305,76 @@ http://localhost:3000
 
 ---
 
+## 🔔 Notification System
+
+### Setup Push Notifications
+
+1. **Login to the application**
+2. **Go to Settings → Notifications**
+3. **Click "Enable Push Notifications"**
+4. **Allow browser permission**
+5. **Test with "Send Test Notification"**
+
+### Automatic Notifications
+
+Notifications are automatically sent for:
+- ✅ Task assignments
+- ✅ Task progress updates
+- ✅ Project creation (all team members)
+- ✅ New team member additions
+- ✅ System alerts
+
+---
+
+## 🔑 API Access
+
+### Generate API Key
+
+1. **Login as Admin or Manager**
+2. **Go to Settings → Advanced → API Access**
+3. **Click "Generate New Key"**
+4. **Copy the key (shown only once!)**
+5. **Use in API requests**
+
+### API Usage
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  https://4d-bim-web-application-harsh.vercel.app/api/projects
+```
+
+---
+
 ## 🎉 Status
 
 ✅ **PRODUCTION READY & DEPLOYED**
 
 - All features implemented
+- Real-time notifications active
+- API management operational
 - Database optimized
 - Security hardened
 - Documentation complete
 - Backup system ready
 - Successfully deployed on Vercel
 - No known bugs
+
+---
+
+## 📝 Recent Updates (January 2025)
+
+### v1.2.0 - Real-Time Features
+- ✅ Real-time notification system
+- ✅ Browser push notifications
+- ✅ API key management
+- ✅ Third-party integrations
+- ✅ Complete data export
+- ✅ Login session tracking
+- ✅ 3D viewer enhancements
+- ✅ Universal element reader
+- ✅ Auto-isolation for selected elements
+- ✅ Fixed authentication issues
+- ✅ Database connection pool optimization
 
 ---
 
@@ -249,7 +386,7 @@ For issues or questions:
 
 ---
 
-**Last Updated**: January 2025
-**Version**: 1.1.0
+**Last Updated**: January 12, 2026
+**Version**: 1.2.0
 
-**Deployment**: https://4d-bim-web-app-new.vercel.app
+**Deployment**: https://4d-bim-web-application-harsh.vercel.app
