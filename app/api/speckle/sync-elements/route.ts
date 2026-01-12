@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 
+// Server-side Speckle element sync endpoint
 export async function POST(request: NextRequest) {
   try {
     const token = getTokenFromRequest(request)
