@@ -10,6 +10,30 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+// Generic email sending function
+export async function sendEmail(options: {
+  to: string
+  subject: string
+  html: string
+  from?: string
+}) {
+  const mailOptions = {
+    from: options.from || process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+  }
+
+  try {
+    await transporter.sendMail(mailOptions)
+    console.log('✅ Email sent to:', options.to)
+    return { success: true }
+  } catch (error) {
+    console.error('❌ Failed to send email:', error)
+    return { success: false, error }
+  }
+}
+
 export async function sendTaskAssignmentEmail(
   userEmail: string,
   userName: string,
