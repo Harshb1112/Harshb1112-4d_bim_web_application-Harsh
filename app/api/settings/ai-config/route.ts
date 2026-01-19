@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       where: { id: user.id },
       select: {
         aiEnabled: true,
+        aiProvider: true,
         openaiApiKey: true
       }
     });
@@ -28,12 +29,14 @@ export async function GET(request: NextRequest) {
     if (!userConfig) {
       return NextResponse.json({
         aiEnabled: false,
+        aiProvider: 'openai',
         hasApiKey: false
       });
     }
 
     return NextResponse.json({
       aiEnabled: userConfig.aiEnabled,
+      aiProvider: userConfig.aiProvider || 'openai',
       hasApiKey: !!userConfig.openaiApiKey
     });
   } catch (error) {
@@ -59,27 +62,39 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { aiEnabled, apiKey } = body;
+    let { aiEnabled, aiProvider, apiKey } = body;
 
-    // Validate API key format if provided
-    if (aiEnabled && apiKey && !apiKey.startsWith('sk-')) {
-      return NextResponse.json(
-        { error: 'Invalid OpenAI API key format' },
-        { status: 400 }
-      );
+    // Auto-detect provider from API key if provided
+    if (apiKey) {
+      if (apiKey.startsWith('sk-ant-')) {
+        aiProvider = 'claude';
+        console.log('🔍 Auto-detected Claude API key');
+      } else if (apiKey.startsWith('sk-')) {
+        aiProvider = 'openai';
+        console.log('🔍 Auto-detected OpenAI API key');
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid API key format. OpenAI keys start with "sk-", Claude keys start with "sk-ant-"' },
+          { status: 400 }
+        );
+      }
     }
+
+    console.log('💾 Saving AI config:', { aiEnabled, aiProvider, hasApiKey: !!apiKey });
 
     // Update user's AI configuration in database
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         aiEnabled: aiEnabled || false,
+        aiProvider: aiProvider || 'openai',
         openaiApiKey: apiKey ? encrypt(apiKey) : null // Encrypt before saving
       }
     });
 
     console.log(`✅ AI configuration saved for user ${user.id}:`, {
       aiEnabled: updatedUser.aiEnabled,
+      aiProvider: updatedUser.aiProvider,
       hasApiKey: !!updatedUser.openaiApiKey
     });
 

@@ -1,11 +1,7 @@
-// Real AI Task Generator API - Working with OpenAI GPT-4o-mini
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
-import OpenAI from 'openai'
-
-// Note: OpenAI is initialized per-request with global config
-// No longer using process.env.OPENAI_API_KEY
+import { getUserAIConfig, callAI, handleAIError } from '@/lib/ai-helper'
 
 export async function POST(request: NextRequest) {
   try {
@@ -92,84 +88,17 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Project found:', project.name)
 
-    // Check user's AI configuration from database
-    const userConfig = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        aiEnabled: true,
-        openaiApiKey: true
-      }
-    });
-
-    if (!userConfig || !userConfig.aiEnabled) {
-      console.log('❌ AI features disabled for this user');
+    // Get user's AI configuration
+    const aiConfig = await getUserAIConfig(user.id);
+    if (!aiConfig) {
       return NextResponse.json({ 
-        error: 'AI features are disabled',
-        message: 'Enable AI in Settings → AI Configuration',
+        error: 'AI features not configured',
+        message: 'Enable AI and add API key in Settings',
         aiEnabled: false
       }, { status: 403 });
     }
 
-    if (!userConfig.openaiApiKey) {
-      console.log('❌ No OpenAI API key configured for this user');
-      return NextResponse.json({ 
-        error: 'OpenAI API key not configured',
-        message: 'Add your OpenAI API key in Settings → AI Configuration',
-        aiEnabled: true,
-        apiKeyMissing: true
-      }, { status: 403 });
-    }
-
-    // Decrypt user's API key
-    const { decrypt } = require('@/lib/encryption');
-    const userApiKey = decrypt(userConfig.openaiApiKey);
-    
-    console.log('✅ AI enabled with user-specific API key');
-
-    // Debug: Check decrypted key format
-    const keyPreview = userApiKey ? 
-      `${userApiKey.substring(0, 7)}...${userApiKey.slice(-4)}` : 
-      'NO KEY';
-    console.log(`🔑 Using API key: ${keyPreview}`);
-
-    // Check if API key has credits (test with a minimal request)
-    try {
-      console.log('🔍 Checking OpenAI API key validity and credits...');
-      const testOpenAI = new OpenAI({ apiKey: userApiKey });
-      
-      // Make a minimal test request to check if key is valid and has credits
-      await testOpenAI.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: "test" }],
-        max_tokens: 5
-      });
-      
-      console.log('✅ API key is valid and has credits');
-    } catch (error: any) {
-      if (error?.status === 429) {
-        console.log('❌ Rate limit reached - No credits or quota exceeded');
-        return NextResponse.json({
-          success: false,
-          error: 'OpenAI API quota exceeded',
-          message: 'Your OpenAI API key has reached its rate limit or has no credits.',
-          solution: 'Add payment method at https://platform.openai.com/account/billing',
-          billingUrl: 'https://platform.openai.com/account/billing',
-          noCredits: true,
-          elementsProcessed: 0 // No elements processed when no credits
-        }, { status: 429 });
-      } else if (error?.status === 401) {
-        console.log('❌ Invalid API key');
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid OpenAI API key',
-          message: 'The configured API key is invalid. Please update it in Settings.',
-          invalidKey: true,
-          elementsProcessed: 0
-        }, { status: 401 });
-      }
-      // Other errors, continue
-      console.log('⚠️ API key check warning:', error.message);
-    }
+    console.log(`✅ Using ${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} for task generation`);
 
     // NOW process ALL elements - credit check already passed
     const totalElements = elementsToAnalyze.length;
@@ -357,60 +286,56 @@ RESPONSE FORMAT (JSON):
 Provide realistic, actionable tasks with REAL construction timelines (matching project duration) and ACTUAL element names from the BIM model.
 `
 
-    // Call OpenAI GPT for real AI analysis with rate limit handling
-    // Use user-specific API key
-    const projectOpenAI = new OpenAI({
-      apiKey: userApiKey,
-    });
+    // Call AI for real analysis
+    const systemPrompt = "You are an expert construction project manager with 20+ years of experience in BIM-based project planning. Provide detailed, realistic, and actionable construction task recommendations. Return valid JSON only.";
 
-    let completion;
+    let aiResponse: string;
     try {
-      completion = await projectOpenAI.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert construction project manager with 20+ years of experience in BIM-based project planning. Provide detailed, realistic, and actionable construction task recommendations."
-          },
-          {
-            role: "user",
-            content: aiPrompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-        response_format: { type: "json_object" }
-      });
+      aiResponse = await callAI(aiConfig, aiPrompt, systemPrompt, 4000);
     } catch (error: any) {
-      // Handle rate limit error
-      if (error?.status === 429) {
-        console.log('❌ OpenAI rate limit reached!');
-        console.log('💡 Solution: Add payment method at https://platform.openai.com/account/billing');
-        
-        return NextResponse.json({
-          success: false,
-          error: 'OpenAI rate limit reached',
-          message: 'Free tier limit exceeded. Add payment method to OpenAI for unlimited usage.',
-          fallback: true,
-          recommendation: 'Alternative: Parse your IFC model to automatically generate tasks with resources.',
-          billingUrl: 'https://platform.openai.com/account/billing',
-          noCredits: true
-        }, { status: 429 });
-      }
-      throw error; // Re-throw other errors
+      // Handle AI errors with proper error response
+      const errorResponse = handleAIError(error);
+      return NextResponse.json(errorResponse.json, { status: errorResponse.status });
     }
 
-    const aiResponse = completion.choices[0].message.content
     if (!aiResponse) {
       throw new Error('No response from AI')
     }
 
-    let aiAnalysis
+    let aiAnalysis: any
     try {
-      aiAnalysis = JSON.parse(aiResponse)
+      // Clean the response - remove markdown, extra text, etc.
+      let cleanedResponse = aiResponse.trim();
+      
+      // Remove common prefixes that Claude/GPT might add
+      const prefixPatterns = [
+        /^Here is.*?JSON.*?:/i,
+        /^Here's.*?JSON.*?:/i,
+        /^The.*?JSON.*?:/i,
+        /^```json\s*/,
+        /^```\s*/,
+      ];
+      
+      for (const pattern of prefixPatterns) {
+        cleanedResponse = cleanedResponse.replace(pattern, '');
+      }
+      
+      // Remove trailing markdown
+      cleanedResponse = cleanedResponse.replace(/\s*```\s*$/, '');
+      
+      // Try to find JSON object if there's still extra text
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedResponse = jsonMatch[0];
+      }
+      
+      console.log('🧹 Cleaned AI response, attempting parse...');
+      aiAnalysis = JSON.parse(cleanedResponse);
+      console.log('✅ Successfully parsed AI response');
     } catch (parseError) {
-      console.error('Failed to parse AI response:', aiResponse)
-      throw new Error('Invalid AI response format')
+      console.error('❌ Failed to parse AI response:', aiResponse.substring(0, 500) + '...');
+      console.error('Parse error:', parseError);
+      throw new Error('Invalid AI response format. The AI returned malformed JSON.');
     }
 
     // Process AI suggestions and add REALISTIC dates based on project timeline
@@ -478,7 +403,8 @@ Provide realistic, actionable tasks with REAL construction timelines (matching p
         elementGuids: elementsToAnalyze.map((el: any) => el.guid || el.id),
         aiGenerated: true,
         generatedAt: new Date().toISOString(),
-        generatedBy: `OpenAI GPT-4o-mini (User: ${user.email})`
+        generatedBy: `${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} (User: ${user.email})`,
+        aiProvider: aiConfig.aiProvider
       }
     })
 
@@ -494,29 +420,21 @@ Provide realistic, actionable tasks with REAL construction timelines (matching p
         recommendations: aiAnalysis.recommendations,
         elementsAnalyzed: elementsToAnalyze.length,
         elementTypes: Object.keys(elementsByType),
-        aiModel: 'GPT-4o-mini',
+        aiProvider: aiConfig.aiProvider,
+        aiModel: aiConfig.aiProvider === 'claude' ? 'claude-3-5-sonnet' : 'gpt-4o-mini',
         processingTime: new Date().toISOString()
       }
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Real AI Task Generation error:', error)
     console.error('Error details:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      message: error.message || 'Unknown error',
+      stack: error.stack
     })
     
-    // Provide helpful error messages
-    if (error instanceof Error && error.message.includes('API key')) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.' },
-        { status: 500 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: `Failed to generate AI tasks: ${error instanceof Error ? error.message : 'Unknown error'}` },
-      { status: 500 }
-    )
+    // Handle AI errors with proper error response
+    const errorResponse = handleAIError(error);
+    return NextResponse.json(errorResponse.json, { status: errorResponse.status });
   }
 }

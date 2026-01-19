@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import OpenAI from 'openai';
-import { decrypt } from '@/lib/encryption';
+import { getUserAIConfig, callAI, handleAIError } from '@/lib/ai-helper';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,62 +15,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const { projectId, question, projectData } = await request.json();
+    const { projectId, question, projectData, healthMetrics } = await request.json();
 
-    if (!projectId || !question) {
-      return NextResponse.json({ error: 'Project ID and question required' }, { status: 400 });
+    if (!projectId) {
+      return NextResponse.json({ error: 'Project ID required' }, { status: 400 });
     }
 
-    // Check user's AI configuration
-    const userConfig = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        aiEnabled: true,
-        openaiApiKey: true
-      }
-    });
-
-    if (!userConfig || !userConfig.aiEnabled) {
+    // Get user's AI configuration
+    const aiConfig = await getUserAIConfig(user.id);
+    if (!aiConfig) {
       return NextResponse.json({ 
-        error: 'AI features are disabled',
+        error: 'AI features not configured',
+        message: 'Enable AI and add API key in Settings',
         aiEnabled: false
       }, { status: 403 });
     }
 
-    if (!userConfig.openaiApiKey) {
-      return NextResponse.json({ 
-        error: 'OpenAI API key not configured',
-        apiKeyMissing: true
-      }, { status: 403 });
-    }
+    console.log(`✅ Using ${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} for project insights`);
 
-    const userApiKey = decrypt(userConfig.openaiApiKey);
+    // If healthMetrics provided, generate health analysis
+    if (healthMetrics) {
+      const healthPrompt = `You are an expert construction project manager analyzing project health metrics. Provide a comprehensive analysis with actionable recommendations.
 
-    // Check credits
-    try {
-      console.log('🔍 Checking OpenAI credits...');
-      const testOpenAI = new OpenAI({ apiKey: userApiKey });
-      await testOpenAI.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: "test" }],
-        max_tokens: 5
+**PROJECT HEALTH METRICS:**
+- Overall Health Score: ${healthMetrics.overallScore}/100 (${healthMetrics.overallScore >= 80 ? 'Excellent' : healthMetrics.overallScore >= 60 ? 'Good' : healthMetrics.overallScore >= 40 ? 'Fair' : healthMetrics.overallScore >= 20 ? 'Poor' : 'Critical'})
+- Schedule Score: ${healthMetrics.scheduleScore}/100
+- Cost Score: ${healthMetrics.costScore}/100
+- Resource Score: ${healthMetrics.resourceScore}/100
+
+**EVM METRICS:**
+- SPI (Schedule Performance Index): ${healthMetrics.spi.toFixed(2)} ${healthMetrics.spi >= 1 ? '✓ On Schedule' : '⚠ Behind Schedule'}
+- CPI (Cost Performance Index): ${healthMetrics.cpi.toFixed(2)} ${healthMetrics.cpi >= 1 ? '✓ On Budget' : '⚠ Over Budget'}
+- Schedule Variance: $${healthMetrics.scheduleVariance.toFixed(0)}
+- Cost Variance: $${healthMetrics.costVariance.toFixed(0)}
+- BAC (Budget at Completion): $${healthMetrics.bac}
+- EAC (Estimate at Completion): $${healthMetrics.eac.toFixed(0)}
+- VAC (Variance at Completion): $${healthMetrics.vac.toFixed(0)}
+
+**ANALYSIS REQUIRED:**
+1. Overall project health assessment
+2. Key risks and concerns
+3. Specific recommendations for improvement
+4. Priority actions needed
+5. Positive aspects to maintain
+
+Provide a clear, actionable analysis in 3-4 paragraphs. Be specific and reference the metrics.`;
+
+      const systemPrompt = "You are an expert construction project manager specializing in EVM analysis and project health monitoring. Provide clear, actionable insights.";
+
+      console.log('🤖 Calling AI for health analysis...');
+      const analysis = await callAI(aiConfig, healthPrompt, systemPrompt, 800);
+      console.log('✅ AI health analysis generated');
+
+      return NextResponse.json({
+        success: true,
+        analysis,
+        aiProvider: aiConfig.aiProvider
       });
-      console.log('✅ Credits available');
-    } catch (error: any) {
-      if (error?.status === 429) {
-        return NextResponse.json({
-          error: 'OpenAI API quota exceeded',
-          noCredits: true
-        }, { status: 429 });
-      } else if (error?.status === 401) {
-        return NextResponse.json({
-          error: 'Invalid OpenAI API key',
-          invalidKey: true
-        }, { status: 401 });
-      }
     }
 
-    const openai = new OpenAI({ apiKey: userApiKey });
+    // Original Q&A functionality
+    if (!question) {
+      return NextResponse.json({ error: 'Question required for Q&A mode' }, { status: 400 });
+    }
 
     // Prepare project context
     const tasks = projectData.tasks || [];
@@ -114,37 +120,23 @@ ${question}
 
 **RESPONSE:**`;
 
-    console.log('🤖 Calling OpenAI for project insights...');
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert construction project manager with 20+ years of experience. Provide detailed, actionable insights based on project data."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 1000
-    });
+    const systemPrompt = "You are an expert construction project manager with 20+ years of experience. Provide detailed, actionable insights based on project data.";
 
-    const response = completion.choices[0].message.content;
+    console.log('🤖 Calling AI for project insights...');
+    const response = await callAI(aiConfig, prompt, systemPrompt, 1000);
     console.log('✅ AI response generated');
 
     return NextResponse.json({
       success: true,
       response,
-      tokensUsed: completion.usage?.total_tokens || 0
+      aiProvider: aiConfig.aiProvider
     });
 
   } catch (error: any) {
     console.error('❌ AI Insights error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate insights' },
-      { status: 500 }
-    );
+    
+    // Handle AI errors with proper error response
+    const errorResponse = handleAIError(error);
+    return NextResponse.json(errorResponse.json, { status: errorResponse.status });
   }
 }

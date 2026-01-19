@@ -1,9 +1,8 @@
-// Real AI Link Suggestion API - Using OpenAI GPT-4o-mini
+// Real AI Link Suggestion API - Using OpenAI or Claude
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
-import OpenAI from 'openai'
-import { decrypt } from '@/lib/encryption';
+import { getUserAIConfig, callAI, handleAIError } from '@/lib/ai-helper'
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const { projectId, elementSearchTerm = '', taskSearchTerm = '' } = await request.json()
+    const { projectId } = await request.json()
 
     if (!projectId) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 })
@@ -25,59 +24,17 @@ export async function POST(request: NextRequest) {
 
     console.log('🤖 Real AI Link Suggestion: Analyzing project', projectId)
 
-    // Check user's AI configuration
-    const userConfig = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        aiEnabled: true,
-        openaiApiKey: true
-      }
-    });
-
-    if (!userConfig || !userConfig.aiEnabled) {
+    // Get user's AI configuration
+    const aiConfig = await getUserAIConfig(user.id);
+    if (!aiConfig) {
       return NextResponse.json({ 
-        error: 'AI features are disabled',
-        message: 'Enable AI in Settings → AI Configuration',
+        error: 'AI features not configured',
+        message: 'Enable AI and add API key in Settings',
         aiEnabled: false
       }, { status: 403 });
     }
 
-    if (!userConfig.openaiApiKey) {
-      return NextResponse.json({ 
-        error: 'OpenAI API key not configured',
-        message: 'Add your OpenAI API key in Settings → AI Configuration',
-        apiKeyMissing: true
-      }, { status: 403 });
-    }
-
-    const userApiKey = decrypt(userConfig.openaiApiKey);
-
-    // Check credits
-    try {
-      console.log('🔍 Checking credits...');
-      const testOpenAI = new OpenAI({ apiKey: userApiKey });
-      await testOpenAI.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: "test" }],
-        max_tokens: 5
-      });
-      console.log('✅ Credits available');
-    } catch (error: any) {
-      if (error?.status === 429) {
-        return NextResponse.json({
-          error: 'OpenAI API quota exceeded',
-          message: 'No credits available',
-          noCredits: true
-        }, { status: 429 });
-      } else if (error?.status === 401) {
-        return NextResponse.json({
-          error: 'Invalid OpenAI API key',
-          invalidKey: true
-        }, { status: 401 });
-      }
-    }
-
-    const openai = new OpenAI({ apiKey: userApiKey });
+    console.log(`✅ Using ${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} for link suggestions`);
 
     // Fetch elements
     const elements = await prisma.element.findMany({
@@ -94,7 +51,7 @@ export async function POST(request: NextRequest) {
         typeName: true,
         parameters: true,
       },
-      take: 100 // Limit for AI processing
+      take: 100
     })
 
     // Fetch tasks
@@ -137,7 +94,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Use OpenAI to suggest intelligent links
+    // AI prompt
     const aiPrompt = `You are a construction project manager. Analyze BIM elements and tasks to suggest intelligent links.
 
 ELEMENTS (${elements.length}):
@@ -149,39 +106,44 @@ ${tasks.map(task => `- ${task.name} (ID: ${task.id})`).join('\n')}
 Suggest which elements should be linked to which tasks based on construction logic.
 
 Return JSON array (max 30 suggestions):
-[
-  {
-    "elementId": number,
-    "taskId": number,
-    "reason": "Why this element belongs to this task"
-  }
-]`
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert in construction sequencing and BIM coordination. Suggest logical element-task links."
-        },
-        {
-          role: "user",
-          content: aiPrompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 2000,
-      response_format: { type: "json_object" }
-    })
-
-    const aiResponse = completion.choices[0].message.content
-    if (!aiResponse) {
-      throw new Error('No response from AI')
+{
+  "suggestions": [
+    {
+      "elementId": number,
+      "taskId": number,
+      "reason": "Why this element belongs to this task"
     }
+  ]
+}`
 
-    let aiSuggestions
+    const systemPrompt = "You are an expert in construction sequencing and BIM coordination. Suggest logical element-task links. Return valid JSON only.";
+
+    const aiResponse = await callAI(aiConfig, aiPrompt, systemPrompt, 2000);
+
+    let aiSuggestions: any[] = []
     try {
-      const parsed = JSON.parse(aiResponse)
+      // Clean the response
+      let cleanedResponse = aiResponse.trim();
+      
+      const prefixPatterns = [
+        /^Here is.*?JSON.*?:/i,
+        /^Here's.*?JSON.*?:/i,
+        /^```json\s*/,
+        /^```\s*/,
+      ];
+      
+      for (const pattern of prefixPatterns) {
+        cleanedResponse = cleanedResponse.replace(pattern, '');
+      }
+      
+      cleanedResponse = cleanedResponse.replace(/\s*```\s*$/, '');
+      
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedResponse = jsonMatch[0];
+      }
+      
+      const parsed = JSON.parse(cleanedResponse)
       aiSuggestions = parsed.suggestions || parsed.links || []
     } catch (parseError) {
       console.error('Failed to parse AI response:', aiResponse)
@@ -193,7 +155,7 @@ Return JSON array (max 30 suggestions):
       .filter((link: any) => !existingLinkSet.has(`${link.elementId}-${link.taskId}`))
       .slice(0, 50)
 
-    console.log(`✅ Real AI suggested ${suggestedLinks.length} element-task links`)
+    console.log(`✅ AI suggested ${suggestedLinks.length} element-task links`)
 
     return NextResponse.json({
       suggestions: suggestedLinks,
@@ -201,22 +163,14 @@ Return JSON array (max 30 suggestions):
       elementsCount: elements.length,
       tasksCount: tasks.length,
       aiGenerated: true,
-      model: 'gpt-4o-mini'
+      provider: aiConfig.aiProvider
     })
 
-  } catch (error) {
-    console.error('❌ Real AI link suggestion error:', error)
+  } catch (error: any) {
+    console.error('❌ AI link suggestion error:', error)
     
-    if (error instanceof Error && error.message.includes('API key')) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: 'Internal server error during AI link suggestion' },
-      { status: 500 }
-    )
+    // Handle AI errors with proper error response
+    const errorResponse = handleAIError(error);
+    return NextResponse.json(errorResponse.json, { status: errorResponse.status });
   }
 }

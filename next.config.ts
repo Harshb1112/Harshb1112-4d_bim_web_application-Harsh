@@ -1,4 +1,4 @@
-// next.config.js
+// next.config.ts
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -6,39 +6,42 @@ const nextConfig = {
   output: 'standalone',
   
   experimental: {
-    swcPlugins: [
-      ["@next/swc-wasm-nodejs", {}],
-    ],
-    turbo: {
-      resolveAlias: {
-        '#lodash': 'lodash-es',
-      },
-    },
     serverActions: {
       bodySizeLimit: '100mb',
     },
-    middlewareClientMaxBodySize: '100mb',
-    serverComponentsExternalPackages: ['@prisma/client'],
+    proxyClientMaxBodySize: '100mb',
+  },
+
+  // Move serverComponentsExternalPackages out of experimental
+  serverExternalPackages: ['@prisma/client'],
+
+  // Turbopack config for module resolution
+  turbopack: {
+    resolveAlias: {
+      '#lodash': 'lodash-es',
+    },
   },
 
   typescript: {
     ignoreBuildErrors: false,
   },
 
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
-
-  // File upload configuration
-  api: {
-    bodyParser: {
-      sizeLimit: '100mb',
-    },
-  },
-
-  // Optimize images for production
+  // Optimize images for production - use remotePatterns instead of domains
   images: {
-    domains: ['localhost', 'app.speckle.systems', 'developer.api.autodesk.com'],
+    remotePatterns: [
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+      },
+      {
+        protocol: 'https',
+        hostname: 'app.speckle.systems',
+      },
+      {
+        protocol: 'https',
+        hostname: 'developer.api.autodesk.com',
+      },
+    ],
     unoptimized: false,
   },
 

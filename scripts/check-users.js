@@ -1,51 +1,23 @@
-// Quick script to check all users in database
-const { PrismaClient } = require('@prisma/client')
-const prisma = new PrismaClient()
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 async function checkUsers() {
-  try {
-    console.log('📊 Checking all users in database...\n')
-    
-    const users = await prisma.user.findMany({
-      include: {
-        teamMemberships: {
-          include: {
-            team: true
-          }
-        }
-      },
-      orderBy: {
-        role: 'asc'
-      }
-    })
-
-    console.log(`Total Users: ${users.length}\n`)
-
-    users.forEach(user => {
-      console.log(`👤 ${user.fullName}`)
-      console.log(`   Email: ${user.email}`)
-      console.log(`   Role: ${user.role}`)
-      console.log(`   Teams: ${user.teamMemberships.map(m => m.team.name).join(', ') || 'None'}`)
-      console.log(`   Created: ${user.createdAt.toLocaleDateString()}`)
-      console.log('')
-    })
-
-    // Count by role
-    const roleCount = users.reduce((acc, user) => {
-      acc[user.role] = (acc[user.role] || 0) + 1
-      return acc
-    }, {})
-
-    console.log('📈 Users by Role:')
-    Object.entries(roleCount).forEach(([role, count]) => {
-      console.log(`   ${role}: ${count}`)
-    })
-
-  } catch (error) {
-    console.error('❌ Error:', error)
-  } finally {
-    await prisma.$disconnect()
-  }
+  const users = await prisma.user.findMany({
+    select: { id: true, fullName: true, email: true, role: true }
+  });
+  
+  console.log('\n=== Current Users ===');
+  users.forEach(u => {
+    console.log(`ID: ${u.id} | Name: ${u.fullName} | Email: ${u.email} | Role: ${u.role}`);
+  });
+  
+  const teams = await prisma.team.findMany();
+  console.log('\n=== Current Teams ===');
+  teams.forEach(t => {
+    console.log(`ID: ${t.id} | Name: ${t.name}`);
+  });
+  
+  await prisma.$disconnect();
 }
 
-checkUsers()
+checkUsers();

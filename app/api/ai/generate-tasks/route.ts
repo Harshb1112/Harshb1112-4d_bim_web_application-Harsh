@@ -1,23 +1,12 @@
-// Real AI Task Generator API - Using OpenAI GPT-4o-mini
+// Real AI Task Generator API - Using OpenAI or Claude
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
-import OpenAI from 'openai'
-
-// Initialize OpenAI lazily
-let openai: OpenAI | null = null
-function getOpenAI() {
-  if (!openai && process.env.OPENAI_API_KEY) {
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-  }
-  return openai
-}
+import { getUserAIConfig, callAI, handleAIError } from '@/lib/ai-helper'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🤖 AI Task Generator (Legacy) API called - Redirecting to smart generator')
+    console.log('🤖 AI Task Generator (Legacy) API called')
     
     const token = getTokenFromRequest(request)
     if (!token) {
@@ -29,11 +18,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const { projectId, options = {} } = await request.json()
+    const { 
+      projectId, 
+      options = {},
+      aiProvider, // User-selected provider (optional)
+      advancedMode = false,
+      includeResourceAllocation = false,
+      includeCostEstimation = false,
+      includeRiskAnalysis = false,
+      includeDependencies = false,
+      projectType = 'general', // residential, commercial, infrastructure, industrial
+      complexity = 'medium' // low, medium, high
+    } = await request.json()
     
     if (!projectId) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 })
     }
+
+    // Get user's AI configuration
+    let aiConfig = await getUserAIConfig(user.id);
+    if (!aiConfig) {
+      return NextResponse.json({ 
+        error: 'AI features not configured',
+        message: 'Enable AI and add API key in Settings',
+        aiEnabled: false
+      }, { status: 403 });
+    }
+
+    // Override provider if user selected one
+    if (aiProvider && (aiProvider === 'openai' || aiProvider === 'claude')) {
+      aiConfig.aiProvider = aiProvider;
+      console.log(`🔄 User selected provider: ${aiProvider}`);
+    }
+
+    console.log(`✅ Using ${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} for task generation`);
 
     // Fetch all elements from project
     const elements = await prisma.element.findMany({
@@ -49,14 +67,7 @@ export async function POST(request: NextRequest) {
         family: true,
         typeName: true,
         level: true,
-        parameters: true,
-        properties: {
-          select: {
-            name: true,
-            value: true,
-            type: true
-          }
-        }
+        parameters: true
       }
     })
 
@@ -69,11 +80,6 @@ export async function POST(request: NextRequest) {
     // Format elements for AI
     const formattedElements = elements.map(element => {
       const propertiesObj: any = {}
-      if (element.properties && element.properties.length > 0) {
-        element.properties.forEach(prop => {
-          propertiesObj[prop.name] = prop.value
-        })
-      }
       
       if (element.parameters && typeof element.parameters === 'object') {
         Object.assign(propertiesObj, element.parameters)
@@ -95,114 +101,194 @@ export async function POST(request: NextRequest) {
     // This ensures consistency across both endpoints
     console.log(`🤖 Using Real AI: Processing ${formattedElements.length} elements`)
 
-    // Use OpenAI to generate tasks
-    const aiPrompt = `You are a construction project manager. Analyze ${formattedElements.length} BIM elements and create 6-10 construction tasks.
+    // Build advanced AI prompt based on options
+    let aiPrompt = `You are an expert construction project manager with 20+ years of experience. Analyze ${formattedElements.length} BIM elements and create ${advancedMode ? '15-25' : '6-10'} detailed construction tasks.
 
-Element Summary:
+PROJECT CONTEXT:
+- Project Type: ${projectType}
+- Complexity Level: ${complexity}
+- Total Elements: ${formattedElements.length}
+
+ELEMENT BREAKDOWN:
 ${Object.entries(formattedElements.reduce((acc: any, el) => {
   acc[el.type] = (acc[el.type] || 0) + 1
   return acc
-}, {})).map(([type, count]) => `- ${type}: ${count}`).join('\n')}
+}, {})).map(([type, count]) => `- ${type}: ${count} units`).join('\n')}
 
-Create realistic construction tasks covering all phases from start to finish.
+DETAILED ELEMENT ANALYSIS:
+${formattedElements.slice(0, 20).map(el => 
+  `• ${el.type} - ${el.name} (Level: ${el.level || 'N/A'})`
+).join('\n')}
 
-Return JSON:
+REQUIREMENTS:
+1. Create realistic, actionable construction tasks covering all phases
+2. Use actual element names and quantities from the BIM model
+3. Consider construction sequencing and logical dependencies
+4. Include realistic durations based on industry standards
+${includeResourceAllocation ? '5. Specify required resources (labor, equipment, materials)' : ''}
+${includeCostEstimation ? '6. Provide detailed cost breakdowns with unit rates' : ''}
+${includeRiskAnalysis ? '7. Identify potential risks and mitigation strategies' : ''}
+${includeDependencies ? '8. Define task dependencies and critical path items' : ''}
+
+Return ONLY valid JSON (no markdown, no explanations):
 {
   "tasks": [
     {
-      "name": "Task name using actual element names",
-      "description": "Detailed description",
+      "name": "Task name with specific element references",
+      "description": "Detailed description with quantities and specifications",
       "estimatedDuration": 45,
       "priority": "high|medium|low",
       "phase": "Pre-Construction|Foundation|Structure|Envelope|MEP|Interior Finishes|Exterior Finishes|Closeout",
       "estimatedCost": 150000,
-      "phaseOrder": 1
+      "phaseOrder": 1${includeResourceAllocation ? ',\n      "resources": {"labor": "5 workers", "equipment": "Crane, Concrete mixer", "materials": "Concrete, Rebar"}' : ''}${includeCostEstimation ? ',\n      "costBreakdown": {"labor": 50000, "materials": 80000, "equipment": 20000}' : ''}${includeRiskAnalysis ? ',\n      "risks": ["Weather delays", "Material shortage"], "mitigation": ["Weather monitoring", "Early procurement"]' : ''}${includeDependencies ? ',\n      "dependencies": [], "criticalPath": false' : ''}
     }
-  ]
+  ]${includeRiskAnalysis ? ',\n  "projectRisks": [\n    {"risk": "Overall project risk", "severity": "high|medium|low", "mitigation": "Strategy"}\n  ]' : ''}${advancedMode ? ',\n  "insights": {\n    "totalEstimatedDuration": 180,\n    "criticalPathDuration": 150,\n    "recommendedStartDate": "2025-02-01",\n    "keyMilestones": ["Foundation Complete", "Structure Complete", "MEP Rough-in", "Final Inspection"]\n  }' : ''}
 }`
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert construction project manager. Provide realistic, actionable construction tasks."
-        },
-        {
-          role: "user",
-          content: aiPrompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 3000,
-      response_format: { type: "json_object" }
-    })
+    const systemPrompt = `You are an expert construction project manager with deep knowledge of:
+- Construction sequencing and scheduling
+- BIM coordination and clash detection
+- Resource planning and cost estimation
+- Risk management and quality control
+- Building codes and safety regulations
 
-    const aiResponse = completion.choices[0].message.content
-    if (!aiResponse) {
-      throw new Error('No response from AI')
+Provide realistic, actionable construction tasks based on actual BIM data. Return ONLY valid JSON without any markdown formatting or explanations.`;
+
+    const maxTokens = advancedMode ? 6000 : 3000;
+    const aiResponse = await callAI(aiConfig, aiPrompt, systemPrompt, maxTokens);
+    
+    // Clean and parse AI response
+    let aiAnalysis: any;
+    try {
+      let cleanedResponse = aiResponse.trim();
+      
+      // Remove common prefixes
+      const prefixPatterns = [
+        /^Here is.*?JSON.*?:/i,
+        /^Here's.*?JSON.*?:/i,
+        /^```json\s*/,
+        /^```\s*/,
+      ];
+      
+      for (const pattern of prefixPatterns) {
+        cleanedResponse = cleanedResponse.replace(pattern, '');
+      }
+      
+      cleanedResponse = cleanedResponse.replace(/\s*```\s*$/, '');
+      
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedResponse = jsonMatch[0];
+      }
+      
+      aiAnalysis = JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', aiResponse.substring(0, 500));
+      throw new Error('Invalid AI response format');
     }
 
-    const aiAnalysis = JSON.parse(aiResponse)
-
-    // Process tasks with realistic dates
+    // Process tasks with realistic dates and advanced features
+    let cumulativeDays = 0;
     const processedTasks = aiAnalysis.tasks.map((task: any, index: number) => {
       const startDate = new Date()
-      startDate.setDate(startDate.getDate() + (index * 7)) // Weekly intervals
+      startDate.setDate(startDate.getDate() + cumulativeDays)
       
+      const duration = task.estimatedDuration || 30;
       const endDate = new Date(startDate)
-      endDate.setDate(endDate.getDate() + task.estimatedDuration)
+      endDate.setDate(endDate.getDate() + duration)
+      
+      // Update cumulative days for next task (with some overlap for parallel tasks)
+      cumulativeDays += Math.floor(duration * 0.7); // 30% overlap
 
-      return {
+      const processedTask: any = {
         name: task.name,
         description: task.description,
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
-        durationDays: task.estimatedDuration || 30,
+        durationDays: duration,
         elementCount: formattedElements.length,
-        elementIds: formattedElements.map(e => e.id),
+        elementIds: formattedElements.map((e: any) => e.id),
         phase: task.phase || 'Construction',
         phaseOrder: task.phaseOrder || (index + 1),
         priority: task.priority || 'medium',
-        resource: 'Construction Team',
+        resource: task.resources?.labor || 'Construction Team',
         estimatedCost: task.estimatedCost || 100000,
         aiGenerated: true,
         metadata: {
           generatedAt: new Date().toISOString(),
-          generatedBy: `OpenAI GPT-4o-mini (User: ${user.email})`,
-          aiModel: 'gpt-4o-mini'
+          generatedBy: `${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} (User: ${user.email})`,
+          aiModel: aiConfig.aiProvider === 'claude' ? 'claude-3-5-sonnet' : 'gpt-4o-mini',
+          aiProvider: aiConfig.aiProvider,
+          advancedMode,
+          projectType,
+          complexity
         }
+      };
+
+      // Add advanced features if requested
+      if (includeResourceAllocation && task.resources) {
+        processedTask.resources = task.resources;
       }
+      
+      if (includeCostEstimation && task.costBreakdown) {
+        processedTask.costBreakdown = task.costBreakdown;
+      }
+      
+      if (includeRiskAnalysis && task.risks) {
+        processedTask.risks = task.risks;
+        processedTask.mitigation = task.mitigation;
+      }
+      
+      if (includeDependencies && task.dependencies) {
+        processedTask.dependencies = task.dependencies;
+        processedTask.criticalPath = task.criticalPath || false;
+      }
+
+      return processedTask;
     })
 
-    console.log(`✅ Real AI Generated ${processedTasks.length} tasks`)
+    console.log(`✅ Real AI Generated ${processedTasks.length} tasks (Advanced Mode: ${advancedMode})`)
 
-    return NextResponse.json({
+    // Build response with advanced insights
+    const response: any = {
       success: true,
       message: `AI generated ${processedTasks.length} tasks from ${formattedElements.length} BIM elements`,
       tasks: processedTasks,
       statistics: {
         totalElements: formattedElements.length,
-        elementGroups: new Set(formattedElements.map(e => e.type)).size,
+        elementGroups: new Set(formattedElements.map((e: any) => e.type)).size,
         tasksGenerated: processedTasks.length,
-        phases: [...new Set(processedTasks.map(t => t.phase))],
-        estimatedDuration: Math.max(...processedTasks.map(t => t.durationDays))
+        phases: [...new Set(processedTasks.map((t: any) => t.phase))],
+        estimatedDuration: Math.max(...processedTasks.map((t: any) => t.durationDays)),
+        totalEstimatedCost: processedTasks.reduce((sum: number, t: any) => sum + (t.estimatedCost || 0), 0)
       }
-    })
+    };
 
-  } catch (error) {
+    // Add advanced insights if available
+    if (advancedMode && aiAnalysis.insights) {
+      response.insights = aiAnalysis.insights;
+    }
+
+    if (includeRiskAnalysis && aiAnalysis.projectRisks) {
+      response.projectRisks = aiAnalysis.projectRisks;
+    }
+
+    // Add feature flags to response
+    response.features = {
+      advancedMode,
+      resourceAllocation: includeResourceAllocation,
+      costEstimation: includeCostEstimation,
+      riskAnalysis: includeRiskAnalysis,
+      dependencies: includeDependencies
+    };
+
+    return NextResponse.json(response)
+
+  } catch (error: any) {
     console.error('❌ Real AI Task Generation error:', error)
     
-    if (error instanceof Error && error.message.includes('API key')) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please add OPENAI_API_KEY to environment variables.' },
-        { status: 500 }
-      )
-    }
-    
-    return NextResponse.json(
-      { error: `Failed to generate AI tasks: ${error instanceof Error ? error.message : 'Unknown error'}` },
-      { status: 500 }
-    )
+    // Handle AI errors with proper error response
+    const errorResponse = handleAIError(error);
+    return NextResponse.json(errorResponse.json, { status: errorResponse.status });
   }
 }

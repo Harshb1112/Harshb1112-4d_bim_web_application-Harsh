@@ -101,6 +101,22 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  return await updateProject(request, params);
+}
+
+// PATCH update project details (same as PUT)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  return await updateProject(request, params);
+}
+
+// Shared update logic
+async function updateProject(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
     const token = getTokenFromRequest(request)
     const user = token ? verifyToken(token) : null

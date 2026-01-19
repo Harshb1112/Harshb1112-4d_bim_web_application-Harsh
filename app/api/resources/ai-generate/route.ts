@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import OpenAI from 'openai';
-import { decrypt } from '@/lib/encryption';
+import { getUserAIConfig, callAI, handleAIError } from '@/lib/ai-helper';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,75 +21,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Prompt and projectId required' }, { status: 400 });
     }
 
-    // Check user's AI configuration from database
-    const userConfig = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        aiEnabled: true,
-        openaiApiKey: true
-      }
-    });
-
-    if (!userConfig || !userConfig.aiEnabled) {
-      console.log('❌ AI features disabled for this user');
+    // Get user's AI configuration
+    const aiConfig = await getUserAIConfig(user.id);
+    if (!aiConfig) {
       return NextResponse.json({ 
-        error: 'AI features are disabled',
-        message: 'Enable AI in Settings → AI Configuration',
+        error: 'AI features not configured',
+        message: 'Enable AI and add API key in Settings',
         aiEnabled: false
       }, { status: 403 });
     }
 
-    if (!userConfig.openaiApiKey) {
-      console.log('❌ No OpenAI API key configured for this user');
-      return NextResponse.json({ 
-        error: 'OpenAI API key not configured',
-        message: 'Add your OpenAI API key in Settings → AI Configuration',
-        aiEnabled: true,
-        apiKeyMissing: true
-      }, { status: 403 });
-    }
-
-    // Decrypt user's API key
-    const userApiKey = decrypt(userConfig.openaiApiKey);
-    console.log('✅ AI enabled with user-specific API key');
-
-    // Check if API key has credits
-    try {
-      console.log('🔍 Checking OpenAI API key validity and credits...');
-      const testOpenAI = new OpenAI({ apiKey: userApiKey });
-      
-      await testOpenAI.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: "test" }],
-        max_tokens: 5
-      });
-      
-      console.log('✅ API key is valid and has credits');
-    } catch (error: any) {
-      if (error?.status === 429) {
-        console.log('❌ Rate limit reached - No credits');
-        return NextResponse.json({
-          success: false,
-          error: 'OpenAI API quota exceeded',
-          message: 'Your OpenAI API key has no credits.',
-          solution: 'Add payment method at https://platform.openai.com/account/billing',
-          billingUrl: 'https://platform.openai.com/account/billing',
-          noCredits: true
-        }, { status: 429 });
-      } else if (error?.status === 401) {
-        console.log('❌ Invalid API key');
-        return NextResponse.json({
-          success: false,
-          error: 'Invalid OpenAI API key',
-          message: 'The configured API key is invalid.',
-          invalidKey: true
-        }, { status: 401 });
-      }
-      console.log('⚠️ API key check warning:', error.message);
-    }
-
-    // Initialize OpenAI with user's key
-    const openai = new OpenAI({ apiKey: userApiKey });
+    console.log(`✅ Using ${aiConfig.aiProvider === 'claude' ? 'Claude' : 'OpenAI'} for resource generation`);
 
     // Fetch project to get location
     const project = await prisma.project.findUnique({
@@ -269,13 +210,8 @@ export async function POST(request: NextRequest) {
 
     console.log('[AI Resources] Generating resources for prompt:', prompt);
 
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a construction resource planning AI assistant. Extract resources from user requests and return them in JSON format.
+    // Prepare system prompt
+    const systemPrompt = `You are a construction resource planning AI assistant. Extract resources from user requests and return them in JSON format.
 
 **PROJECT LOCATION: ${country}**
 **CURRENCY: ${currency} (${currencySymbol})**
@@ -303,18 +239,10 @@ Return ONLY valid JSON array, no markdown:
   }
 ]
 
-Use realistic current ${country} construction rates based on the guidelines above.`
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    });
+Use realistic current ${country} construction rates based on the guidelines above.`;
 
-    const responseText = completion.choices[0]?.message?.content?.trim();
+    // Call AI
+    const responseText = await callAI(aiConfig, prompt, systemPrompt, 1000);
     
     if (!responseText) {
       throw new Error('No response from AI');
@@ -356,16 +284,8 @@ Use realistic current ${country} construction rates based on the guidelines abov
   } catch (error: any) {
     console.error('[AI Resources] Error:', error);
     
-    if (error.message?.includes('API key')) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate resources' },
-      { status: 500 }
-    );
+    // Handle AI errors with proper error response
+    const errorResponse = handleAIError(error);
+    return NextResponse.json(errorResponse.json, { status: errorResponse.status });
   }
 }

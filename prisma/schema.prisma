@@ -3,74 +3,69 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id                    Int              @id @default(autoincrement())
-  fullName              String           @map("full_name")
-  email                 String           @unique
-  passwordHash          String           @map("password_hash")
-  role                  String           @default("member")
-  isEmailVerified       Boolean          @default(false) @map("is_email_verified")
-  emailVerifyToken      String?          @unique @map("email_verify_token")
-  emailVerifyExpiry     DateTime?        @map("email_verify_expiry")
-  inviteToken           String?          @unique @map("invite_token")
-  inviteExpiry          DateTime?        @map("invite_expiry")
-  invitedBy             Int?             @map("invited_by")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  profileImage          String?          @map("profile_image")
-  aiEnabled             Boolean          @default(false) @map("ai_enabled")
-  openaiApiKey          String?          @map("openai_api_key")
-  
-  // Notification Settings
-  emailNotifications    Boolean          @default(true) @map("email_notifications")
-  taskNotifications     Boolean          @default(true) @map("task_notifications")
-  projectNotifications  Boolean          @default(true) @map("project_notifications")
-  weeklyDigest          Boolean          @default(false) @map("weekly_digest")
-  
-  // Security Settings
-  twoFactorEnabled      Boolean          @default(false) @map("two_factor_enabled")
-  twoFactorSecret       String?          @map("two_factor_secret")
-  
-  // Language & Region
-  language              String           @default("en")
-  timezone              String           @default("UTC")
-  dateFormat            String           @default("MM/DD/YYYY") @map("date_format")
-  
-  activityLogs          ActivityLog[]
-  errorLogs             ErrorLog[]       @relation("ErrorReporter")
-  uploadedModels        Model[]          @relation("ModelUploader")
-  progressLogs          ProgressLog[]    @relation("ProgressUpdater")
-  projectUsers          ProjectUser[]
-  createdProjects       Project[]        @relation("ProjectCreator")
-  teamLeadProjects      Project[]        @relation("TeamLeadProjects")
-  roleRequests          RoleRequest[]
-  siteViewLogs          SiteViewLog[]
-  taskComments          TaskComment[]
-  assignedTasks         Task[]
-  teamMemberships       TeamMembership[]
-  loginSessions         LoginSession[]
-  pushSubscriptions     PushSubscription[]
-  notifications         Notification[]
-  apiKeys               ApiKey[]
-  integrations          Integration[]
+  id                   Int                @id @default(autoincrement())
+  fullName             String             @map("full_name")
+  email                String             @unique
+  passwordHash         String             @map("password_hash")
+  role                 String             @default("member")
+  isEmailVerified      Boolean            @default(false) @map("is_email_verified")
+  emailVerifyToken     String?            @unique @map("email_verify_token")
+  emailVerifyExpiry    DateTime?          @map("email_verify_expiry")
+  inviteToken          String?            @unique @map("invite_token")
+  inviteExpiry         DateTime?          @map("invite_expiry")
+  invitedBy            Int?               @map("invited_by")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  profileImage         String?            @map("profile_image")
+  aiEnabled            Boolean            @default(false) @map("ai_enabled")
+  aiProvider           String             @default("openai") @map("ai_provider")
+  openaiApiKey         String?            @map("openai_api_key")
+  dateFormat           String             @default("MM/DD/YYYY") @map("date_format")
+  emailNotifications   Boolean            @default(true) @map("email_notifications")
+  language             String             @default("en")
+  projectNotifications Boolean            @default(true) @map("project_notifications")
+  taskNotifications    Boolean            @default(true) @map("task_notifications")
+  timezone             String             @default("UTC")
+  twoFactorEnabled     Boolean            @default(false) @map("two_factor_enabled")
+  twoFactorSecret      String?            @map("two_factor_secret")
+  weeklyDigest         Boolean            @default(false) @map("weekly_digest")
+  activityLogs         ActivityLog[]
+  apiKeys              ApiKey[]
+  errorLogs            ErrorLog[]         @relation("ErrorReporter")
+  integrations         Integration[]
+  loginSessions        LoginSession[]
+  uploadedModels       Model[]            @relation("ModelUploader")
+  notifications        Notification[]
+  progressLogs         ProgressLog[]      @relation("ProgressUpdater")
+  projectUsers         ProjectUser[]
+  createdProjects      Project[]          @relation("ProjectCreator")
+  teamLeadProjects     Project[]          @relation("TeamLeadProjects")
+  pushSubscriptions    PushSubscription[]
+  roleRequests         RoleRequest[]
+  siteViewLogs         SiteViewLog[]
+  taskComments         TaskComment[]
+  assignedTasks        Task[]
+  teamMemberships      TeamMembership[]
 
   @@map("users")
 }
 
 model Notification {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
-  type        String   // task_assigned, task_updated, project_updated, etc.
-  title       String
-  body        String
-  url         String?
-  isRead      Boolean  @default(false) @map("is_read")
-  isShown     Boolean  @default(false) @map("is_shown")
-  createdAt   DateTime @default(now()) @map("created_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  type      String
+  title     String
+  body      String
+  url       String?
+  isRead    Boolean  @default(false) @map("is_read")
+  isShown   Boolean  @default(false) @map("is_shown")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isShown])
@@ -78,69 +73,85 @@ model Notification {
 }
 
 model PushSubscription {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
-  endpoint    String   @unique
-  p256dh      String
-  auth        String
-  userAgent   String?  @map("user_agent")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("push_subscriptions")
 }
 
 model LoginSession {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
-  deviceName  String   @map("device_name")
-  deviceType  String   @map("device_type")
-  browser     String?
-  ipAddress   String?  @map("ip_address")
-  location    String?
-  isActive    Boolean  @default(true) @map("is_active")
-  lastActive  DateTime @default(now()) @map("last_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  deviceName String   @map("device_name")
+  deviceType String   @map("device_type")
+  browser    String?
+  ipAddress  String?  @map("ip_address")
+  location   String?
+  isActive   Boolean  @default(true) @map("is_active")
+  lastActive DateTime @default(now()) @map("last_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("login_sessions")
 }
 
 model Project {
-  id                Int                 @id @default(autoincrement())
-  name              String
-  description       String?
-  startDate         DateTime?           @map("start_date")
-  endDate           DateTime?           @map("end_date")
-  createdById       Int?                @map("created_by")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  teamId            Int?                @map("team_id")
-  teamLeaderId      Int?                @map("team_leader_id")
-  speckleUrl        String?             @map("speckle_url")
-  image             String?             @map("project_image")
-  status            String              @default("active") @map("project_status")
-  latitude          Float?
-  location          String?
-  longitude         Float?
-  aiEnabled         Boolean             @default(false) @map("ai_enabled")
-  openaiApiKey      String?             @map("openai_api_key")
-  activityLogs      ActivityLog[]
-  dailySiteCosts    DailySiteCost[]
-  dailySiteProgress DailySiteProgress[]
-  errorLogs         ErrorLog[]
-  models            Model[]
-  projectUsers      ProjectUser[]
-  createdBy         User?               @relation("ProjectCreator", fields: [createdById], references: [id])
-  team              Team?               @relation(fields: [teamId], references: [id])
-  teamLeader        User?               @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
-  resources         Resource[]
-  siteCameras       SiteCamera[]
-  siteCaptures      SiteCapture[]
-  siteViewLogs      SiteViewLog[]
-  tasks             Task[]
+  id                  Int                 @id @default(autoincrement())
+  name                String
+  description         String?
+  startDate           DateTime?           @map("start_date")
+  endDate             DateTime?           @map("end_date")
+  createdById         Int?                @map("created_by")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  teamId              Int?                @map("team_id")
+  teamLeaderId        Int?                @map("team_leader_id")
+  speckleUrl          String?             @map("speckle_url")
+  image               String?             @map("project_image")
+  status              String              @default("active") @map("project_status")
+  latitude            Float?
+  location            String?
+  longitude           Float?
+  aiEnabled           Boolean             @default(false) @map("ai_enabled")
+  openaiApiKey        String?             @map("openai_api_key")
+  budget              Float?              @default(0)
+  autoBackupEnabled   Boolean             @default(true) @map("auto_backup_enabled")
+  autoBackupFrequency Int                 @default(24) @map("auto_backup_frequency")
+  lastAutoBackup      DateTime?           @map("last_auto_backup")
+  currency            String              @default("USD")
+  city                String?
+  state               String?
+  country             String?
+  postalCode          String?             @map("postal_code")
+  stakeholders        Json?
+  activityLogs        ActivityLog[]
+  dailyLogs           DailyLog[]
+  dailySiteCosts      DailySiteCost[]
+  dailySiteProgress   DailySiteProgress[]
+  errorLogs           ErrorLog[]
+  models              Model[]
+  projectBackups      ProjectBackup[]
+  projectFiles        ProjectFile[]
+  projectUsers        ProjectUser[]
+  createdBy           User?               @relation("ProjectCreator", fields: [createdById], references: [id])
+  team                Team?               @relation(fields: [teamId], references: [id])
+  teamLeader          User?               @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
+  resources           Resource[]
+  safetyIncidents     SafetyIncident[]
+  scheduleHealth      ScheduleHealth[]
+  siteCameras         SiteCamera[]
+  siteCaptures        SiteCapture[]
+  siteViewLogs        SiteViewLog[]
+  tasks               Task[]
+  toolboxTalks        ToolboxTalk[]
 
   @@map("projects")
 }
@@ -187,8 +198,8 @@ model Element {
   level         String?
   geometryRef   String?           @map("geometry_ref")
   parameters    Json?
-  resource      String?
   createdAt     DateTime          @default(now()) @map("created_at")
+  resource      String?
   properties    ElementProperty[]
   elementStatus ElementStatus[]
   taskLinks     ElementTaskLink[]
@@ -538,17 +549,17 @@ model SiteViewLog {
 }
 
 model ApiKey {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
   name        String
-  key         String   @unique
-  keyPrefix   String   @map("key_prefix")
+  key         String    @unique
+  keyPrefix   String    @map("key_prefix")
   lastUsedAt  DateTime? @map("last_used_at")
   expiresAt   DateTime? @map("expires_at")
-  isActive    Boolean  @default(true) @map("is_active")
+  isActive    Boolean   @default(true) @map("is_active")
   permissions Json?
-  createdAt   DateTime @default(now()) @map("created_at")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([key])
@@ -556,17 +567,152 @@ model ApiKey {
 }
 
 model Integration {
-  id            Int      @id @default(autoincrement())
-  userId        Int      @map("user_id")
-  type          String   // slack, teams, jira, webhook
-  name          String
-  config        Json     // stores integration-specific config (webhook URL, tokens, etc.)
-  isActive      Boolean  @default(true) @map("is_active")
-  lastSyncAt    DateTime? @map("last_sync_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  type       String
+  name       String
+  config     Json
+  isActive   Boolean   @default(true) @map("is_active")
+  lastSyncAt DateTime? @map("last_sync_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([type])
   @@map("integrations")
+}
+
+model ScheduleHealth {
+  id               Int      @id @default(autoincrement())
+  projectId        Int      @map("project_id")
+  date             DateTime @default(now())
+  overallScore     Int      @default(0) @map("overall_score")
+  scheduleScore    Int      @default(0) @map("schedule_score")
+  costScore        Int      @default(0) @map("cost_score")
+  resourceScore    Int      @default(0) @map("resource_score")
+  spi              Float    @default(0)
+  cpi              Float    @default(0)
+  scheduleVariance Float    @default(0) @map("schedule_variance")
+  costVariance     Float    @default(0) @map("cost_variance")
+  bac              Float    @default(0)
+  pv               Float    @default(0)
+  ev               Float    @default(0)
+  ac               Float    @default(0)
+  eac              Float    @default(0)
+  etc              Float    @default(0)
+  vac              Float    @default(0)
+  tcpi             Float    @default(0)
+  createdAt        DateTime @default(now()) @map("created_at")
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([date])
+  @@map("schedule_health")
+}
+
+model DailyLog {
+  id              Int      @id @default(autoincrement())
+  projectId       Int      @map("project_id")
+  date            DateTime
+  weather         String?
+  temperatureLow  Float?   @map("temperature_low")
+  temperatureHigh Float?   @map("temperature_high")
+  crewCount       Int?     @map("crew_count")
+  totalHours      Float?   @map("total_hours")
+  activities      String?  @db.Text
+  deliveries      Json?    @db.Json
+  equipment       String?  @db.Text
+  visitors        Json?    @db.Json
+  issues          String?  @db.Text
+  delays          String?  @db.Text
+  notes           String?  @db.Text
+  createdBy       Int      @map("created_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, date])
+  @@index([projectId])
+  @@index([date])
+  @@map("daily_logs")
+}
+
+model SafetyIncident {
+  id               Int       @id @default(autoincrement())
+  projectId        Int       @map("project_id")
+  date             DateTime
+  type             String
+  severity         String
+  location         String?
+  description      String
+  injuredPerson    String?   @map("injured_person")
+  witnessNames     String?   @map("witness_names")
+  rootCause        String?   @map("root_cause")
+  correctiveAction String?   @map("corrective_action")
+  status           String    @default("open")
+  reportedBy       Int       @map("reported_by")
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([date])
+  @@index([status])
+  @@map("safety_incidents")
+}
+
+model ToolboxTalk {
+  id            Int      @id @default(autoincrement())
+  projectId     Int      @map("project_id")
+  date          DateTime
+  topic         String
+  description   String?
+  conductedBy   String   @map("conducted_by")
+  attendees     String?
+  attendeeCount Int      @default(0) @map("attendee_count")
+  duration      Int?
+  notes         String?
+  createdBy     Int      @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([date])
+  @@map("toolbox_talks")
+}
+
+model ProjectFile {
+  id          Int      @id @default(autoincrement())
+  projectId   Int      @map("project_id")
+  name        String
+  fileName    String   @map("file_name")
+  fileType    String   @map("file_type")
+  fileSize    Int      @map("file_size")
+  filePath    String   @map("file_path")
+  category    String?
+  description String?
+  uploadedBy  Int      @map("uploaded_by")
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([category])
+  @@map("project_files")
+}
+
+model ProjectBackup {
+  id          Int      @id @default(autoincrement())
+  projectId   Int      @map("project_id")
+  name        String
+  description String?
+  filePath    String   @map("file_path")
+  fileSize    Int      @map("file_size")
+  createdBy   Int      @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  isAutomatic Boolean  @default(false) @map("is_automatic")
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_backups")
 }

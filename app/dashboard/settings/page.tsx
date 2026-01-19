@@ -41,6 +41,7 @@ export default function SettingsPage() {
 
   // AI Configuration state
   const [aiEnabled, setAiEnabled] = useState(false)
+  const [aiProvider, setAiProvider] = useState<'openai' | 'claude'>('openai')
   const [apiKey, setApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
 
@@ -370,10 +371,18 @@ export default function SettingsPage() {
       })
       if (response.ok) {
         const data = await response.json()
+        console.log('📥 Loaded AI config:', data)
         setAiEnabled(data.aiEnabled || false)
-        // Don't set the masked key, keep it empty for security
-        // User will need to re-enter if they want to change
-        setApiKey('')
+        setAiProvider(data.aiProvider || 'openai')
+        
+        // Show masked key if exists (for user to know it's saved)
+        if (data.hasApiKey) {
+          setApiKey('••••••••••••••••') // Show masked key
+          console.log('✅ API key is saved (showing masked)')
+        } else {
+          setApiKey('')
+          console.log('⚠️ No API key saved')
+        }
       }
     } catch (error) {
       console.error('Failed to fetch AI config:', error)
@@ -381,20 +390,29 @@ export default function SettingsPage() {
   }
 
   const handleSaveAIConfig = async () => {
+    // If API key is masked (already saved), don't send it again
+    const isMaskedKey = apiKey === '••••••••••••••••';
+    
     // Validate before saving
     if (aiEnabled && !apiKey) {
       toast.error('❌ Please enter an API key when AI is enabled');
       return;
     }
 
-    if (aiEnabled && apiKey && !apiKey.startsWith('sk-')) {
-      toast.error('❌ Invalid API key format. Must start with "sk-"');
-      return;
+    if (aiEnabled && apiKey && !isMaskedKey) {
+      if (aiProvider === 'openai' && !apiKey.startsWith('sk-')) {
+        toast.error('❌ Invalid OpenAI API key format. Must start with "sk-"');
+        return;
+      }
+      if (aiProvider === 'claude' && !apiKey.startsWith('sk-ant-')) {
+        toast.error('❌ Invalid Claude API key format. Must start with "sk-ant-"');
+        return;
+      }
     }
 
     setIsSaving(true)
     try {
-      console.log('💾 Saving AI config:', { aiEnabled, hasApiKey: !!apiKey });
+      console.log('💾 Saving AI config:', { aiEnabled, aiProvider, hasApiKey: !!apiKey, isMasked: isMaskedKey });
       
       const response = await fetch('/api/settings/ai-config', {
         method: 'POST',
@@ -402,7 +420,8 @@ export default function SettingsPage() {
         credentials: 'include',
         body: JSON.stringify({
           aiEnabled,
-          apiKey: apiKey.trim() // Trim whitespace
+          aiProvider,
+          apiKey: isMaskedKey ? undefined : apiKey.trim() // Don't send masked key
         })
       })
 
@@ -413,10 +432,11 @@ export default function SettingsPage() {
         throw new Error(data.error || 'Failed to save AI configuration')
       }
 
-      toast.success('✅ AI Configuration saved successfully!')
+      toast.success(`✅ ${aiProvider === 'openai' ? 'OpenAI' : 'Claude'} Configuration saved successfully!`)
       
-      // Don't clear the key - just keep it for user reference
-      // setApiKey('') // Removed - user should see their key
+      // Reload config to show masked key
+      await fetchAIConfig();
+      
     } catch (error: any) {
       console.error('Failed to save AI config:', error)
       toast.error(`❌ ${error.message || 'Failed to save AI configuration'}`)
@@ -873,7 +893,7 @@ export default function SettingsPage() {
                 Global AI Configuration
               </CardTitle>
               <CardDescription>
-                Configure OpenAI integration for all projects
+                Configure OpenAI or Claude integration for all projects
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -895,22 +915,52 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                {/* API Key Input */}
+                {/* AI Provider Selection */}
                 {aiEnabled && (
                   <div className="space-y-4">
                     <div className="space-y-2">
+                      <Label className="text-base font-semibold">AI Provider</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Choose which AI service to use
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Button
+                          type="button"
+                          variant={aiProvider === 'openai' ? 'default' : 'outline'}
+                          className="h-20 flex flex-col items-center justify-center gap-2"
+                          onClick={() => setAiProvider('openai')}
+                        >
+                          <Bot className="h-6 w-6" />
+                          <span className="font-semibold">OpenAI</span>
+                          <span className="text-xs">GPT-4o, GPT-4o-mini</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={aiProvider === 'claude' ? 'default' : 'outline'}
+                          className="h-20 flex flex-col items-center justify-center gap-2"
+                          onClick={() => setAiProvider('claude')}
+                        >
+                          <Bot className="h-6 w-6" />
+                          <span className="font-semibold">Claude</span>
+                          <span className="text-xs">All Models (Auto-fallback)</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* API Key Input */}
+                    <div className="space-y-2">
                       <Label htmlFor="global-api-key" className="flex items-center gap-2 text-base font-semibold">
                         <Key className="h-5 w-5" />
-                        OpenAI API Key
+                        {aiProvider === 'openai' ? 'OpenAI' : 'Claude'} API Key
                       </Label>
                       <p className="text-sm text-muted-foreground">
-                        Add your OpenAI API key to enable AI features across all projects
+                        Add your {aiProvider === 'openai' ? 'OpenAI' : 'Anthropic Claude'} API key to enable AI features
                       </p>
                       <div className="flex gap-2">
                         <Input
                           id="global-api-key"
                           type={showApiKey ? 'text' : 'password'}
-                          placeholder="sk-proj-..."
+                          placeholder={aiProvider === 'openai' ? 'sk-proj-...' : 'sk-ant-...'}
                           value={apiKey}
                           onChange={(e) => setApiKey(e.target.value)}
                           className="font-mono text-sm"
@@ -926,12 +976,12 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground">
                         Get your API key from{' '}
                         <a
-                          href="https://platform.openai.com/api-keys"
+                          href={aiProvider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.anthropic.com/'}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-purple-600 hover:underline font-semibold"
                         >
-                          OpenAI Platform
+                          {aiProvider === 'openai' ? 'OpenAI Platform' : 'Anthropic Console'}
                         </a>
                       </p>
                     </div>
@@ -944,18 +994,41 @@ export default function SettingsPage() {
                       </AlertDescription>
                     </Alert>
 
+                    {/* Model Info */}
+                    <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                      <Bot className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-900 dark:text-green-100">
+                        <strong>Smart Model Selection:</strong> System automatically tries models in order until one works.
+                        {aiProvider === 'claude' ? (
+                          <div className="mt-2 text-xs space-y-1">
+                            <div>1. Claude 3.5 Sonnet (Latest)</div>
+                            <div>2. Claude 3.5 Sonnet (Stable)</div>
+                            <div>3. Claude 3 Haiku (Fast & Free tier)</div>
+                            <div>4. Claude 3 Sonnet (Fallback)</div>
+                            <div>5. Claude 3 Opus (Most powerful)</div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-xs space-y-1">
+                            <div>1. GPT-4o-mini (Fast & Cheap)</div>
+                            <div>2. GPT-4o (Powerful)</div>
+                            <div>3. GPT-4-turbo (Alternative)</div>
+                          </div>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+
                     {/* Billing Info */}
                     <Alert className="bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800">
                       <Bot className="h-4 w-4 text-purple-600" />
                       <AlertDescription className="text-purple-900 dark:text-purple-100">
-                        <strong>Billing:</strong> API usage will be charged to your OpenAI account. Monitor usage at{' '}
+                        <strong>Billing:</strong> API usage will be charged to your {aiProvider === 'openai' ? 'OpenAI' : 'Claude'} account. Monitor usage at{' '}
                         <a
-                          href="https://platform.openai.com/usage"
+                          href={aiProvider === 'openai' ? 'https://platform.openai.com/usage' : 'https://console.anthropic.com/settings/billing'}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="underline font-semibold"
                         >
-                          OpenAI Dashboard
+                          {aiProvider === 'openai' ? 'OpenAI Dashboard' : 'Anthropic Console'}
                         </a>
                       </AlertDescription>
                     </Alert>
@@ -976,7 +1049,7 @@ export default function SettingsPage() {
                 <div className="pt-6 border-t space-y-3">
                   <h4 className="font-semibold text-base">How AI Features Work:</h4>
                   <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                    <li>Add your OpenAI API key above</li>
+                    <li>Add your {aiProvider === 'openai' ? 'OpenAI' : 'Claude'} API key above</li>
                     <li>Save the configuration</li>
                     <li>Open any project</li>
                     <li>Go to Schedule tab → AI Task Generator</li>

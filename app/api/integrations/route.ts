@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate integration type
-    const validTypes = ['slack', 'teams', 'jira', 'webhook']
+    const validTypes = ['slack', 'teams', 'jira', 'webhook', 'sap_ps', 'sap', 'erp']
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: 'Invalid integration type' }, { status: 400 })
     }

@@ -346,7 +346,27 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
             let viewerInstance: any = null
             
             try {
-              viewerInstance = new Autodesk.Viewing.GuiViewer3D(containerRef.current)
+              // Check if container exists and has dimensions
+              if (!containerRef.current) {
+                console.error('[SimulationAutodeskViewer] Container ref is null')
+                setError('Viewer container not found')
+                setLoading(false)
+                return
+              }
+
+              const container = containerRef.current
+              const rect = container.getBoundingClientRect()
+              
+              if (rect.width === 0 || rect.height === 0) {
+                console.error('[SimulationAutodeskViewer] Container has no dimensions:', rect)
+                setError('Viewer container has no dimensions')
+                setLoading(false)
+                return
+              }
+
+              console.log('[SimulationAutodeskViewer] Container dimensions:', rect.width, 'x', rect.height)
+              
+              viewerInstance = new Autodesk.Viewing.GuiViewer3D(container)
               
               if (!viewerInstance || typeof viewerInstance.start !== 'function') {
                 console.error('[SimulationAutodeskViewer] Failed to create viewer instance')
@@ -355,7 +375,13 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
                 return
               }
               
-              viewerInstance.start()
+              const startCode = viewerInstance.start()
+              if (startCode > 0) {
+                console.error('[SimulationAutodeskViewer] Viewer start failed with code:', startCode)
+                setError('Failed to start viewer')
+                setLoading(false)
+                return
+              }
               
               // Configure navigation settings for better zoom control
               viewerInstance.navigation.setZoomTowardsPivot(true)

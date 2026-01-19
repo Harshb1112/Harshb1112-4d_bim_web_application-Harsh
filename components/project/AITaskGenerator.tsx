@@ -27,6 +27,7 @@ interface AITaskGeneratorProps {
 }
 
 interface GeneratedTask {
+  elementIds?: number[]
   name: string
   description: string
   startDate: string
@@ -54,6 +55,11 @@ export default function AITaskGenerator({ projectId, onTasksGenerated }: AITaskG
   const [generatedTasks, setGeneratedTasks] = useState<GeneratedTask[]>([])
   const [statistics, setStatistics] = useState<AIStatistics | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [selectedProvider, setSelectedProvider] = useState<'openai' | 'claude'>('openai')
+  const [advancedMode, setAdvancedMode] = useState(false)
+  const [includeResources, setIncludeResources] = useState(false)
+  const [includeCosts, setIncludeCosts] = useState(false)
+  const [includeRisks, setIncludeRisks] = useState(false)
 
   const generateTasks = async () => {
     setIsGenerating(true)
@@ -192,14 +198,22 @@ export default function AITaskGenerator({ projectId, onTasksGenerated }: AITaskG
         let data;
 
         try {
-          response = await fetch('/api/ai/smart-task-generator', {
+          response = await fetch('/api/ai/generate-tasks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             signal: controller.signal,
             body: JSON.stringify({ 
               projectId,
-              selectedElements: allElements // Send ALL real elements to AI
+              selectedElements: allElements, // Send ALL real elements to AI
+              aiProvider: selectedProvider, // User-selected provider
+              advancedMode,
+              includeResourceAllocation: includeResources,
+              includeCostEstimation: includeCosts,
+              includeRiskAnalysis: includeRisks,
+              includeDependencies: advancedMode,
+              projectType: 'general',
+              complexity: advancedMode ? 'high' : 'medium'
             })
           })
 
@@ -516,6 +530,97 @@ export default function AITaskGenerator({ projectId, onTasksGenerated }: AITaskG
       </CardHeader>
       
       <CardContent className="space-y-4">
+        {/* AI Provider Selection */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-gray-700">Select AI Provider</label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setSelectedProvider('openai')}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                selectedProvider === 'openai'
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center justify-center space-x-2">
+                <Bot className={`h-5 w-5 ${selectedProvider === 'openai' ? 'text-green-600' : 'text-gray-400'}`} />
+                <span className={`font-medium ${selectedProvider === 'openai' ? 'text-green-900' : 'text-gray-600'}`}>
+                  OpenAI
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">GPT-4o-mini</div>
+            </button>
+            
+            <button
+              onClick={() => setSelectedProvider('claude')}
+              className={`p-4 rounded-lg border-2 transition-all ${
+                selectedProvider === 'claude'
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center justify-center space-x-2">
+                <Sparkles className={`h-5 w-5 ${selectedProvider === 'claude' ? 'text-purple-600' : 'text-gray-400'}`} />
+                <span className={`font-medium ${selectedProvider === 'claude' ? 'text-purple-900' : 'text-gray-600'}`}>
+                  Claude
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Claude 3.5 Sonnet</div>
+            </button>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Advanced Options */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-gray-700">Generation Options</label>
+          
+          <div className="space-y-2">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={advancedMode}
+                onChange={(e) => setAdvancedMode(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">Advanced Mode (15-25 detailed tasks)</span>
+            </label>
+            
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeResources}
+                onChange={(e) => setIncludeResources(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">Include Resource Allocation</span>
+            </label>
+            
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeCosts}
+                onChange={(e) => setIncludeCosts(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">Include Cost Breakdown</span>
+            </label>
+            
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeRisks}
+                onChange={(e) => setIncludeRisks(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-700">Include Risk Analysis</span>
+            </label>
+          </div>
+        </div>
+
+        <Separator />
+
         <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg">
           <div className="flex items-start space-x-3">
             <Sparkles className="h-5 w-5 text-purple-600 mt-0.5" />
@@ -527,7 +632,7 @@ export default function AITaskGenerator({ projectId, onTasksGenerated }: AITaskG
                 <li>• Covers all phases: Pre-Construction → Foundation → Structure → MEP → Finishes → Closeout</li>
                 <li>• Estimates durations, costs, and resource requirements</li>
                 <li>• Sets up proper task dependencies and sequencing</li>
-                <li>• Generates 6-10 tasks covering entire project lifecycle</li>
+                <li>• Generates {advancedMode ? '15-25' : '6-10'} tasks covering entire project lifecycle</li>
               </ul>
             </div>
           </div>

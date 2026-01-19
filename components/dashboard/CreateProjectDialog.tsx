@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CalendarPlus, Loader2, Plus, ImagePlus, X } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CalendarPlus, Loader2, Plus, ImagePlus, X, Upload, FileArchive } from "lucide-react"
 import { toast } from "sonner"
 import Image from "next/image"
 
@@ -60,6 +61,11 @@ export default function CreateProjectDialog({
   const [projectImage, setProjectImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Import from Backup
+  const [backupFile, setBackupFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const backupFileInputRef = useRef<HTMLInputElement>(null)
 
 
   useEffect(() => {
@@ -107,6 +113,7 @@ export default function CreateProjectDialog({
     setTeamLeaderId("")
     setProjectImage(null)
     setImagePreview(null)
+    setBackupFile(null)
   }
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,6 +214,68 @@ export default function CreateProjectDialog({
     })
   }
 
+  const handleImportBackup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!backupFile) {
+      toast.error("Please select a backup file")
+      return
+    }
+
+    console.log('[Import] Starting import with file:', backupFile.name, backupFile.type, backupFile.size);
+
+    setImporting(true)
+
+    const promise = new Promise(async (resolve, reject) => {
+      try {
+        const formData = new FormData()
+        formData.append("backupFile", backupFile)
+
+        console.log('[Import] FormData created, sending request...');
+
+        const token = localStorage.getItem('token')
+        const response = await fetch("/api/projects/restore", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          body: formData,
+        })
+
+        console.log('[Import] Response status:', response.status);
+
+        const data = await response.json()
+        console.log('[Import] Response data:', data);
+        
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to import backup")
+        }
+
+        const projectId = data.project?.id
+        if (projectId) {
+          setIsOpen(false)
+          resetForm()
+          router.push(`/project/${projectId}`)
+        } else {
+          setIsOpen(false)
+          resetForm()
+          router.refresh()
+        }
+
+        resolve("Project imported successfully")
+      } catch (error) {
+        reject(error)
+      } finally {
+        setImporting(false)
+      }
+    })
+
+    toast.promise(promise, {
+      loading: "Importing project from backup...",
+      success: (message) => `${message}`,
+      error: (err: any) => `Failed to import: ${err.message}`,
+    })
+  }
+
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -216,7 +285,7 @@ export default function CreateProjectDialog({
           {label}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <CalendarPlus className="h-5 w-5" />
@@ -226,7 +295,16 @@ export default function CreateProjectDialog({
             Add a new construction project to manage its schedule
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+
+        <Tabs defaultValue="create" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="create">Create New</TabsTrigger>
+            <TabsTrigger value="import">Import from Backup</TabsTrigger>
+          </TabsList>
+
+          {/* CREATE NEW TAB */}
+          <TabsContent value="create">
+            <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           {/* Project Image */}
           <div className="space-y-2">
             <Label>Project Image</Label>
@@ -376,6 +454,79 @@ export default function CreateProjectDialog({
             </Button>
           </DialogFooter>
         </form>
+          </TabsContent>
+
+          {/* IMPORT FROM BACKUP TAB */}
+          <TabsContent value="import">
+            <form onSubmit={handleImportBackup} className="grid gap-4 py-4">
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors">
+                  <FileArchive className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">Import Project from Backup</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Upload a backup JSON file to restore a complete project with all its data, tasks, and resources.
+                  </p>
+                  
+                  <input
+                    ref={backupFileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={(e) => setBackupFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => backupFileInputRef.current?.click()}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Select JSON Backup File
+                  </Button>
+                  
+                  {backupFile && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <FileArchive className="h-5 w-5 text-blue-600" />
+                          <span className="text-sm font-medium text-blue-900">{backupFile.name}</span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setBackupFile(null)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Size: {(backupFile.size / 1024).toFixed(2)} KB
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-yellow-900 mb-2">⚠️ Important Notes:</h4>
+                  <ul className="text-xs text-yellow-800 space-y-1 list-disc list-inside">
+                    <li>Only upload JSON backup files created by this application</li>
+                    <li>The backup will restore project data including tasks and resources</li>
+                    <li>Models with external URLs (Speckle, Autodesk) will be restored</li>
+                    <li>Local model files will NOT be restored (only metadata)</li>
+                  </ul>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="submit" disabled={importing || !backupFile}>
+                  {importing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  {importing ? "Importing..." : "Import Project"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

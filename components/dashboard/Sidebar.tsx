@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { LayoutDashboard, User, BarChart3, LogOut, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { LayoutDashboard, BarChart3, LogOut, ChevronLeft, ChevronRight, Settings, Activity } from 'lucide-react'
 
 interface SidebarProps {
   user: {
@@ -111,6 +111,20 @@ export default function Sidebar({ user }: SidebarProps) {
             >
               <BarChart3 className="h-5 w-5 flex-shrink-0" />
               {!collapsed && <span className="font-medium">Gantt Chart</span>}
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/dashboard/health"
+              className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-4 py-3 rounded-xl transition-all ${
+                pathname === '/dashboard/health'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+              title="System Health"
+            >
+              <Activity className="h-5 w-5 flex-shrink-0" />
+              {!collapsed && <span className="font-medium">Health</span>}
             </Link>
           </li>
           <li>

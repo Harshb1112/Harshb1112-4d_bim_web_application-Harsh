@@ -62,6 +62,7 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   const [selectionMode, setSelectionMode] = useState<'single' | 'box' | 'lasso' | 'layer'>('box') // Default to multi-select
   const [elementTypeFilter, setElementTypeFilter] = useState<string>('all')
   const [searchText, setSearchText] = useState<string>('')
+  const [multiSelectIds, setMultiSelectIds] = useState<Set<string>>(new Set()) // For Ctrl+Click multi-select
 
   // Dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -204,11 +205,16 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
         try {
           // Autodesk Viewer
           const autodeskViewer = (window as any).autodeskViewer
-          if (autodeskViewer) {
-            autodeskViewer.showAll()
-            autodeskViewer.clearThemingColors(autodeskViewer.model)
-            autodeskViewer.setGhosting(true)
-            console.log('[Auto-isolate] ✅ Autodesk: Showing all elements')
+          if (autodeskViewer && autodeskViewer.model) {
+            // Check if viewer is properly initialized
+            if (autodeskViewer.model.visibilityManager) {
+              autodeskViewer.showAll()
+              autodeskViewer.clearThemingColors(autodeskViewer.model)
+              autodeskViewer.setGhosting(true)
+              console.log('[Auto-isolate] ✅ Autodesk: Showing all elements')
+            } else {
+              console.log('[Auto-isolate] ⚠️ Autodesk viewer not fully initialized yet')
+            }
           }
           
           // IFC Viewer
@@ -263,6 +269,12 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
           
           if (selectedDbIds.length > 0) {
             console.log('[Auto-isolate] 📊 Autodesk: Processing', selectedDbIds.length, 'elements')
+            
+            // Check if viewer is properly initialized
+            if (!autodeskViewer.model?.visibilityManager) {
+              console.log('[Auto-isolate] ⚠️ Autodesk viewer not fully initialized yet')
+              return
+            }
             
             // Get ALL dbIds in the model
             const instanceTree = autodeskViewer.model.getInstanceTree()
@@ -1360,15 +1372,28 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   
                   {/* Element counts by type - Clickable to filter */}
                   <div className="space-y-2">
-                    <div className="text-xs text-gray-500">Click badge to filter:</div>
+                    <div className="text-xs text-gray-500">
+                      💡 Click to filter | Ctrl+Click to remove filtered ones
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(elementCounts).map(([type, count]) => (
                         <Badge 
                           key={type} 
                           variant={elementTypeFilter === 'all' || elementTypeFilter === type.toLowerCase() ? 'default' : 'secondary'} 
                           className="text-xs cursor-pointer hover:opacity-80 transition-all"
-                          onClick={() => setElementTypeFilter(elementTypeFilter === type.toLowerCase() ? 'all' : type.toLowerCase())}
-                          title={`Click to filter ${type} elements`}
+                          onClick={(e) => {
+                            if (e.ctrlKey || e.metaKey) {
+                              // Ctrl+Click: Remove only the FILTERED/VISIBLE elements of this type
+                              const toRemove = filteredElements.filter(el => el.type === type)
+                              const remaining = selectedElements.filter(el => !toRemove.some(r => r.id === el.id))
+                              setSelectedElements(remaining)
+                              toast.success(`Removed ${toRemove.length} visible ${type} elements`)
+                            } else {
+                              // Normal click: Filter
+                              setElementTypeFilter(elementTypeFilter === type.toLowerCase() ? 'all' : type.toLowerCase())
+                            }
+                          }}
+                          title={`Click to filter | Ctrl+Click to remove visible ${type}`}
                         >
                           {type}: {count}
                         </Badge>
@@ -1380,7 +1405,10 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   {duplicateNames.length > 0 && !searchText && (
                     <div className="pt-2 border-t space-y-2">
                       <div className="text-xs font-medium text-gray-700">
-                        Same Name Elements (Click to select all):
+                        Same Name Elements:
+                      </div>
+                      <div className="text-xs text-gray-500 mb-1">
+                        💡 Click to select all | Ctrl+Click to remove visible ones
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {duplicateNames.slice(0, 8).map(([name, count]) => (
@@ -1388,8 +1416,17 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                             key={name}
                             variant="outline"
                             className="text-xs cursor-pointer hover:bg-blue-50 transition-colors"
-                            onClick={async () => {
-                              // Load all elements with this name from model
+                            onClick={async (e) => {
+                              if (e.ctrlKey || e.metaKey) {
+                                // Ctrl+Click: Remove only the FILTERED/VISIBLE elements with this name
+                                const toRemove = filteredElements.filter(el => el.name === name)
+                                const remaining = selectedElements.filter(el => !toRemove.some(r => r.id === el.id))
+                                setSelectedElements(remaining)
+                                toast.success(`Removed ${toRemove.length} visible "${name}" elements`)
+                                return
+                              }
+                              
+                              // Normal click: Load all elements with this name from model
                               try {
                                 toast.info(`Loading all "${name}" elements...`)
                                 const response = await fetch(`/api/projects/${project.id}/models`)
@@ -1488,39 +1525,103 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
                   )}
 
                   {/* Element list with names - Show ALL elements with scroll */}
-                  <div className="max-h-96 overflow-y-auto space-y-1 p-2 bg-gray-50 rounded border">
-                    {filteredElements.length === 0 ? (
-                      <div className="text-xs text-center text-gray-500 py-4">
-                        No elements match the filter
+                  <div className="space-y-2">
+                    {multiSelectIds.size > 0 && (
+                      <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded">
+                        <span className="text-xs font-medium text-blue-700">
+                          {multiSelectIds.size} selected for removal
+                        </span>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs"
+                            onClick={() => setMultiSelectIds(new Set())}
+                          >
+                            Clear
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-6 text-xs bg-red-500 hover:bg-red-600"
+                            onClick={() => {
+                              const remaining = selectedElements.filter(el => !multiSelectIds.has(el.id))
+                              setSelectedElements(remaining)
+                              toast.success(`Removed ${multiSelectIds.size} elements`)
+                              setMultiSelectIds(new Set())
+                            }}
+                          >
+                            Remove Selected
+                          </Button>
+                        </div>
                       </div>
-                    ) : (
-                      <>
-                        {filteredElements.map((el, index) => (
-                          <div key={`${el.id}-${index}`} className="text-xs p-2 bg-white rounded border flex items-center justify-between hover:bg-blue-50 transition-colors group">
-                            <div className="flex-1 truncate">
-                              <span className="font-medium">{index + 1}. </span>
-                              <span className="text-gray-700">{el.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs">
-                                {el.type}
-                              </Badge>
-                              {/* Remove single element button */}
-                              <button
-                                onClick={() => {
-                                  setSelectedElements(prev => prev.filter(e => e.id !== el.id))
-                                  toast.success(`Removed: ${el.name}`)
-                                }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1"
-                                title="Remove this element"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </>
                     )}
+                    
+                    <div className="max-h-96 overflow-y-auto space-y-1 p-2 bg-gray-50 rounded border">
+                      {filteredElements.length === 0 ? (
+                        <div className="text-xs text-center text-gray-500 py-4">
+                          No elements match the filter
+                        </div>
+                      ) : (
+                        <>
+                          {filteredElements.map((el, index) => {
+                            const isMultiSelected = multiSelectIds.has(el.id)
+                            return (
+                              <div 
+                                key={`${el.id}-${index}`} 
+                                className={`text-xs p-2 rounded border flex items-center justify-between transition-colors group cursor-pointer ${
+                                  isMultiSelected 
+                                    ? 'bg-blue-100 border-blue-300' 
+                                    : 'bg-white hover:bg-blue-50'
+                                }`}
+                                onClick={(e) => {
+                                  if (e.ctrlKey || e.metaKey) {
+                                    // Ctrl+Click: Toggle multi-select
+                                    setMultiSelectIds(prev => {
+                                      const newSet = new Set(prev)
+                                      if (newSet.has(el.id)) {
+                                        newSet.delete(el.id)
+                                      } else {
+                                        newSet.add(el.id)
+                                      }
+                                      return newSet
+                                    })
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-2 flex-1 truncate">
+                                  {isMultiSelected && (
+                                    <div className="w-4 h-4 bg-blue-500 rounded flex items-center justify-center flex-shrink-0">
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    </div>
+                                  )}
+                                  <span className="font-medium">{index + 1}. </span>
+                                  <span className="text-gray-700 truncate">{el.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {el.type}
+                                  </Badge>
+                                  {/* Remove single element button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSelectedElements(prev => prev.filter(e => e.id !== el.id))
+                                      toast.success(`Removed: ${el.name}`)
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1"
+                                    title="Remove this element"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions */}
