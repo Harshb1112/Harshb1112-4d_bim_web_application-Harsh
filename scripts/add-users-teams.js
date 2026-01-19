@@ -71,7 +71,7 @@ async function addUsersAndTeams() {
         fullName: 'Harsh Bagadiya',
         email: 'harsh.bagadiya@krishnaos.com',
         passwordHash: defaultPassword,
-        role: 'member',
+        role: 'leader',
         isEmailVerified: true
       }
     });
@@ -96,7 +96,7 @@ async function addUsersAndTeams() {
     console.log('   Password: password123');
     console.log('\n   - creator@krishnaos.com (Manager)');
     console.log('   - megs@krishnaos.com (Team Leader)');
-    console.log('   - harsh.bagadiya@krishnaos.com (Member)');
+    console.log('   - harsh.bagadiya@krishnaos.com (Team Leader)');
 
   } catch (error) {
     console.error('❌ Error:', error);
