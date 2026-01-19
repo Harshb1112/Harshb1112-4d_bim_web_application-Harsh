@@ -1,0 +1,50 @@
+=======================
+Database Backup Commands
+=======================
+
+Create full database backup:
+node scripts/backup-database.js
+
+Create simple backup:
+node scripts/backup-db.js
+
+Restore database from backup:
+node scripts/restore-database.js database-backup-2026-01-19T12-26-02.json
+
+=======================
+GitHub Commands
+=======================
+
+Check git status:
+git status
+
+Add all changes:
+git add .
+
+Commit changes:
+git commit -m "Updated code and database backup"
+
+Push to GitHub:
+git push origin main
+
+Pull latest changes from GitHub:
+git pull origin main
+
+=======================
+Other Useful Commands
+=======================
+
+Start development server:
+npm run dev
+
+Run Prisma Studio:
+npm run prisma:studio
+
+Generate Prisma Client:
+npx prisma generate
+
+Run database migrations:
+npm run prisma:migrate
+
+Seed database:
+npm run seed
