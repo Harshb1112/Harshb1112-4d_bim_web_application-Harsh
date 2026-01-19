@@ -1,0 +1,35 @@
+# Check status
+git status
+
+# Add all changes
+git add .
+
+# Commit with message
+git commit -m "Your commit message here"
+
+# Push to GitHub
+git push origin main
+
+# View commit history
+git log --oneline
+
+# Check remote URL
+git remote -v
+
+# Pull latest changes (if needed)
+git pull origin main
+
+# Create new branch (if needed)
+git checkout -b branch-name
+
+# Switch branch
+git checkout main
+
+# View changes
+git diff
+
+# Undo last commit (keep changes)
+git reset --soft HEAD~1
+
+# Undo last commit (discard changes)
+git reset --hard HEAD~1
