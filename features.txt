@@ -1,0 +1,133 @@
+# 4D BIM Web Application - Features
+
+## Core Features
+
+### 1. Project Management
+- Create and manage construction projects
+- Upload project images and files
+- Project dashboard with statistics
+- Team assignment and collaboration
+- Project backups and restore
+
+### 2. 4D BIM Visualization
+- View IFC models in 3D
+- Autodesk Forge viewer integration
+- Speckle model support
+- Element selection and properties
+- 4D simulation (time-based construction visualization)
+- Video export of simulations
+
+### 3. Schedule Management
+- Create and manage tasks
+- Gantt chart view
+- Import MS Project files
+- Task dependencies
+- Resource allocation
+- Schedule health monitoring
+- Timeline view with progress tracking
+
+### 4. Model Integration
+- Upload IFC files
+- Connect Autodesk BIM 360 models
+- Link Speckle models
+- Extract elements from models
+- Link tasks to model elements
+- View element properties
+
+### 5. AI Features
+- AI-powered task generation
+- Smart task suggestions
+- Project insights and analytics
+- Automatic task linking to elements
+- Schedule optimization recommendations
+
+### 6. Site Monitoring (View Site)
+- 360° camera integration
+- Hikvision camera support
+- Progress photo capture
+- Timeline slider for progress review
+- Cost tracking per capture
+- Progress percentage tracking
+
+### 7. Team & User Management
+- User registration and authentication
+- Two-factor authentication (2FA)
+- Role-based access (Admin, Manager, Team Leader, Worker)
+- Team creation and management
+- User invitations
+- Profile management with image upload
+
+### 8. Resource Management
+- Add and manage resources
+- Resource cost tracking
+- Resource assignments to tasks
+- AI-generated resource suggestions
+- Import resources from files
+
+### 9. Safety Management
+- Safety incident reporting
+- Toolbox talks
+- Safety logs and tracking
+
+### 10. Daily Logs
+- Daily activity logging
+- Progress documentation
+- Work reports
+
+### 11. Integrations
+- SAP integration
+- Webhook support
+- API key management
+- Export to external systems
+
+### 12. Analytics & Health
+- Project health dashboard
+- Schedule health metrics
+- System health monitoring
+- AI credits tracking
+- Activity analytics
+
+### 13. Notifications
+- Real-time notifications
+- Push notifications
+- Email notifications
+- Weekly digest emails
+- Notification preferences
+
+### 14. Import/Export
+- Import MS Project files
+- Export to SAP
+- Export project data
+- PDF report generation
+- Video export
+
+### 15. Settings
+- User profile settings
+- Security settings (password, 2FA)
+- Notification preferences
+- Language settings
+- AI configuration
+- Session management
+
+## How It Works (Simple)
+
+1. **Login** → Users sign in with email/password
+2. **Create Project** → Add new construction project with details
+3. **Upload Model** → Upload IFC file or connect Autodesk/Speckle model
+4. **Create Schedule** → Add tasks manually or import from MS Project
+5. **Link Elements** → Connect tasks to 3D model elements
+6. **4D Simulation** → Play timeline to see construction progress in 3D
+7. **Monitor Progress** → Track task completion and schedule health
+8. **Team Collaboration** → Assign tasks, add comments, share updates
+9. **AI Assistance** → Get smart suggestions for tasks and optimization
+10. **Export/Report** → Generate reports and export data
+
+## Technology Stack
+- Next.js (React framework)
+- TypeScript
+- Prisma (Database ORM)
+- PostgreSQL (Database)
+- Autodesk Forge API
+- Speckle API
+- IFC.js (IFC file parsing)
+- AI Integration (OpenAI/Anthropic)
