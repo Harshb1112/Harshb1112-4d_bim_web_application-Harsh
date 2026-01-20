@@ -35,7 +35,7 @@ export default function ProjectAISettings({
         credentials: 'include',
         body: JSON.stringify({
           aiEnabled,
-          openaiApiKey: apiKey || null
+          aiApiKey: apiKey || null
         })
       })
 

@@ -400,12 +400,19 @@ export default function SettingsPage() {
     }
 
     if (aiEnabled && apiKey && !isMaskedKey) {
-      if (aiProvider === 'openai' && !apiKey.startsWith('sk-')) {
-        toast.error('❌ Invalid OpenAI API key format. Must start with "sk-"');
-        return;
-      }
-      if (aiProvider === 'claude' && !apiKey.startsWith('sk-ant-')) {
-        toast.error('❌ Invalid Claude API key format. Must start with "sk-ant-"');
+      // Auto-detect and validate provider based on key
+      if (apiKey.startsWith('sk-ant-')) {
+        if (aiProvider !== 'claude') {
+          console.log('🔧 Auto-correcting provider to Claude based on key');
+          setAiProvider('claude');
+        }
+      } else if (apiKey.startsWith('sk-')) {
+        if (aiProvider !== 'openai') {
+          console.log('🔧 Auto-correcting provider to OpenAI based on key');
+          setAiProvider('openai');
+        }
+      } else {
+        toast.error('❌ Invalid API key format. OpenAI keys start with "sk-", Claude keys start with "sk-ant-"');
         return;
       }
     }
@@ -921,7 +928,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                       <Label className="text-base font-semibold">AI Provider</Label>
                       <p className="text-sm text-muted-foreground">
-                        Choose which AI service to use
+                        {apiKey && !isMaskedKey ? 'Auto-detected from your API key' : 'Choose which AI service to use'}
                       </p>
                       <div className="grid grid-cols-2 gap-4">
                         <Button
@@ -929,6 +936,7 @@ export default function SettingsPage() {
                           variant={aiProvider === 'openai' ? 'default' : 'outline'}
                           className="h-20 flex flex-col items-center justify-center gap-2"
                           onClick={() => setAiProvider('openai')}
+                          disabled={apiKey && !isMaskedKey}
                         >
                           <Bot className="h-6 w-6" />
                           <span className="font-semibold">OpenAI</span>
@@ -939,6 +947,7 @@ export default function SettingsPage() {
                           variant={aiProvider === 'claude' ? 'default' : 'outline'}
                           className="h-20 flex flex-col items-center justify-center gap-2"
                           onClick={() => setAiProvider('claude')}
+                          disabled={apiKey && !isMaskedKey}
                         >
                           <Bot className="h-6 w-6" />
                           <span className="font-semibold">Claude</span>
@@ -962,7 +971,19 @@ export default function SettingsPage() {
                           type={showApiKey ? 'text' : 'password'}
                           placeholder={aiProvider === 'openai' ? 'sk-proj-...' : 'sk-ant-...'}
                           value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
+                          onChange={(e) => {
+                            const newKey = e.target.value;
+                            setApiKey(newKey);
+                            
+                            // Auto-detect provider based on key prefix
+                            if (newKey.startsWith('sk-ant-')) {
+                              setAiProvider('claude');
+                              console.log('🔍 Auto-detected Claude API key');
+                            } else if (newKey.startsWith('sk-')) {
+                              setAiProvider('openai');
+                              console.log('🔍 Auto-detected OpenAI API key');
+                            }
+                          }}
                           className="font-mono text-sm"
                         />
                         <Button 

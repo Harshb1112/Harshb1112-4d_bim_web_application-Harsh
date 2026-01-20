@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         where: { id: user.id },
         select: { 
           aiEnabled: true, 
-          openaiApiKey: true,
+          aiApiKey: true,
           aiProvider: true 
         }
       });
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         aiServiceStatus = 'warning';
         aiProvider = 'disabled';
         console.log('⚠️ AI Service: disabled');
-      } else if (!userConfig?.openaiApiKey) {
+      } else if (!userConfig?.aiApiKey) {
         aiServiceStatus = 'warning';
         aiProvider = 'no API key';
         console.log('⚠️ AI Service: no API key');

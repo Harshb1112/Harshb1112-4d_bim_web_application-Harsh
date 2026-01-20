@@ -101,16 +101,16 @@ export async function getUserAIConfig(userId: number): Promise<AIConfig | null> 
     select: {
       aiEnabled: true,
       aiProvider: true,
-      openaiApiKey: true
+      aiApiKey: true
     }
   });
 
-  if (!userConfig || !userConfig.aiEnabled || !userConfig.openaiApiKey) {
+  if (!userConfig || !userConfig.aiEnabled || !userConfig.aiApiKey) {
     return null;
   }
 
   try {
-    const apiKey = decrypt(userConfig.openaiApiKey);
+    const apiKey = decrypt(userConfig.aiApiKey);
     const provider = (userConfig.aiProvider as 'openai' | 'claude') || 'openai';
     
     // Debug logging

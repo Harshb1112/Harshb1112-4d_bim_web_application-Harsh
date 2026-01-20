@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       select: {
         aiEnabled: true,
         aiProvider: true,
-        openaiApiKey: true
+        aiApiKey: true
       }
     });
 
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       aiEnabled: userConfig.aiEnabled,
       aiProvider: userConfig.aiProvider || 'openai',
-      hasApiKey: !!userConfig.openaiApiKey
+      hasApiKey: !!userConfig.aiApiKey
     });
   } catch (error) {
     console.error('Failed to fetch AI config:', error);
@@ -64,19 +64,39 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     let { aiEnabled, aiProvider, apiKey } = body;
 
-    // Auto-detect provider from API key if provided
+    // Auto-detect provider from API key if provided (PRIORITY: Key detection over manual selection)
     if (apiKey) {
       if (apiKey.startsWith('sk-ant-')) {
         aiProvider = 'claude';
-        console.log('🔍 Auto-detected Claude API key');
+        console.log('🔍 Auto-detected Claude API key (sk-ant-)');
       } else if (apiKey.startsWith('sk-')) {
         aiProvider = 'openai';
-        console.log('🔍 Auto-detected OpenAI API key');
+        console.log('🔍 Auto-detected OpenAI API key (sk-)');
       } else {
         return NextResponse.json(
           { error: 'Invalid API key format. OpenAI keys start with "sk-", Claude keys start with "sk-ant-"' },
           { status: 400 }
         );
+      }
+    }
+
+    // If no new key provided but provider is being changed, validate existing key
+    if (!apiKey && aiProvider) {
+      const existingUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { aiApiKey: true }
+      });
+      
+      if (existingUser?.aiApiKey) {
+        const decryptedKey = decrypt(existingUser.aiApiKey);
+        // Validate that provider matches existing key
+        if (decryptedKey.startsWith('sk-ant-') && aiProvider !== 'claude') {
+          console.log('⚠️ Correcting provider: Existing key is Claude but provider was set to OpenAI');
+          aiProvider = 'claude';
+        } else if (decryptedKey.startsWith('sk-') && !decryptedKey.startsWith('sk-ant-') && aiProvider !== 'openai') {
+          console.log('⚠️ Correcting provider: Existing key is OpenAI but provider was set to Claude');
+          aiProvider = 'openai';
+        }
       }
     }
 
@@ -88,21 +108,21 @@ export async function POST(request: NextRequest) {
       data: {
         aiEnabled: aiEnabled || false,
         aiProvider: aiProvider || 'openai',
-        openaiApiKey: apiKey ? encrypt(apiKey) : null // Encrypt before saving
+        aiApiKey: apiKey ? encrypt(apiKey) : null // Encrypt before saving
       }
     });
 
     console.log(`✅ AI configuration saved for user ${user.id}:`, {
       aiEnabled: updatedUser.aiEnabled,
       aiProvider: updatedUser.aiProvider,
-      hasApiKey: !!updatedUser.openaiApiKey
+      hasApiKey: !!updatedUser.aiApiKey
     });
 
     return NextResponse.json({
       success: true,
       message: 'AI configuration saved successfully',
       aiEnabled: updatedUser.aiEnabled,
-      hasApiKey: !!updatedUser.openaiApiKey
+      hasApiKey: !!updatedUser.aiApiKey
     });
   } catch (error) {
     console.error('Failed to save AI config:', error);

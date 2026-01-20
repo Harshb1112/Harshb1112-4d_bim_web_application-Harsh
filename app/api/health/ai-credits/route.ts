@@ -23,12 +23,12 @@ export async function GET(request: NextRequest) {
       select: {
         aiEnabled: true,
         aiProvider: true,
-        openaiApiKey: true,
+        aiApiKey: true,
         createdAt: true
       }
     });
 
-    if (!userConfig || !userConfig.aiEnabled || !userConfig.openaiApiKey) {
+    if (!userConfig || !userConfig.aiEnabled || !userConfig.aiApiKey) {
       console.log('⚠️ AI not configured for user');
       return NextResponse.json({
         provider: 'openai',
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     let detectedProvider: 'openai' | 'claude' = 'openai';
     
     try {
-      const apiKey = decrypt(userConfig.openaiApiKey);
+      const apiKey = decrypt(userConfig.aiApiKey);
       keyValid = true;
       keyPreview = `${apiKey.substring(0, 10)}...${apiKey.slice(-4)}`;
       

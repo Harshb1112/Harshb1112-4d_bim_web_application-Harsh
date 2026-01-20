@@ -48,3 +48,4 @@ npm run prisma:migrate
 
 Seed database:
 npm run seed
+npx prisma db push
