@@ -5,7 +5,7 @@ import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 // DELETE - Revoke API key
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -18,7 +18,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const keyId = parseInt(params.id)
+    const { id } = await params
+    const keyId = parseInt(id)
 
     if (isNaN(keyId)) {
       return NextResponse.json({ error: 'Invalid API key ID' }, { status: 400 })

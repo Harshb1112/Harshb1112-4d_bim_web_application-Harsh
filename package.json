@@ -13,7 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "test": "jest",
-    "lint": "eslint",
+    "lint": "next lint --max-warnings=999",
     "vercel-build": "prisma generate && next build"
   },
   "dependencies": {

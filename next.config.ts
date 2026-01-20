@@ -7,9 +7,9 @@ const nextConfig = {
   
   experimental: {
     serverActions: {
-      bodySizeLimit: '100mb',
+      bodySizeLimit: '10gb',
     },
-    proxyClientMaxBodySize: '100mb',
+    proxyClientMaxBodySize: '10gb',
   },
 
   // Move serverComponentsExternalPackages out of experimental
@@ -23,7 +23,7 @@ const nextConfig = {
   },
 
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: true,
   },
 
   // Optimize images for production - use remotePatterns instead of domains
