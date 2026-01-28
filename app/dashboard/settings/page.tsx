@@ -44,6 +44,9 @@ export default function SettingsPage() {
   const [aiProvider, setAiProvider] = useState<'openai' | 'claude'>('openai')
   const [apiKey, setApiKey] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
+  
+  // Check if API key is masked (already saved)
+  const isMaskedKey = apiKey === '••••••••••••••••'
 
   // Notification Settings
   const [emailNotifications, setEmailNotifications] = useState(true)
@@ -390,9 +393,6 @@ export default function SettingsPage() {
   }
 
   const handleSaveAIConfig = async () => {
-    // If API key is masked (already saved), don't send it again
-    const isMaskedKey = apiKey === '••••••••••••••••';
-    
     // Validate before saving
     if (aiEnabled && !apiKey) {
       toast.error('❌ Please enter an API key when AI is enabled');
