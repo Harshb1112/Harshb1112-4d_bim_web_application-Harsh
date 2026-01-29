@@ -43,23 +43,62 @@ function getMarketRate(name: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await verifyAuth()
+    const user = await verifyAuth(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const projectId = parseInt(formData.get('projectId') as string)
+    const projectIdStr = formData.get('projectId') as string
+    const projectId = parseInt(projectIdStr)
 
-    if (!file || !projectId) {
-      return NextResponse.json({ error: 'File and projectId required' }, { status: 400 })
+    console.log('Import request:', { 
+      hasFile: !!file, 
+      fileName: file?.name,
+      fileType: file?.type,
+      fileSize: file?.size,
+      projectIdStr, 
+      projectId,
+      isValidProjectId: !isNaN(projectId) && projectId > 0
+    })
+
+    if (!file) {
+      return NextResponse.json({ error: 'File is required' }, { status: 400 })
     }
 
-    // Read Excel file
+    if (!projectIdStr || isNaN(projectId) || projectId <= 0) {
+      return NextResponse.json({ error: 'Valid projectId is required' }, { status: 400 })
+    }
+
+    // Read Excel or CSV file
     const buffer = await file.arrayBuffer()
+    
+    if (buffer.byteLength === 0) {
+      return NextResponse.json({ 
+        error: 'File is empty or could not be read' 
+      }, { status: 400 })
+    }
+    
     const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(buffer)
+    
+    // Check file type and load accordingly
+    const fileName = file.name.toLowerCase()
+    if (fileName.endsWith('.csv')) {
+      // Parse CSV - use readFile method with stream
+      const { Readable } = await import('stream')
+      const textDecoder = new TextDecoder('utf-8')
+      const csvText = textDecoder.decode(buffer)
+      const stream = Readable.from([csvText])
+      await workbook.csv.read(stream)
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      // Parse Excel
+      await workbook.xlsx.load(buffer)
+    } else {
+      return NextResponse.json({ 
+        error: 'Invalid file type. Please upload .xlsx, .xls, or .csv file' 
+      }, { status: 400 })
+    }
 
     const worksheet = workbook.worksheets[0]
     if (!worksheet) {
@@ -68,13 +107,16 @@ export async function POST(request: NextRequest) {
 
     const resources: any[] = []
     let headerRow: string[] = []
+    let rowCount = 0
 
     worksheet.eachRow((row, rowNumber) => {
       const values = row.values as any[]
+      rowCount++
       
       // First row is header
       if (rowNumber === 1) {
         headerRow = values.slice(1).map(v => String(v || '').toLowerCase().trim())
+        console.log('CSV Headers:', headerRow)
         return
       }
 
@@ -88,8 +130,11 @@ export async function POST(request: NextRequest) {
       })
 
       // Get name (required)
-      const name = rowData['name'] || rowData['resource'] || rowData['resource name']
-      if (!name) return
+      const name = rowData['name'] || rowData['resource'] || rowData['resource name'] || rowData['resource_name']
+      if (!name) {
+        console.log(`Row ${rowNumber}: Skipping - no name found`, rowData)
+        return
+      }
 
       // Get type
       let type = (rowData['type'] || rowData['category'] || 'labor').toString().toLowerCase()
@@ -100,12 +145,12 @@ export async function POST(request: NextRequest) {
       // Get rates - use provided or auto-fill from market rates
       const marketRates = getMarketRate(name.toString())
       
-      const hourlyRate = rowData['hourlyrate'] || rowData['hourly rate'] || rowData['hourly'] || marketRates?.hourly || null
-      const dailyRate = rowData['dailyrate'] || rowData['daily rate'] || rowData['daily'] || rowData['rate'] || marketRates?.daily || null
+      const hourlyRate = rowData['hourlyrate'] || rowData['hourly rate'] || rowData['hourly'] || rowData['hourly_rate'] || marketRates?.hourly || null
+      const dailyRate = rowData['dailyrate'] || rowData['daily rate'] || rowData['daily'] || rowData['rate'] || rowData['daily_rate'] || marketRates?.daily || null
       const unit = rowData['unit'] || marketRates?.unit || null
       const capacity = rowData['capacity'] || rowData['qty'] || rowData['quantity'] || null
 
-      resources.push({
+      const resource = {
         projectId,
         name: name.toString().trim(),
         type,
@@ -113,12 +158,19 @@ export async function POST(request: NextRequest) {
         hourlyRate: hourlyRate ? parseFloat(hourlyRate) : null,
         dailyRate: dailyRate ? parseFloat(dailyRate) : null,
         capacity: capacity ? parseInt(capacity) : null,
-        description: rowData['description'] || rowData['notes'] || `Imported from Excel`
-      })
+        description: rowData['description'] || rowData['notes'] || `Imported from ${fileName}`
+      }
+      
+      console.log(`Row ${rowNumber}: Parsed resource`, resource)
+      resources.push(resource)
     })
 
+    console.log(`Parsed ${resources.length} resources from ${rowCount} rows`)
+
     if (resources.length === 0) {
-      return NextResponse.json({ error: 'No valid resources found in file' }, { status: 400 })
+      return NextResponse.json({ 
+        error: `No valid resources found in file. Found ${rowCount} rows (including header). Please add resource data rows below the header. Example:\nname,type,unit,hourly_rate,daily_rate,capacity,description\nMason,labor,person,100,800,5,Skilled mason\nCrane,equipment,machine,2500,20000,1,Tower crane` 
+      }, { status: 400 })
     }
 
     // Create resources in database
@@ -140,6 +192,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Import error:', error)
-    return NextResponse.json({ error: 'Failed to import resources' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Failed to import resources'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }

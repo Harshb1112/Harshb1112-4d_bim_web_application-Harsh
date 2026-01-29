@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
         status: 'planned'
       }))
       
-      await withRetry(() => prisma.taskElementLink.createMany({
+      await withRetry(() => prisma.elementTaskLink.createMany({
         data: elementLinksToCreate
       }))
       console.log(`[Task Creation] Created ${elementLinksToCreate.length} element links`)

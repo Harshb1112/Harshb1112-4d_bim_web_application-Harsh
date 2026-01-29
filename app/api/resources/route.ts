@@ -52,12 +52,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { projectId, name, type, unit, hourlyRate, dailyRate, capacity, description } = body
+    const { projectId, name, type, unit, hourlyRate, dailyRate, unitRate, quantity, capacity, description, duration } = body
 
     if (!projectId || !name || !type) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    // Create resource
     const resource = await prisma.resource.create({
       data: {
         projectId,
@@ -71,7 +72,47 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ resource, message: 'Resource created successfully' })
+    // Calculate and create initial cost entry if rates are provided
+    let costEntry = null
+    if (quantity && (hourlyRate || dailyRate || unitRate)) {
+      const qty = parseFloat(quantity)
+      let totalCost = 0
+      let unitCost = 0
+
+      // Calculate cost based on available rate
+      if (dailyRate) {
+        unitCost = parseFloat(dailyRate)
+        totalCost = unitCost * qty
+      } else if (hourlyRate) {
+        unitCost = parseFloat(hourlyRate)
+        // Assume 8 hours per day if duration not specified
+        const hours = duration ? parseFloat(duration) * 8 : qty * 8
+        totalCost = unitCost * hours
+      } else if (unitRate) {
+        unitCost = parseFloat(unitRate)
+        totalCost = unitCost * qty
+      }
+
+      // Create cost entry
+      if (totalCost > 0) {
+        costEntry = await prisma.resourceCost.create({
+          data: {
+            resourceId: resource.id,
+            date: new Date(),
+            quantity: qty,
+            unitCost: unitCost,
+            totalCost: totalCost,
+            notes: `Initial cost calculation from AI generation`
+          }
+        })
+      }
+    }
+
+    return NextResponse.json({ 
+      resource, 
+      cost: costEntry,
+      message: 'Resource created successfully' 
+    })
   } catch (error) {
     console.error('Create resource error:', error)
     return NextResponse.json({ error: 'Failed to create resource' }, { status: 500 })

@@ -25,6 +25,7 @@ interface TeamManagementProps {
 export default function TeamManagement({ project: initialProject }: TeamManagementProps) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [memberRole, setMemberRole] = useState('member')
   const [selectedTeamId, setSelectedTeamId] = useState(initialProject.teamId?.toString() || initialProject.team?.id?.toString() || '')
   const [teams, setTeams] = useState<any[]>([])
@@ -137,7 +138,7 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
             'Content-Type': 'application/json'
           },
           credentials: 'include',
-          body: JSON.stringify({ fullName, email, memberRole }),
+          body: JSON.stringify({ fullName, email, password, memberRole }),
         })
 
         const data = await response.json()
@@ -157,6 +158,7 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
         
         setFullName('')
         setEmail('')
+        setPassword('')
         setMemberRole('member')
 
         if (data.temporaryPassword) {
@@ -366,6 +368,19 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
                     onChange={(e) => setEmail(e.target.value)}
                     required
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                  <p className="text-xs text-gray-500">Minimum 6 characters</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="dialogTeamSelect">Select Team</Label>

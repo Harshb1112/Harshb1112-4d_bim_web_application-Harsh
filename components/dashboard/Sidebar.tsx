@@ -163,7 +163,7 @@ export default function Sidebar({ user }: SidebarProps) {
           alt="BimBoss Logo" 
           width={140} 
           height={40}
-          className="w-[140px] h-auto"
+          style={{ width: '140px', height: 'auto' }}
         />
       </div>
     </aside>

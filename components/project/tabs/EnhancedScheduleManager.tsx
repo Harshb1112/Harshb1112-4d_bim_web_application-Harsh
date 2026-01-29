@@ -110,26 +110,24 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
 
   const fetchAvailableElements = async () => {
     try {
-      // Get elements from project models
-      const response = await fetch(`/api/projects/${project.id}/models`)
+      // Fetch all elements from project models (from database)
+      const response = await fetch(`/api/models/elements?projectId=${project.id}`)
       if (response.ok) {
         const data = await response.json()
-        const models = data.models || []
-        
-        // Fetch elements from first model with elements
-        for (const model of models) {
-          const elemResponse = await fetch(`/api/models/${model.id}/elements`)
-          if (elemResponse.ok) {
-            const elemData = await elemResponse.json()
-            if (elemData.elements && elemData.elements.length > 0) {
-              setAvailableElements(elemData.elements)
-              break
-            }
-          }
+        if (data.elements && data.elements.length > 0) {
+          console.log(`Fetched ${data.elements.length} elements from database`)
+          setAvailableElements(data.elements)
+        } else {
+          console.warn('No elements found in database for this project')
+          setAvailableElements([])
         }
+      } else {
+        console.error('Failed to fetch elements:', response.status)
+        setAvailableElements([])
       }
     } catch (error) {
       console.error('Error fetching elements:', error)
+      setAvailableElements([])
     }
   }
 
@@ -675,22 +673,36 @@ export default function EnhancedScheduleManager({ project, currentUserRole, curr
   const handleImportSchedule = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    
+    console.log('[Import] Starting import:', { fileName: file.name, fileSize: file.size, projectId: project.id })
+    
     setImporting(true)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('projectId', project.id.toString())
+    
     try {
       const res = await fetch('/api/tasks/import', { method: 'POST', credentials: 'include', body: formData })
+      const data = await res.json()
+      
+      console.log('[Import] Response:', { ok: res.ok, status: res.status, data })
+      
       if (res.ok) {
-        const data = await res.json()
         toast.success(`Imported ${data.count || 0} tasks!`)
         fetchTasks()
         setShowImportDialog(false)
       } else {
-        toast.error('Import failed')
+        const errorMsg = data.error || 'Import failed'
+        console.error('[Import] Error:', errorMsg)
+        toast.error(errorMsg)
       }
-    } catch { toast.error('Import failed') }
-    finally { setImporting(false); e.target.value = '' }
+    } catch (error) {
+      console.error('[Import] Exception:', error)
+      toast.error('Import failed: ' + String(error))
+    } finally { 
+      setImporting(false)
+      e.target.value = '' 
+    }
   }
 
   // Calculate critical path (simplified - tasks with no slack)

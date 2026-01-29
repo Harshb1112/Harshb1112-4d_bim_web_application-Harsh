@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -107,7 +107,8 @@ export default function BackupsPageContent({ projectId }: BackupsPageContentProp
       setBackupDescription('');
       fetchBackups();
       
-      alert(`Backup created successfully!\n\nSize: ${data.message}\n\nIncludes:\n- ${data.includes.tasks} tasks\n- ${data.includes.models} models\n- ${data.includes.files} files\n- ${data.includes.dailyLogs} daily logs\n- ${data.includes.safetyIncidents} safety incidents\n- ${data.includes.siteCaptures} site captures`);
+      const includes = data.includes || {};
+      alert(`✅ Backup created successfully!\n\n📦 Size: ${(data.fileSize / (1024 * 1024)).toFixed(2)} MB\n\n📋 Includes:\n• ${includes.tasks || 0} tasks\n• ${includes.elementLinks || 0} element links\n• ${includes.models || 0} models\n• ${includes.elements || 0} BIM elements\n• ${includes.files || 0} files\n• ${includes.dailyLogs || 0} daily logs\n• ${includes.safetyIncidents || 0} safety incidents\n• ${includes.siteCaptures || 0} site captures`);
     } catch (error: any) {
       console.error('Failed to create backup:', error);
       alert(error.message || 'Failed to create backup');
@@ -273,6 +274,9 @@ export default function BackupsPageContent({ projectId }: BackupsPageContentProp
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Create Project Backup</DialogTitle>
+                  <DialogDescription>
+                    Create a snapshot of your project data including tasks, models, and files.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div>

@@ -113,23 +113,24 @@ export default function ScheduleManager({ project, onTaskSelect, selectedTasks, 
 
   const fetchAvailableElements = async () => {
     try {
-      const response = await fetch(`/api/projects/${project.id}/models`, { credentials: 'include' })
+      // Fetch all elements from project models (from database)
+      const response = await fetch(`/api/models/elements?projectId=${project.id}`, { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
-        const models = data.models || []
-        for (const model of models) {
-          const elemResponse = await fetch(`/api/models/${model.id}/elements`, { credentials: 'include' })
-          if (elemResponse.ok) {
-            const elemData = await elemResponse.json()
-            if (elemData.elements && elemData.elements.length > 0) {
-              setAvailableElements(elemData.elements)
-              break
-            }
-          }
+        if (data.elements && data.elements.length > 0) {
+          console.log(`Fetched ${data.elements.length} elements from database`)
+          setAvailableElements(data.elements)
+        } else {
+          console.warn('No elements found in database for this project')
+          setAvailableElements([])
         }
+      } else {
+        console.error('Failed to fetch elements:', response.status)
+        setAvailableElements([])
       }
     } catch (error) {
       console.error('Error fetching elements:', error)
+      setAvailableElements([])
     }
   }
 

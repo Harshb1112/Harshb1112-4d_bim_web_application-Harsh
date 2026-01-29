@@ -30,8 +30,41 @@ interface ExportToSAPDialogProps {
 }
 
 const CURRENCIES = [
-  'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'INR', 'AUD', 'CAD', 'CHF', 'SEK', 
-  'NZD', 'KRW', 'SGD', 'NOK', 'MXN', 'ZAR', 'HKD', 'BRL', 'RUB', 'AED'
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
+  { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
+  { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
+  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
+  { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$' },
+  { code: 'CHF', name: 'Swiss Franc', symbol: 'CHF' },
+  { code: 'SEK', name: 'Swedish Krona', symbol: 'kr' },
+  { code: 'NZD', name: 'New Zealand Dollar', symbol: 'NZ$' },
+  { code: 'KRW', name: 'South Korean Won', symbol: '₩' },
+  { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
+  { code: 'NOK', name: 'Norwegian Krone', symbol: 'kr' },
+  { code: 'MXN', name: 'Mexican Peso', symbol: '$' },
+  { code: 'ZAR', name: 'South African Rand', symbol: 'R' },
+  { code: 'HKD', name: 'Hong Kong Dollar', symbol: 'HK$' },
+  { code: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
+  { code: 'RUB', name: 'Russian Ruble', symbol: '₽' },
+  { code: 'AED', name: 'UAE Dirham', symbol: 'د.إ' },
+  { code: 'SAR', name: 'Saudi Riyal', symbol: '﷼' },
+  { code: 'THB', name: 'Thai Baht', symbol: '฿' },
+  { code: 'TRY', name: 'Turkish Lira', symbol: '₺' },
+  { code: 'PLN', name: 'Polish Zloty', symbol: 'zł' },
+  { code: 'DKK', name: 'Danish Krone', symbol: 'kr' },
+  { code: 'IDR', name: 'Indonesian Rupiah', symbol: 'Rp' },
+  { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM' },
+  { code: 'PHP', name: 'Philippine Peso', symbol: '₱' },
+  { code: 'CZK', name: 'Czech Koruna', symbol: 'Kč' },
+  { code: 'ILS', name: 'Israeli Shekel', symbol: '₪' },
+  { code: 'CLP', name: 'Chilean Peso', symbol: '$' },
+  { code: 'PKR', name: 'Pakistani Rupee', symbol: '₨' },
+  { code: 'EGP', name: 'Egyptian Pound', symbol: '£' },
+  { code: 'VND', name: 'Vietnamese Dong', symbol: '₫' },
+  { code: 'BDT', name: 'Bangladeshi Taka', symbol: '৳' }
 ]
 
 const EXPORT_TYPES = [
@@ -105,17 +138,17 @@ export default function ExportToSAPDialog({
   const handleExport = async () => {
     setExporting(true)
     try {
-      const endpoint = format === 'csv' 
-        ? `/api/projects/${projectId}/export-sap-csv`
-        : `/api/projects/${projectId}/export-sap`
-
-      const response = await fetch(endpoint, {
+      console.log('[SAP Export Dialog] Starting export with config:', config)
+      
+      const response = await fetch('/api/integrations/sap/export', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          projectId,
+          format,
           exportType,
           config
         })
@@ -126,24 +159,69 @@ export default function ExportToSAPDialog({
         throw new Error(error.error || 'Export failed')
       }
 
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${config.projectDefinition}_SAP_Export.${format}`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
+      // Handle file download based on format
+      if (format === 'csv' || format === 'xml') {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        
+        const fileExtension = format === 'csv' ? 'csv' : 'xml'
+        const fileName = `SAP_${exportType.toUpperCase()}_${config.projectDefinition}_${Date.now()}.${fileExtension}`
+        a.download = fileName
+        
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        
+        console.log('[SAP Export Dialog] File downloaded:', fileName)
+      } else {
+        // Handle JSON response
+        const data = await response.json()
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `SAP_${exportType.toUpperCase()}_${config.projectDefinition}_${Date.now()}.json`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      }
 
-      toast.success('Export completed successfully')
+      toast.success(`Export completed successfully! Currency: ${config.currency}`)
       onOpenChange(false)
     } catch (error: any) {
-      console.error('Export error:', error)
+      console.error('[SAP Export Dialog] Export error:', error)
       toast.error(error.message || 'Failed to export')
     } finally {
       setExporting(false)
     }
+  }
+
+  // Helper function to convert JSON to XML
+  const convertToXML = (data: any[], config: any) => {
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<SAP_PROJECT_EXPORT>\n'
+    xml += `  <PROJECT_DEFINITION>${config.projectDefinition}</PROJECT_DEFINITION>\n`
+    xml += `  <CONTROLLING_AREA>${config.controllingArea}</CONTROLLING_AREA>\n`
+    xml += `  <PLANT>${config.plant}</PLANT>\n`
+    xml += `  <COST_CENTER>${config.costCenter}</COST_CENTER>\n`
+    xml += `  <CURRENCY>${config.currency}</CURRENCY>\n`
+    xml += '  <TASKS>\n'
+    
+    data.forEach(task => {
+      xml += '    <TASK>\n'
+      Object.entries(task).forEach(([key, value]) => {
+        xml += `      <${key}>${value || ''}</${key}>\n`
+      })
+      xml += '    </TASK>\n'
+    })
+    
+    xml += '  </TASKS>\n'
+    xml += '</SAP_PROJECT_EXPORT>'
+    return xml
   }
 
   return (
@@ -254,12 +332,12 @@ export default function ExportToSAPDialog({
                   onValueChange={(value) => setConfig({ ...config, currency: value })}
                 >
                   <SelectTrigger id="currency">
-                    <SelectValue />
+                    <SelectValue placeholder="Select currency" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[200px]">
                     {CURRENCIES.map((currency) => (
-                      <SelectItem key={currency} value={currency}>
-                        {currency}
+                      <SelectItem key={currency.code} value={currency.code}>
+                        {currency.code} - {currency.name} ({currency.symbol})
                       </SelectItem>
                     ))}
                   </SelectContent>

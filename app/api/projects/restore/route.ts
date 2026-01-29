@@ -71,8 +71,24 @@ export async function POST(req: NextRequest) {
     const taskIdMap = new Map<number, number>(); // old ID -> new ID
     
     if (projectData.tasks && projectData.tasks.length > 0) {
+      console.log(`[Restore] Restoring ${projectData.tasks.length} tasks...`);
+      
       // First pass: Create all tasks without dependencies
       for (const task of projectData.tasks) {
+        // Check if assignee exists, otherwise set to null
+        let assigneeId = null;
+        if (task.assigneeId) {
+          const assigneeExists = await prisma.user.findUnique({ where: { id: task.assigneeId } });
+          assigneeId = assigneeExists ? task.assigneeId : null;
+        }
+        
+        // Check if team exists, otherwise set to null
+        let teamId = null;
+        if (task.teamId) {
+          const teamExists = await prisma.team.findUnique({ where: { id: task.teamId } });
+          teamId = teamExists ? task.teamId : null;
+        }
+        
         const newTask = await prisma.task.create({
           data: {
             projectId: newProject.id,
@@ -86,9 +102,8 @@ export async function POST(req: NextRequest) {
             progress: task.progress || 0,
             color: task.color,
             resource: task.resource,
-            // Don't set teamId and assigneeId if they don't exist
-            teamId: task.teamId ? (await prisma.team.findUnique({ where: { id: task.teamId } }))?.id : null,
-            assigneeId: task.assigneeId ? (await prisma.user.findUnique({ where: { id: task.assigneeId } }))?.id : null,
+            teamId: teamId,
+            assigneeId: assigneeId,
             status: task.status || 'todo',
             priority: task.priority,
           }
@@ -104,25 +119,32 @@ export async function POST(req: NextRequest) {
             const newSuccessorId = taskIdMap.get(task.id);
             
             if (newPredecessorId && newSuccessorId) {
-              await prisma.dependency.create({
-                data: {
-                  predecessorId: newPredecessorId,
-                  successorId: newSuccessorId,
-                  type: dep.type || 'FS'
-                }
-              });
+              try {
+                await prisma.dependency.create({
+                  data: {
+                    predecessorId: newPredecessorId,
+                    successorId: newSuccessorId,
+                    type: dep.type || 'FS'
+                  }
+                });
+              } catch (err) {
+                console.error('[Restore] Failed to create dependency:', err);
+              }
             }
           }
         }
       }
     }
 
-    // Restore models (only metadata, not files)
+    // Restore models with elements
+    const modelIdMap = new Map<number, number>(); // old model ID -> new model ID
+    const elementIdMap = new Map<number, number>(); // old element ID -> new element ID
+    
     if (projectData.models && projectData.models.length > 0) {
       for (const model of projectData.models) {
         // Only restore Speckle and Autodesk models (URL-based)
         if (model.source !== 'local') {
-          await prisma.model.create({
+          const newModel = await prisma.model.create({
             data: {
               projectId: newProject.id,
               name: model.name,
@@ -135,6 +157,139 @@ export async function POST(req: NextRequest) {
               uploadedBy: user.id,
             }
           });
+          
+          modelIdMap.set(model.id, newModel.id);
+          
+          // Restore elements for this model
+          if (model.elements && model.elements.length > 0) {
+            console.log(`[Restore] Restoring ${model.elements.length} elements for model ${model.name}`);
+            
+            for (const element of model.elements) {
+              try {
+                const newElement = await prisma.element.create({
+                  data: {
+                    modelId: newModel.id,
+                    elementId: element.elementId,
+                    name: element.name,
+                    type: element.type,
+                    category: element.category,
+                    level: element.level,
+                    material: element.material,
+                    volume: element.volume,
+                    area: element.area,
+                    length: element.length,
+                    metadata: element.metadata,
+                  }
+                });
+                
+                elementIdMap.set(element.id, newElement.id);
+                
+                // Restore element properties
+                if (element.properties && element.properties.length > 0) {
+                  for (const prop of element.properties) {
+                    await prisma.elementProperty.create({
+                      data: {
+                        elementId: newElement.id,
+                        name: prop.name,
+                        value: prop.value,
+                        category: prop.category,
+                      }
+                    });
+                  }
+                }
+                
+                // Restore element status
+                if (element.elementStatus && element.elementStatus.length > 0) {
+                  for (const status of element.elementStatus) {
+                    await prisma.elementStatus.create({
+                      data: {
+                        elementId: newElement.id,
+                        status: status.status,
+                        date: status.date ? new Date(status.date) : new Date(),
+                        notes: status.notes,
+                        updatedBy: user.id,
+                      }
+                    });
+                  }
+                }
+              } catch (err) {
+                console.error(`[Restore] Failed to restore element ${element.elementId}:`, err);
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Restore element-task links
+    console.log('[Restore] Restoring element-task links...');
+    if (projectData.tasks && projectData.tasks.length > 0) {
+      for (const task of projectData.tasks) {
+        if (task.elementLinks && task.elementLinks.length > 0) {
+          const newTaskId = taskIdMap.get(task.id);
+          if (newTaskId) {
+            for (const link of task.elementLinks) {
+              const newElementId = elementIdMap.get(link.elementId);
+              if (newElementId) {
+                try {
+                  await prisma.elementTaskLink.create({
+                    data: {
+                      elementId: newElementId,
+                      taskId: newTaskId,
+                      linkType: link.linkType || 'construction',
+                      notes: link.notes,
+                    }
+                  });
+                } catch (err) {
+                  console.error(`[Restore] Failed to restore element-task link:`, err);
+                }
+              }
+            }
+          }
+        }
+        
+        // Restore progress logs
+        if (task.progressLogs && task.progressLogs.length > 0) {
+          const newTaskId = taskIdMap.get(task.id);
+          if (newTaskId) {
+            for (const log of task.progressLogs) {
+              try {
+                await prisma.progressLog.create({
+                  data: {
+                    taskId: newTaskId,
+                    progress: log.progress,
+                    notes: log.notes,
+                    loggedBy: user.id,
+                    createdAt: log.createdAt ? new Date(log.createdAt) : new Date(),
+                  }
+                });
+              } catch (err) {
+                console.error(`[Restore] Failed to restore progress log:`, err);
+              }
+            }
+          }
+        }
+        
+        // Restore comments
+        if (task.comments && task.comments.length > 0) {
+          const newTaskId = taskIdMap.get(task.id);
+          if (newTaskId) {
+            for (const comment of task.comments) {
+              try {
+                await prisma.taskComment.create({
+                  data: {
+                    taskId: newTaskId,
+                    userId: user.id,
+                    comment: comment.comment,
+                    attachments: comment.attachments,
+                    createdAt: comment.createdAt ? new Date(comment.createdAt) : new Date(),
+                  }
+                });
+              } catch (err) {
+                console.error(`[Restore] Failed to restore comment:`, err);
+              }
+            }
+          }
         }
       }
     }
@@ -186,6 +341,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Count restored items
+    const totalElements = projectData.models?.reduce((sum: number, m: any) => 
+      sum + (m.elements?.length || 0), 0) || 0;
+    const totalElementLinks = projectData.tasks?.reduce((sum: number, t: any) => 
+      sum + (t.elementLinks?.length || 0), 0) || 0;
+    const totalProgressLogs = projectData.tasks?.reduce((sum: number, t: any) => 
+      sum + (t.progressLogs?.length || 0), 0) || 0;
+    const totalComments = projectData.tasks?.reduce((sum: number, t: any) => 
+      sum + (t.comments?.length || 0), 0) || 0;
+
     // Log activity
     await prisma.activityLog.create({
       data: {
@@ -197,20 +362,28 @@ export async function POST(req: NextRequest) {
           restoredFrom: backupFile.name,
           tasksRestored: projectData.tasks?.length || 0,
           modelsRestored: projectData.models?.filter((m: any) => m.source !== 'local').length || 0,
+          elementsRestored: totalElements,
+          elementLinksRestored: totalElementLinks,
           resourcesRestored: projectData.resources?.length || 0,
           dailyLogsRestored: projectData.dailyLogs?.length || 0,
+          progressLogsRestored: totalProgressLogs,
+          commentsRestored: totalComments,
         }
       }
     });
 
     return NextResponse.json({
       project: newProject,
-      message: 'Project restored successfully',
+      message: 'Project restored successfully with all elements and links',
       stats: {
         tasks: projectData.tasks?.length || 0,
         models: projectData.models?.filter((m: any) => m.source !== 'local').length || 0,
+        elements: totalElements,
+        elementLinks: totalElementLinks,
         resources: projectData.resources?.length || 0,
         dailyLogs: projectData.dailyLogs?.length || 0,
+        progressLogs: totalProgressLogs,
+        comments: totalComments,
       }
     });
 

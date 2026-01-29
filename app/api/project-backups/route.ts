@@ -12,7 +12,7 @@ const prisma = new PrismaClient();
 const pipelineAsync = promisify(pipeline);
 
 // Max backup size: 5GB
-const MAX_BACKUP_SIZE = 5 * 1024 * 1024 * 1024;
+const MAX_BACKUP_SIZE = 5 * 1024 * 1024 * 1024; // 5GB limit
 
 export async function GET(req: NextRequest) {
   try {
@@ -220,7 +220,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. Add README with backup info
+    // 5. Calculate statistics
+    const totalElementLinks = project.tasks.reduce((sum, task) => sum + (task.elementLinks?.length || 0), 0);
+    const totalElements = project.models.reduce((sum, model) => sum + (model.elements?.length || 0), 0);
+
+    // 6. Add README with backup info
     const readme = `
 PROJECT BACKUP
 ==============
@@ -231,6 +235,13 @@ Created By: ${user.fullName} (${user.email})
 
 Contents:
 - project-data.json: Complete project database export
+  * ${project.tasks.length} tasks with ${totalElementLinks} element links
+  * ${totalElements} BIM elements with properties
+  * ${project.models.length} 3D models
+  * ${project.projectFiles.length} project files
+  * ${project.dailyLogs.length} daily logs
+  * ${project.safetyIncidents.length} safety incidents
+  * ${project.siteCaptures.length} site captures
 - models/: All 3D model files (IFC, etc.)
 - files/: All project documents (PDF, Excel, etc.)
 - site-captures/: All site photos and videos
@@ -242,7 +253,14 @@ To restore:
 2. Use the restore API endpoint
 3. All data and files will be restored
 
-Note: This backup includes EVERYTHING - database records, files, models, images.
+Note: This backup includes EVERYTHING:
+✓ Project details and settings
+✓ All tasks with their linked BIM elements
+✓ All 3D model files and element data
+✓ Resources and assignments
+✓ Daily logs and safety records
+✓ All project documents
+✓ All site photos and videos
 `;
     archive.append(readme, { name: 'README.txt' });
 
@@ -276,7 +294,9 @@ Note: This backup includes EVERYTHING - database records, files, models, images.
       message: `Backup created successfully! Size: ${(finalSize / (1024 * 1024)).toFixed(2)} MB`,
       includes: {
         tasks: project.tasks.length,
+        elementLinks: totalElementLinks,
         models: project.models.length,
+        elements: totalElements,
         files: project.projectFiles.length,
         dailyLogs: project.dailyLogs.length,
         safetyIncidents: project.safetyIncidents.length,

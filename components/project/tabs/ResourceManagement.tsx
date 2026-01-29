@@ -101,6 +101,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
   const [aiPrompt, setAiPrompt] = useState('')
   const [importing, setImporting] = useState(false)
   const [selectedRegion, setSelectedRegion] = useState<'india' | 'usa' | 'uae' | 'uk' | 'europe'>('india')
+  const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([]) // For task selection
 
   // Real Exchange Rates (as of Dec 2024) - Base: INR
   const EXCHANGE_RATES: Record<string, { rate: number; symbol: string; name: string }> = {
@@ -389,10 +390,27 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
     const file = e.target.files?.[0]
     if (!file) return
 
+    console.log('Import file selected:', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      projectId: project.id
+    })
+
+    if (!project?.id) {
+      toast.error('Project ID is missing')
+      return
+    }
+
     setImporting(true)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('projectId', project.id.toString())
+
+    console.log('FormData contents:', {
+      file: formData.get('file'),
+      projectId: formData.get('projectId')
+    })
 
     try {
       const res = await fetch('/api/resources/import', {
@@ -401,14 +419,30 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
         body: formData
       })
 
+      console.log('Import response:', {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok
+      })
+
       if (res.ok) {
         const data = await res.json()
         toast.success(`Imported ${data.count || 0} resources!`)
         fetchResources()
         setImportDialogOpen(false)
       } else {
-        const error = await res.json()
-        toast.error(error.error || 'Import failed')
+        let errorMessage = 'Import failed'
+        try {
+          const error = await res.json()
+          console.error('Import error response:', error)
+          errorMessage = error.error || errorMessage
+        } catch (parseError) {
+          // If JSON parsing fails, try to get text
+          const text = await res.text()
+          console.error('Import error (non-JSON):', text)
+          errorMessage = text || `Import failed with status ${res.status}`
+        }
+        toast.error(errorMessage, { duration: 6000 })
       }
     } catch (error) {
       console.error('Import error:', error)
@@ -600,7 +634,10 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
               unit: resource.unit || 'day',
               hourlyRate: resource.hourlyRate || null,
               dailyRate: resource.dailyRate || null,
+              unitRate: resource.unitRate || null,
+              quantity: resource.quantity || 1,
               capacity: resource.quantity || 1,
+              duration: resource.duration || null,
               description: `AI created: ${resource.quantity || 1} ${resource.name}${resource.duration ? ` for ${resource.duration}` : ''}`
             })
           })
@@ -613,6 +650,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
       if (created > 0) {
         toast.success(`✨ AI created ${created} resources using OpenAI!`)
         fetchResources()
+        fetchCosts() // Refresh costs to show new entries
       } else {
         toast.warning('No new resources were created')
       }
@@ -622,6 +660,161 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
     } catch (error: any) {
       console.error('AI generation error:', error)
       toast.error(error.message || 'Failed to generate resources with AI')
+    } finally {
+      setAiGenerating(false)
+    }
+  }
+
+  // Smart Generate - AI analyzes schedule tasks and suggests resources
+  const handleSmartGenerate = async () => {
+    if (!project.tasks || project.tasks.length === 0) {
+      toast.error('No tasks found in schedule')
+      return
+    }
+
+    if (selectedTaskIds.length === 0) {
+      toast.error('Please select at least one task to analyze')
+      return
+    }
+
+    setAiGenerating(true)
+    
+    try {
+      // Filter only selected tasks
+      const selectedTasks = project.tasks.filter((task: any) => selectedTaskIds.includes(task.id))
+      
+      // Prepare task data for AI analysis
+      const tasksSummary = selectedTasks.map((task: any) => ({
+        id: task.id,
+        name: task.name,
+        description: task.description || '',
+        duration: task.duration || 1,
+        startDate: task.startDate,
+        endDate: task.endDate
+      }))
+
+      console.log(`[Smart Generate] Analyzing ${selectedTasks.length} selected tasks`)
+
+      // Call AI API with smart analysis
+      const response = await fetch('/api/resources/smart-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          projectId: project.id,
+          projectName: project.name,
+          projectLocation: project.location,
+          tasks: tasksSummary
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        
+        // Handle specific error cases
+        if (error.invalidKey) {
+          toast.error('❌ Invalid OpenAI API Key', {
+            description: 'Please update your API key in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else if (error.noCredits) {
+          toast.error('❌ No OpenAI Credits Available', {
+            description: 'Add payment method at OpenAI',
+            duration: 5000
+          });
+        } else if (error.apiKeyMissing) {
+          toast.error('❌ OpenAI API Key Not Configured', {
+            description: 'Add your API key in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else if (!error.aiEnabled) {
+          toast.error('❌ AI Features Disabled', {
+            description: 'Enable AI in Settings → AI Configuration',
+            duration: 5000
+          });
+        } else {
+          toast.error(`❌ ${error.error || 'Smart generation failed'}`);
+        }
+        
+        setAiGenerating(false);
+        return;
+      }
+
+      const data = await response.json();
+      const suggestedResources = data.resources;
+
+      if (!suggestedResources || suggestedResources.length === 0) {
+        toast.error('AI could not analyze selected tasks to suggest resources.')
+        setAiGenerating(false)
+        return
+      }
+
+      toast.info(`🧠 AI analyzed ${selectedTasks.length} task${selectedTasks.length > 1 ? 's' : ''} and suggested ${suggestedResources.length} resources. Creating...`)
+
+      let created = 0
+      let skipped = 0
+      const createdResourceNames: string[] = []
+      
+      for (const resource of suggestedResources) {
+        // Check if already exists (case-insensitive)
+        const exists = resources.find(r => r.name.toLowerCase() === resource.name.toLowerCase())
+        if (exists) {
+          console.log(`${resource.name} already exists, skipping`)
+          skipped++
+          continue
+        }
+
+        try {
+          const res = await fetch('/api/resources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              projectId: project.id,
+              name: resource.name,
+              type: resource.type,
+              unit: resource.unit || 'day',
+              hourlyRate: resource.hourlyRate || null,
+              dailyRate: resource.dailyRate || null,
+              unitRate: resource.unitRate || null,
+              quantity: resource.quantity || 1,
+              capacity: resource.quantity || 1,
+              duration: resource.duration || null,
+              description: resource.reasoning || `AI suggested for: ${resource.relatedTasks?.join(', ') || 'selected tasks'}`
+            })
+          })
+          if (res.ok) {
+            created++
+            createdResourceNames.push(resource.name)
+          }
+        } catch (error) {
+          console.error('Failed to create:', resource.name)
+        }
+      }
+
+      if (created > 0) {
+        toast.success(`✨ Smart AI created ${created} new resource${created > 1 ? 's' : ''} by analyzing ${selectedTasks.length} task${selectedTasks.length > 1 ? 's' : ''}!`, {
+          description: skipped > 0 ? `${skipped} resource${skipped > 1 ? 's' : ''} already existed and ${skipped > 1 ? 'were' : 'was'} skipped` : undefined,
+          duration: 6000
+        })
+        fetchResources()
+        fetchCosts() // Refresh costs to show new entries
+        
+        // Clear selection after successful generation
+        setSelectedTaskIds([])
+      } else if (skipped > 0) {
+        toast.warning(`All ${skipped} suggested resource${skipped > 1 ? 's' : ''} already exist in your library`, {
+          description: 'No new resources were created',
+          duration: 5000
+        })
+      } else {
+        toast.warning('No resources were created')
+      }
+      
+      setAiDialogOpen(false)
+    } catch (error: any) {
+      console.error('Smart generation error:', error)
+      toast.error(error.message || 'Failed to generate resources with Smart AI')
     } finally {
       setAiGenerating(false)
     }
@@ -662,6 +855,15 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
       toast.success('Cost added!'); setCostDialogOpen(false); fetchCosts()
       setCostResourceId(''); setCostDate(''); setCostHours(''); setCostQuantity(''); setCostUnitCost(''); setCostNotes('')
     } catch { toast.error('Failed to add cost') }
+  }
+
+  const handleDeleteCost = async (id: number) => {
+    if (!confirm('Delete this cost entry?')) return
+    try {
+      const res = await fetch(`/api/resources/costs/${id}`, { method: 'DELETE', credentials: 'include' })
+      if (!res.ok) throw new Error('Failed')
+      toast.success('Cost deleted!'); fetchCosts()
+    } catch { toast.error('Failed to delete cost') }
   }
 
   const getTypeIcon = (t: string) => {
@@ -873,7 +1075,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                 <DialogTrigger asChild>
                   <Button variant="outline"><Sparkles className="h-4 w-4 mr-2" />AI Create</Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Sparkles className="h-5 w-5 text-yellow-500" />
@@ -884,52 +1086,186 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                     <p className="text-sm text-muted-foreground">
                       Describe the resources you need in natural language. AI will understand and create them for you.
                     </p>
-                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-                      <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">Example prompts:</p>
-                      <ul className="text-xs space-y-1 text-blue-600 dark:text-blue-400 list-disc list-inside">
-                        <li>"I need 5 masons at ₹800 per day"</li>
-                        <li>"Add 2 excavators and 3 dumpers for earthwork"</li>
-                        <li>"10 skilled laborers and 15 helpers for 3 months"</li>
-                        <li>"Concrete mixer, vibrator, and 500 kg cement"</li>
-                      </ul>
-                    </div>
                     
-                    <div className="border-t pt-4">
-                      <div className="flex gap-2">
-                        <Textarea
-                          placeholder="E.g., 'I need 3 tower cranes and 10 skilled workers for high-rise construction'"
-                          value={aiPrompt}
-                          onChange={(e) => setAiPrompt(e.target.value)}
-                          className="flex-1 min-h-[100px] resize-none border-2 border-yellow-200 focus:border-yellow-400"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              handleAIGenerate()
-                            }
-                          }}
-                        />
-                        <Button 
-                          onClick={handleAIGenerate} 
-                          disabled={aiGenerating || !aiPrompt.trim()}
-                          className="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white px-6"
-                        >
-                          {aiGenerating ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Generating...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="h-4 w-4 mr-2" />
-                              Generate
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
+                    {/* Two Tabs: Manual Input vs Smart Generate */}
+                    <Tabs defaultValue="manual" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="manual">✍️ Manual Input</TabsTrigger>
+                        <TabsTrigger value="smart">🧠 Smart Generate</TabsTrigger>
+                      </TabsList>
+                      
+                      {/* Manual Input Tab */}
+                      <TabsContent value="manual" className="space-y-4">
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                          <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">Example prompts:</p>
+                          <ul className="text-xs space-y-1 text-blue-600 dark:text-blue-400 list-disc list-inside">
+                            <li>"I need 5 masons at ₹800 per day"</li>
+                            <li>"Add 2 excavators and 3 dumpers for earthwork"</li>
+                            <li>"10 skilled laborers and 15 helpers for 3 months"</li>
+                            <li>"Concrete mixer, vibrator, and 500 kg cement"</li>
+                          </ul>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Textarea
+                            placeholder="E.g., 'I need 3 tower cranes and 10 skilled workers for high-rise construction'"
+                            value={aiPrompt}
+                            onChange={(e) => setAiPrompt(e.target.value)}
+                            className="flex-1 min-h-[120px] resize-none border-2 border-yellow-200 focus:border-yellow-400"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                handleAIGenerate()
+                              }
+                            }}
+                          />
+                          <Button 
+                            onClick={handleAIGenerate} 
+                            disabled={aiGenerating || !aiPrompt.trim()}
+                            className="bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white px-6"
+                          >
+                            {aiGenerating ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                Generate
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TabsContent>
+                      
+                      {/* Smart Generate Tab */}
+                      <TabsContent value="smart" className="space-y-4">
+                        <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                          <div className="flex items-start gap-3">
+                            <Sparkles className="h-5 w-5 text-purple-600 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-medium text-purple-900 dark:text-purple-100 mb-1">
+                                🧠 Smart AI Analysis
+                              </p>
+                              <p className="text-xs text-purple-700 dark:text-purple-300">
+                                AI will automatically analyze selected tasks in your schedule and intelligently suggest resources with estimated costs based on:
+                              </p>
+                              <ul className="text-xs text-purple-600 dark:text-purple-400 mt-2 space-y-1 list-disc list-inside">
+                                <li>Task names and descriptions</li>
+                                <li>Task duration and complexity</li>
+                                <li>Construction industry standards</li>
+                                <li>Regional market rates ({EXCHANGE_RATES[selectedRegion].name})</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+
+                        {project.tasks && project.tasks.length > 0 ? (
+                          <>
+                            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-medium">📋 Select tasks to analyze ({selectedTaskIds.length} selected):</p>
+                                <div className="flex gap-2">
+                                  <Button 
+                                    type="button"
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => setSelectedTaskIds(project.tasks.map((t: any) => t.id))}
+                                  >
+                                    Select All
+                                  </Button>
+                                  <Button 
+                                    type="button"
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => setSelectedTaskIds([])}
+                                  >
+                                    Clear All
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="max-h-[300px] overflow-y-auto space-y-2">
+                                {project.tasks.map((task: any) => (
+                                  <div 
+                                    key={task.id} 
+                                    className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                                      selectedTaskIds.includes(task.id) 
+                                        ? 'bg-purple-50 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700' 
+                                        : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    }`}
+                                    onClick={() => {
+                                      if (selectedTaskIds.includes(task.id)) {
+                                        setSelectedTaskIds(selectedTaskIds.filter(id => id !== task.id))
+                                      } else {
+                                        setSelectedTaskIds([...selectedTaskIds, task.id])
+                                      }
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedTaskIds.includes(task.id)}
+                                      onChange={() => {}}
+                                      className="mt-1 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium truncate">{task.name}</p>
+                                      {task.description && (
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                          {task.description.substring(0, 80)}{task.description.length > 80 ? '...' : ''}
+                                        </p>
+                                      )}
+                                      <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                                        {task.duration && <span>⏱️ {task.duration} days</span>}
+                                        {task.status && <span className="capitalize">📊 {task.status.toLowerCase().replace('_', ' ')}</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {selectedTaskIds.length > 0 ? (
+                              <Button 
+                                onClick={handleSmartGenerate} 
+                                disabled={aiGenerating}
+                                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white py-6"
+                                size="lg"
+                              >
+                                {aiGenerating ? (
+                                  <>
+                                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                    AI is analyzing {selectedTaskIds.length} selected task{selectedTaskIds.length > 1 ? 's' : ''}...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="h-5 w-5 mr-2" />
+                                    🧠 Smart Generate Resources from {selectedTaskIds.length} Selected Task{selectedTaskIds.length > 1 ? 's' : ''}
+                                  </>
+                                )}
+                              </Button>
+                            ) : (
+                              <div className="border-2 border-dashed rounded-lg p-6 text-center bg-gray-50 dark:bg-gray-900">
+                                <p className="text-sm text-muted-foreground">
+                                  ⬆️ Select at least one task above to generate resources
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                            <CalendarIcon className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                            <p className="text-sm font-medium text-muted-foreground mb-1">No tasks found in schedule</p>
+                            <p className="text-xs text-muted-foreground">
+                              Go to Schedule tab and create tasks first, then AI can analyze them to suggest resources.
+                            </p>
+                          </div>
+                        )}
+                      </TabsContent>
+                    </Tabs>
                     
                     <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg text-xs text-green-700 dark:text-green-300">
-                      ✨ <strong>Real AI:</strong> Using OpenAI GPT-4 to understand your requirements and suggest appropriate rates based on Indian construction standards.
+                      ✨ <strong>Real AI:</strong> Using OpenAI GPT-4 to understand your requirements and suggest appropriate rates based on {selectedRegion === 'india' ? 'Indian' : selectedRegion === 'usa' ? 'US' : selectedRegion === 'uae' ? 'UAE' : selectedRegion === 'uk' ? 'UK' : 'European'} construction standards.
                     </div>
                   </div>
                 </DialogContent>
@@ -1145,9 +1481,9 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
             <CardHeader><CardTitle>Cost History</CardTitle></CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Resource</TableHead><TableHead>Type</TableHead><TableHead>Hours/Qty</TableHead><TableHead>Unit Cost</TableHead><TableHead>Total</TableHead><TableHead>Notes</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Resource</TableHead><TableHead>Type</TableHead><TableHead>Hours/Qty</TableHead><TableHead>Unit Cost</TableHead><TableHead>Total</TableHead><TableHead>Notes</TableHead>{canEdit && <TableHead>Actions</TableHead>}</TableRow></TableHeader>
                 <TableBody>
-                  {costs.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No cost entries yet</TableCell></TableRow> :
+                  {costs.length === 0 ? <TableRow><TableCell colSpan={canEdit ? 8 : 7} className="text-center py-8 text-muted-foreground">No cost entries yet</TableCell></TableRow> :
                     costs.map(c => (
                       <TableRow key={c.id}>
                         <TableCell>{new Date(c.date).toLocaleDateString()}</TableCell>
@@ -1157,6 +1493,16 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                         <TableCell>{formatCurrency(convertCurrency(c.unitCost))}</TableCell>
                         <TableCell className="font-semibold">{formatCurrency(convertCurrency(c.totalCost))}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{c.notes || '-'}</TableCell>
+                        {canEdit && <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50" 
+                            onClick={() => handleDeleteCost(c.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>}
                       </TableRow>
                     ))}
                 </TableBody>

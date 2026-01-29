@@ -294,8 +294,27 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                       const dbId = selection[0]
                       if (viewer && viewer.getProperties) {
                         viewer.getProperties(dbId, (props: any) => {
+                          // Get external ID (GUID) from the model
+                          const externalId = viewer.model.getExternalIdMapping ? 
+                            Object.keys(viewer.model.getExternalIdMapping()).find(
+                              key => viewer.model.getExternalIdMapping()[key] === dbId
+                            ) : null
+                          
+                          const elementData = {
+                            ...props,
+                            dbId: dbId,
+                            externalId: externalId || props.externalId,
+                            name: props.name
+                          }
+                          
+                          console.log('Element selected:', elementData)
+                          
                           if (onElementSelectRef.current) {
-                            onElementSelectRef.current(dbId.toString(), props)
+                            // Pass externalId as the first parameter (GUID)
+                            onElementSelectRef.current(
+                              externalId || dbId.toString(), 
+                              elementData
+                            )
                           }
                         })
                       }

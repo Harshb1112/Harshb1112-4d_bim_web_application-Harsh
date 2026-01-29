@@ -99,23 +99,48 @@ export async function GET(
 // PUT update project details
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return await updateProject(request, params);
+  return await updateProject(request, context);
 }
 
 // PATCH update project details (same as PUT)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
-  return await updateProject(request, params);
+  return await updateProject(request, context);
+}
+
+// Helper function to retry database operations
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  delay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error as Error
+      const isConnectionError = lastError.message?.includes('database server') || 
+                                lastError.message?.includes('connection') ||
+                                lastError.message?.includes('P1001')
+      if (!isConnectionError || i === maxRetries - 1) {
+        throw error
+      }
+      console.log(`[DB Retry] Attempt ${i + 1} failed, retrying in ${delay}ms...`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+  throw lastError
 }
 
 // Shared update logic
 async function updateProject(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const token = getTokenFromRequest(request)
@@ -124,7 +149,7 @@ async function updateProject(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id } = await context.params
     const projectId = parseInt(id)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
@@ -132,7 +157,7 @@ async function updateProject(
 
     // Only admins, managers, or team leaders can update project details
     if (user.role !== 'admin' && user.role !== 'manager') {
-      const project = await prisma.project.findFirst({
+      const project = await withRetry(() => prisma.project.findFirst({
         where: {
           id: projectId,
           team: {
@@ -144,44 +169,55 @@ async function updateProject(
             }
           }
         }
-      })
+      }))
       
       if (!project) {
         return NextResponse.json({ error: 'Forbidden: Only admins, managers, or team leaders can update project' }, { status: 403 })
       }
     }
 
-    const { name, description, startDate, endDate } = await request.json()
+    const body = await request.json()
+    const { name, description, startDate, endDate, autoBackupEnabled, autoBackupFrequency } = body
 
-    if (!name) {
-      return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
+    // Build update data object dynamically
+    const updateData: any = {}
+    
+    // Only validate and add name if it's being updated
+    if (name !== undefined) {
+      if (!name) {
+        return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
+      }
+      updateData.name = name
     }
+    
+    if (description !== undefined) updateData.description = description
+    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null
+    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null
+    if (autoBackupEnabled !== undefined) updateData.autoBackupEnabled = autoBackupEnabled
+    if (autoBackupFrequency !== undefined) updateData.autoBackupFrequency = autoBackupFrequency
 
-    const updatedProject = await prisma.project.update({
+    const updatedProject = await withRetry(() => prisma.project.update({
       where: { id: projectId },
-      data: {
-        name,
-        description,
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,
         description: true,
         startDate: true,
         endDate: true,
+        autoBackupEnabled: true,
+        autoBackupFrequency: true,
       },
-    })
+    }))
 
-    await prisma.activityLog.create({
+    await withRetry(() => prisma.activityLog.create({
       data: {
         userId: user.id,
         projectId,
         action: 'PROJECT_UPDATED',
         details: { projectName: updatedProject.name, changes: { name, description, startDate, endDate } },
       },
-    })
+    }))
 
     return NextResponse.json({ project: updatedProject, message: 'Project updated successfully' })
   } catch (error) {

@@ -27,7 +27,7 @@ export async function POST(
       }, { status: 403 })
     }
 
-    const { fullName, email, memberRole } = await request.json()
+    const { fullName, email, password, memberRole } = await request.json()
     
     // RBAC: Check if user can create this role
     const requestedRole = memberRole === 'leader' ? 'team_leader' : 
@@ -49,9 +49,12 @@ export async function POST(
     let temporaryPassword = null
 
     if (!userToAdd) {
-      // Create new user
-      temporaryPassword = generateRandomPassword()
-      const passwordHash = await hashPassword(temporaryPassword)
+      // Create new user with provided password or generate random one
+      const userPassword = password || generateRandomPassword()
+      if (!password) {
+        temporaryPassword = userPassword // Only show temp password if we generated it
+      }
+      const passwordHash = await hashPassword(userPassword)
 
       userToAdd = await prisma.user.create({
         data: {
@@ -129,6 +132,8 @@ export async function POST(
       temporaryPassword,
       message: temporaryPassword 
         ? `User created and added to team. Temporary password: ${temporaryPassword}`
+        : password
+        ? 'User created and added to team successfully'
         : 'User added to team successfully'
     })
   } catch (error) {

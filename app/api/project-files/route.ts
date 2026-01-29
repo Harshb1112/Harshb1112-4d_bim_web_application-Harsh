@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import * as jwt from 'jsonwebtoken';
+import { prisma } from '@/lib/db';
+import { verifyAuth } from '@/lib/auth';
 import { writeFile, mkdir } from 'fs/promises';
 import * as path from 'path';
 
-const prisma = new PrismaClient();
-
 export async function GET(req: NextRequest) {
   try {
-    const token = req.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
+    const user = await verifyAuth(req);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -25,18 +23,18 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(files);
   } catch (error) {
+    console.error('Failed to fetch files:', error);
     return NextResponse.json({ error: 'Failed to fetch files' }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const token = req.headers.get('authorization')?.replace('Bearer ', '');
-    if (!token) {
+    const user = await verifyAuth(req);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: number };
     const formData = await req.formData();
     
     const file = formData.get('file') as File;
@@ -68,13 +66,13 @@ export async function POST(req: NextRequest) {
         filePath: `/uploads/project-files/${projectId}/${fileName}`,
         category: category || null,
         description: description || null,
-        uploadedBy: decoded.userId
+        uploadedBy: user.id
       }
     });
 
     return NextResponse.json(projectFile);
   } catch (error) {
-    console.error(error);
+    console.error('Failed to upload file:', error);
     return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
   }
 }

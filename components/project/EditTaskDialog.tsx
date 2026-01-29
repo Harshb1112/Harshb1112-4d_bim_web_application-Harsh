@@ -24,6 +24,9 @@ interface EditTaskDialogProps {
     guid: string
     category?: string
     name?: string
+    type?: string
+    typeName?: string
+    family?: string
   }>
   teams?: Array<{ id: number; name: string }>
   users?: Array<{ id: number; fullName: string; role: string }>
@@ -56,6 +59,8 @@ export default function EditTaskDialog({
   const [elementsToRemove, setElementsToRemove] = useState<number[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [elementSearch, setElementSearch] = useState('')
+  const [elementCategoryFilter, setElementCategoryFilter] = useState('all')
 
 
   // Initialize form when task changes
@@ -84,6 +89,39 @@ export default function EditTaskDialog({
     el => !linkedElements.some(link => link.elementId === el.id || link.element?.id === el.id)
       && !elementsToAdd.includes(el.id)
   )
+
+  // Filter elements based on search and category
+  const filteredUnlinkedElements = unlinkedElements.filter(el => {
+    const matchesSearch = elementSearch === '' || 
+      el.guid?.toLowerCase().includes(elementSearch.toLowerCase()) ||
+      el.category?.toLowerCase().includes(elementSearch.toLowerCase()) ||
+      el.type?.toLowerCase().includes(elementSearch.toLowerCase()) ||
+      el.name?.toLowerCase().includes(elementSearch.toLowerCase()) ||
+      el.typeName?.toLowerCase().includes(elementSearch.toLowerCase()) ||
+      el.family?.toLowerCase().includes(elementSearch.toLowerCase())
+    
+    const matchesCategory = elementCategoryFilter === 'all' || 
+      el.type === elementCategoryFilter || 
+      el.category === elementCategoryFilter
+    
+    return matchesSearch && matchesCategory
+  })
+
+  // Get unique categories for filter - use 'type' field which has better category names
+  const availableCategories = [...new Set(
+    unlinkedElements
+      .map(el => el.type || el.category || el.family)
+      .filter(Boolean)
+  )].sort()
+
+  // Debug: Log first few elements to see what data we have
+  useEffect(() => {
+    if (open && availableElements.length > 0) {
+      console.log('Available elements sample:', availableElements.slice(0, 3))
+      console.log('Available categories:', availableCategories)
+      console.log('Total unlinked elements:', unlinkedElements.length)
+    }
+  }, [open, availableElements.length])
 
   // Elements by type for display
   const elementsByType = linkedElements
@@ -463,26 +501,74 @@ export default function EditTaskDialog({
 
                 {/* Available Elements to Add */}
                 <div className="flex flex-col overflow-hidden">
-                  <h4 className="text-sm font-semibold mb-2">Available Elements</h4>
+                  <div className="mb-2">
+                    <h4 className="text-sm font-semibold mb-2">Available Elements</h4>
+                    
+                    {/* Search and Filter */}
+                    <div className="space-y-2 mb-2">
+                      <Input
+                        placeholder="Search by GUID, category, or name..."
+                        value={elementSearch}
+                        onChange={(e) => setElementSearch(e.target.value)}
+                        className="text-xs h-8"
+                      />
+                      <Select
+                        value={elementCategoryFilter}
+                        onValueChange={setElementCategoryFilter}
+                      >
+                        <SelectTrigger className="text-xs h-8">
+                          <SelectValue placeholder="Filter by type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types ({unlinkedElements.length})</SelectItem>
+                          {availableCategories.map((category) => {
+                            const count = unlinkedElements.filter(el => 
+                              (el.type || el.category || el.family) === category
+                            ).length
+                            return (
+                              <SelectItem key={category} value={category || 'Unknown'}>
+                                {category || 'Unknown'} ({count})
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <p className="text-xs text-gray-500">
+                      Showing {filteredUnlinkedElements.length} of {unlinkedElements.length} elements
+                    </p>
+                  </div>
+                  
                   <ScrollArea className="flex-1 border rounded-lg p-2">
-                    {unlinkedElements.length === 0 ? (
+                    {filteredUnlinkedElements.length === 0 ? (
                       <p className="text-sm text-gray-500 text-center py-4">
-                        No more elements available
+                        {elementSearch || elementCategoryFilter !== 'all' 
+                          ? 'No elements match your search'
+                          : 'No more elements available'
+                        }
                       </p>
                     ) : (
                       <div className="space-y-2">
-                        {unlinkedElements.slice(0, 50).map((element) => (
+                        {filteredUnlinkedElements.map((element) => (
                           <div
                             key={element.id}
                             className="flex items-center justify-between p-2 rounded border bg-white hover:bg-gray-50"
                           >
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-mono truncate">
-                                {element.guid?.slice(0, 20)}...
+                              <p className="text-xs font-medium truncate">
+                                {element.name || element.typeName || element.family || 'Unnamed Element'}
                               </p>
-                              <Badge variant="outline" className="text-xs mt-1">
-                                {element.category || 'Unknown'}
-                              </Badge>
+                              <p className="text-xs font-mono text-gray-500 truncate">
+                                {element.guid?.slice(0, 24)}...
+                              </p>
+                              <div className="flex gap-1 mt-1">
+                                {(element.type || element.category) && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {element.type || element.category}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
                             <Button
                               type="button"
@@ -495,11 +581,6 @@ export default function EditTaskDialog({
                             </Button>
                           </div>
                         ))}
-                        {unlinkedElements.length > 50 && (
-                          <p className="text-xs text-gray-500 text-center py-2">
-                            +{unlinkedElements.length - 50} more elements
-                          </p>
-                        )}
                       </div>
                     )}
                   </ScrollArea>

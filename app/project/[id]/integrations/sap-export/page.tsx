@@ -11,6 +11,44 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Download, ArrowLeft, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 
+const CURRENCIES = [
+  { code: 'USD', name: 'US Dollar', symbol: '$' },
+  { code: 'EUR', name: 'Euro', symbol: '€' },
+  { code: 'GBP', name: 'British Pound', symbol: '£' },
+  { code: 'INR', name: 'Indian Rupee', symbol: '₹' },
+  { code: 'JPY', name: 'Japanese Yen', symbol: '¥' },
+  { code: 'CNY', name: 'Chinese Yuan', symbol: '¥' },
+  { code: 'AUD', name: 'Australian Dollar', symbol: 'A$' },
+  { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$' },
+  { code: 'CHF', name: 'Swiss Franc', symbol: 'CHF' },
+  { code: 'SEK', name: 'Swedish Krona', symbol: 'kr' },
+  { code: 'NZD', name: 'New Zealand Dollar', symbol: 'NZ$' },
+  { code: 'KRW', name: 'South Korean Won', symbol: '₩' },
+  { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
+  { code: 'NOK', name: 'Norwegian Krone', symbol: 'kr' },
+  { code: 'MXN', name: 'Mexican Peso', symbol: '$' },
+  { code: 'ZAR', name: 'South African Rand', symbol: 'R' },
+  { code: 'HKD', name: 'Hong Kong Dollar', symbol: 'HK$' },
+  { code: 'BRL', name: 'Brazilian Real', symbol: 'R$' },
+  { code: 'RUB', name: 'Russian Ruble', symbol: '₽' },
+  { code: 'AED', name: 'UAE Dirham', symbol: 'د.إ' },
+  { code: 'SAR', name: 'Saudi Riyal', symbol: '﷼' },
+  { code: 'THB', name: 'Thai Baht', symbol: '฿' },
+  { code: 'TRY', name: 'Turkish Lira', symbol: '₺' },
+  { code: 'PLN', name: 'Polish Zloty', symbol: 'zł' },
+  { code: 'DKK', name: 'Danish Krone', symbol: 'kr' },
+  { code: 'IDR', name: 'Indonesian Rupiah', symbol: 'Rp' },
+  { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM' },
+  { code: 'PHP', name: 'Philippine Peso', symbol: '₱' },
+  { code: 'CZK', name: 'Czech Koruna', symbol: 'Kč' },
+  { code: 'ILS', name: 'Israeli Shekel', symbol: '₪' },
+  { code: 'CLP', name: 'Chilean Peso', symbol: '$' },
+  { code: 'PKR', name: 'Pakistani Rupee', symbol: '₨' },
+  { code: 'EGP', name: 'Egyptian Pound', symbol: '£' },
+  { code: 'VND', name: 'Vietnamese Dong', symbol: '₫' },
+  { code: 'BDT', name: 'Bangladeshi Taka', symbol: '৳' }
+]
+
 export default function SAPExportPage() {
   const params = useParams()
   const router = useRouter()
@@ -163,16 +201,7 @@ export default function SAPExportPage() {
       <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-2xl">Export to SAP PS</DialogTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowExportDialog(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <DialogTitle className="text-2xl">Export to SAP PS</DialogTitle>
             <DialogDescription>
               Generate SAP-compatible files for import into SAP Project System
             </DialogDescription>
@@ -264,11 +293,18 @@ export default function SAPExportPage() {
 
                 <div className="space-y-2">
                   <Label>Currency</Label>
-                  <Input
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                    placeholder="USD"
-                  />
+                  <Select value={currency} onValueChange={setCurrency}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px]">
+                      {CURRENCIES.map((curr) => (
+                        <SelectItem key={curr.code} value={curr.code}>
+                          {curr.code} - {curr.name} ({curr.symbol})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
