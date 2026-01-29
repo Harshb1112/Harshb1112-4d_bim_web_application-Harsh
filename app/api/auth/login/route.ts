@@ -55,6 +55,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check if account is marked for deletion and restore it
+    if (user.deletionRequestedAt && user.deletionScheduledFor) {
+      const now = new Date()
+      const scheduledDate = new Date(user.deletionScheduledFor)
+      
+      // If deletion is still scheduled (not yet deleted)
+      if (scheduledDate > now) {
+        // Restore the account
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            deletionRequestedAt: null,
+            deletionScheduledFor: null,
+            deletionReminderSent: false,
+          },
+        })
+
+        // Send restoration confirmation email
+        try {
+          const { sendEmail } = await import('@/lib/email-service')
+          await sendEmail({
+            to: user.email,
+            subject: 'Account Restored Successfully',
+            html: `
+              <h2>Welcome Back!</h2>
+              <p>Dear ${user.fullName},</p>
+              <p>Your account has been successfully restored.</p>
+              <p>The deletion request has been cancelled, and your account is now active again.</p>
+              <p>All your data and projects are intact.</p>
+              <br/>
+              <p>Best regards,<br/>4D BIM Team</p>
+            `,
+          })
+        } catch (emailError) {
+          console.error('Failed to send restoration email:', emailError)
+        }
+      }
+    }
+
     // Get device info from headers
     const userAgent = request.headers.get('user-agent') || 'Unknown'
     const ipAddress = request.headers.get('x-forwarded-for') || 

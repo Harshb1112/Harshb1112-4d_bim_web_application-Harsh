@@ -34,6 +34,9 @@ model User {
   twoFactorEnabled     Boolean            @default(false) @map("two_factor_enabled")
   twoFactorSecret      String?            @map("two_factor_secret")
   weeklyDigest         Boolean            @default(false) @map("weekly_digest")
+  deletionRequestedAt  DateTime?          @map("deletion_requested_at")
+  deletionScheduledFor DateTime?          @map("deletion_scheduled_for")
+  deletionReminderSent Boolean            @default(false) @map("deletion_reminder_sent")
   activityLogs         ActivityLog[]
   apiKeys              ApiKey[]
   errorLogs            ErrorLog[]         @relation("ErrorReporter")

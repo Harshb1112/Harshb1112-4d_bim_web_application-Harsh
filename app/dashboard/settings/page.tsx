@@ -1550,11 +1550,47 @@ export default function SettingsPage() {
                   <div className="flex-1">
                     <h4 className="font-semibold text-red-900 dark:text-red-100">Delete Account</h4>
                     <p className="text-sm text-red-800 dark:text-red-200 mt-1">
-                      Permanently delete your account and all associated data. This action cannot be undone.
+                      Request account deletion. Your account will be scheduled for permanent deletion after 30 days. You can restore it anytime within this period.
                     </p>
-                    <Button variant="destructive" className="mt-3" onClick={() => toast.error('⚠️ Account deletion requires admin approval')}>
+                    <Button 
+                      variant="destructive" 
+                      className="mt-3" 
+                      disabled={isSaving}
+                      onClick={async () => {
+                        if (!confirm('⚠️ Are you sure you want to delete your account?\n\n• Your account will be deleted after 30 days\n• You can restore it within 30 days by logging in\n• After 30 days, all data will be permanently deleted\n• Admins and managers will be notified')) {
+                          return
+                        }
+                        
+                        setIsSaving(true)
+                        try {
+                          const response = await fetch('/api/user/delete-account', {
+                            method: 'POST',
+                            credentials: 'include'
+                          })
+                          
+                          if (response.ok) {
+                            const data = await response.json()
+                            const deletionDate = new Date(data.deletionDate).toLocaleDateString()
+                            toast.success(`✅ Account deletion scheduled for ${deletionDate}. You have 30 days to restore it.`)
+                            
+                            // Redirect to logout after 3 seconds
+                            setTimeout(() => {
+                              window.location.href = '/logout'
+                            }, 3000)
+                          } else {
+                            const error = await response.json()
+                            toast.error(`❌ ${error.error || 'Failed to delete account'}`)
+                          }
+                        } catch (error) {
+                          console.error('Failed to delete account:', error)
+                          toast.error('❌ Failed to delete account')
+                        } finally {
+                          setIsSaving(false)
+                        }
+                      }}
+                    >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Delete My Account
+                      {isSaving ? 'Processing...' : 'Delete My Account'}
                     </Button>
                   </div>
                 </div>
