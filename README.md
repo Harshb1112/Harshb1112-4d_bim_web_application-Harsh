@@ -3,7 +3,7 @@
 > **Complete Production-Ready 4D Building Information Modeling Platform with Real-Time Notifications**
 
 ## 🚀 **LIVE DEPLOYMENT**
-**🌐 Application URL:** https://4d-bim-web-application-harsh.vercel.app
+**🌐 Application URL:** https://harshb1112-4d-bim-web-application-h.vercel.app
 
 **🔑 Demo Credentials:**
 - **Admin**: admin@company.com / admin123
@@ -21,8 +21,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-6.19-2D3748)](https://www.prisma.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Cloud-336791)](https://www.postgresql.org/)
-[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://4d-bim-web-application-harsh.vercel.app)
-[![Deployment](https://img.shields.io/badge/Deployment-Active-success)](https://4d-bim-web-application-harsh.vercel.app)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://harshb1112-4d-bim-web-application-h.vercel.app)
+[![Deployment](https://img.shields.io/badge/Deployment-Active-success)](https://harshb1112-4d-bim-web-application-h.vercel.app)
 
 ---
 
@@ -365,7 +365,7 @@ Notifications are automatically sent for:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_API_KEY" \
-  https://4d-bim-web-application-harsh.vercel.app/api/projects
+  https://harshb1112-4d-bim-web-application-h.vercel.app/api/projects
 ```
 
 ---
@@ -469,4 +469,4 @@ For issues or questions:
 **Last Updated**: January 19, 2026
 **Version**: 1.3.0
 
-**Deployment**: https://4d-bim-web-application-harsh.vercel.app
+**Deployment**: https://harshb1112-4d-bim-web-application-h.vercel.app
