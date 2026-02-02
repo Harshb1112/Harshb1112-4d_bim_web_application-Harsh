@@ -118,13 +118,28 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
       hideObjects: (guids: string[]) => {
         if (!viewerRef.current) return
         const viewer = viewerRef.current
-        const dbIds = guidsToDbIds(guids)
         
-        if (dbIds.length > 0) {
-          viewer.hide(dbIds)
-        } else {
-          // Hide all if no specific guids
+        if (guids.length === 0) {
+          // CRITICAL: Hide ALL elements for true 4D simulation
+          // This ensures Day 1 starts with empty model
+          console.log('[SimulationAutodeskViewer] Hiding ALL elements')
           viewer.hideAll()
+        } else {
+          // Hide specific elements by dbId
+          const dbIds = guidsToDbIds(guids)
+          if (dbIds.length > 0) {
+            viewer.hide(dbIds)
+          }
+        }
+        
+        // CRITICAL: Force immediate viewer refresh for recording
+        // This ensures the hide operation is captured in the current frame
+        try {
+          viewer.impl.invalidate(true, true, true)
+          // Additional force render to ensure changes are visible
+          viewer.impl.sceneUpdated(true)
+        } catch (e) {
+          // Ignore errors
         }
       },
 
@@ -134,7 +149,18 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
         const dbIds = guidsToDbIds(guids)
         
         if (dbIds.length > 0) {
+          console.log('[SimulationAutodeskViewer] Showing', dbIds.length, 'elements')
           viewer.show(dbIds)
+        }
+        
+        // CRITICAL: Force immediate viewer refresh for recording
+        // This ensures the show operation is captured in the current frame
+        try {
+          viewer.impl.invalidate(true, true, true)
+          // Additional force render to ensure changes are visible
+          viewer.impl.sceneUpdated(true)
+        } catch (e) {
+          // Ignore errors
         }
       },
 
@@ -154,53 +180,118 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
         if (filter.multiple && Array.isArray(filter.multiple)) {
           // Apply multiple color filters
           let appliedCount = 0
+          let failedCount = 0
+          const failedReasons: string[] = []
+          
+          // Test first item in detail
+          if (filter.multiple.length > 0) {
+            const testItem = filter.multiple[0]
+            console.log('[SimulationAutodeskViewer] 🔍 Testing first item:', {
+              guid: testItem.property?.value,
+              color: testItem.color,
+              hasProperty: !!testItem.property,
+              hasColor: !!testItem.color
+            })
+          }
+          
           for (const item of filter.multiple) {
             const guid = item.property?.value
-            if (guid) {
-              // Try to get dbId from map, or parse guid as number directly
-              let dbId = guidToDbIdMap.current.get(guid)
-              if (dbId === undefined) {
-                // Try parsing as number (guid might be a dbId string)
-                const parsed = parseInt(guid)
-                if (!isNaN(parsed)) {
-                  dbId = parsed
-                }
-              }
-              
-              if (dbId !== undefined && !isNaN(dbId)) {
-                try {
-                  const color = hexToColor(item.color)
-                  if (color) {
-                    viewer.setThemingColor(dbId, color, viewer.model, true)
-                    appliedCount++
-                  }
-                } catch (e) {
-                  // Silently ignore color errors
-                }
+            if (!guid) {
+              failedCount++
+              failedReasons.push('No GUID')
+              continue
+            }
+            
+            // Try to get dbId from map, or parse guid as number directly
+            let dbId = guidToDbIdMap.current.get(guid)
+            if (dbId === undefined) {
+              // Try parsing as number (guid might be a dbId string)
+              const parsed = parseInt(guid)
+              if (!isNaN(parsed)) {
+                dbId = parsed
               }
             }
-          }
-          console.log('[SimulationAutodeskViewer] Applied colors to', appliedCount, 'elements')
-        } else if (filter.property && filter.color) {
-          // Single color filter
-          const guid = filter.property.value
-          let dbId = guidToDbIdMap.current.get(guid)
-          if (dbId === undefined) {
-            const parsed = parseInt(guid)
-            if (!isNaN(parsed)) {
-              dbId = parsed
+            
+            if (dbId === undefined || isNaN(dbId)) {
+              failedCount++
+              if (failedReasons.length < 3) {
+                failedReasons.push(`GUID ${guid} not found`)
+              }
+              continue
+            }
+            
+            try {
+              const color = hexToColor(item.color)
+              if (!color) {
+                failedCount++
+                if (failedReasons.length < 3) {
+                  failedReasons.push(`Invalid color ${item.color}`)
+                }
+                continue
+              }
+              
+              // Test: Log first successful color application
+              if (appliedCount === 0) {
+                console.log('[SimulationAutodeskViewer] 🎨 First color application:', {
+                  dbId,
+                  hexColor: item.color,
+                  convertedColor: color,
+                  colorType: color.constructor.name
+                })
+              }
+              
+              // CRITICAL: Use recursive=true to apply to all fragments
+              viewer.setThemingColor(dbId, color, viewer.model, true)
+              appliedCount++
+            } catch (e) {
+              failedCount++
+              if (failedReasons.length < 3) {
+                failedReasons.push(`Error: ${e instanceof Error ? e.message : 'Unknown'}`)
+              }
+              console.error('[SimulationAutodeskViewer] Error applying color to dbId', dbId, ':', e)
             }
           }
           
-          if (dbId !== undefined && !isNaN(dbId)) {
-            try {
-              const color = hexToColor(filter.color)
-              if (color) {
-                viewer.setThemingColor(dbId, color, viewer.model, true)
-              }
-            } catch (e) {
-              // Silently ignore color errors
+          console.log('[SimulationAutodeskViewer] Applied colors to', appliedCount, 'elements')
+          if (failedCount > 0) {
+            console.warn('[SimulationAutodeskViewer] ⚠️ Failed to apply', failedCount, 'colors. Reasons:', failedReasons)
+          }
+          
+          // CRITICAL: Force multiple viewer refreshes to ensure colors are visible
+          try {
+            // CRITICAL FIX: Set display mode to enable theming colors
+            viewer.setDisplayEdges(false) // Disable edges for better color visibility
+            viewer.setGroundShadow(false) // Disable shadows
+            viewer.setGroundReflection(false) // Disable reflections
+            viewer.setEnvMapBackground(false) // Disable environment map
+            
+            // Enable ghosting to make theming colors more visible
+            viewer.setGhosting(false) // Disable ghosting for solid colors
+            
+            // Force material override mode
+            if (viewer.impl && viewer.impl.matman) {
+              viewer.impl.matman().setDoNotCut(true)
             }
+            
+            // Method 1: Invalidate with all flags
+            viewer.impl.invalidate(true, true, true)
+            
+            // Method 2: Force scene update
+            viewer.impl.sceneUpdated(true)
+            
+            // Method 3: Request animation frame render
+            requestAnimationFrame(() => {
+              viewer.impl.invalidate(true, true, true)
+              
+              // Force another render after a short delay
+              setTimeout(() => {
+                viewer.impl.invalidate(true, true, true)
+              }, 100)
+            })
+            
+            console.log('[SimulationAutodeskViewer] 🎨 Forced viewer refresh for color visibility')
+          } catch (e) {
+            console.warn('[SimulationAutodeskViewer] Could not force refresh:', e)
           }
         }
       },
@@ -383,6 +474,10 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
                 return
               }
               
+              // CRITICAL: Enable theming for color visualization
+              viewerInstance.setThemingColor = viewerInstance.setThemingColor || function() {}
+              viewerInstance.clearThemingColors = viewerInstance.clearThemingColors || function() {}
+              
               // Configure navigation settings for better zoom control
               viewerInstance.navigation.setZoomTowardsPivot(true)
               viewerInstance.navigation.setReverseZoomDirection(false)
@@ -438,13 +533,46 @@ const SimulationAutodeskViewer = forwardRef<SimulationAutodeskViewerRef, Simulat
                     console.error('[SimulationAutodeskViewer] ❌ Error storing globally:', globalError)
                   }
 
-                  // Set canvas ref
+                  // Set canvas ref with WebGL context recovery
                   if (viewerCanvasRef && containerRef.current) {
                     const canvas = containerRef.current.querySelector('canvas')
                     if (canvas) {
                       viewerCanvasRef.current = canvas as HTMLCanvasElement
+                      
+                      // Add WebGL context lost/restored handlers
+                      canvas.addEventListener('webglcontextlost', (event) => {
+                        event.preventDefault()
+                        console.error('⚠️ [Autodesk] WebGL context lost! Attempting recovery...')
+                        setError('WebGL context lost. Please refresh the page.')
+                      }, false)
+
+                      canvas.addEventListener('webglcontextrestored', () => {
+                        console.log('✅ [Autodesk] WebGL context restored!')
+                        setError(null)
+                        // Autodesk viewer will handle its own recovery
+                      }, false)
+                      
+                      console.log('[SimulationAutodeskViewer] Canvas ref set with WebGL recovery handlers')
                     }
                   }
+
+                  // Start continuous render loop for smooth recording
+                  // This ensures the viewer updates every frame during 4D simulation
+                  let renderLoopId: number
+                  const continuousRender = () => {
+                    if (viewerInstance && viewerInstance.impl) {
+                      try {
+                        // Force viewer to render continuously
+                        viewerInstance.impl.invalidate(true, true, true)
+                      } catch (e) {
+                        // Ignore errors
+                      }
+                    }
+                    renderLoopId = requestAnimationFrame(continuousRender)
+                  }
+                  continuousRender()
+                  
+                  console.log('[SimulationAutodeskViewer] 🎬 Continuous render loop started for recording')
 
                   // Build element mapping after model loads
                   setTimeout(() => buildElementMapping(), 1000)

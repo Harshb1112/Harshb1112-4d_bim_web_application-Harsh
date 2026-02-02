@@ -728,8 +728,11 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
           })
         },
         setColorFilter: (filter: any) => {
+          console.log(`🎨 [Speckle Viewer] setColorFilter called with ${filter.multiple?.length || 0} items`)
+          
           // Apply color filters to objects
           if (filter.multiple && Array.isArray(filter.multiple)) {
+            let appliedCount = 0
             // Apply multiple color filters
             filter.multiple.forEach((colorFilter: any) => {
               const targetId = colorFilter.property?.value
@@ -749,6 +752,7 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                           obj.material.color.setHex(parseInt(color.replace('#', '0x')))
                           obj.material.opacity = opacity
                           obj.material.transparent = opacity < 1.0
+                          appliedCount++
                         }
                       }
                       if (obj.children) {
@@ -760,6 +764,7 @@ const SpeckleViewer = forwardRef<SpeckleViewerRef, SpeckleViewerProps>(({
                 })
               }
             })
+            console.log(`🎨 [Speckle Viewer] Applied colors to ${appliedCount} elements`)
           }
           
           // Apply default color to unmatched objects

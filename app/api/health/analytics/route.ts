@@ -27,7 +27,13 @@ export async function GET(request: NextRequest) {
               }
             }
           },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        budget: true,
+        totalBudget: true,
+        startDate: true,
+        endDate: true,
         tasks: {
           select: {
             id: true,
@@ -81,27 +87,29 @@ export async function GET(request: NextRequest) {
       variance: 0
     };
 
-    // Get real cost data from ResourceAssignment table
+    // Get real cost data from ResourceCost table
     try {
-      const resourceAssignments = await prisma.resourceAssignment.findMany({
+      // Get total budget from all projects (use totalBudget field, fallback to budget)
+      budgetStats.totalEstimated = projects.reduce((sum, p) => sum + (p.totalBudget || p.budget || 0), 0);
+      
+      // Get actual costs from ResourceCost table
+      const resourceCosts = await prisma.resourceCost.findMany({
         where: {
-          task: {
+          resource: {
             projectId: {
               in: projects.map(p => p.id)
             }
           }
         },
         select: {
-          estimatedCost: true,
-          actualCost: true
+          totalCost: true
         }
       });
 
-      budgetStats.totalEstimated = resourceAssignments.reduce((sum, r) => sum + (r.estimatedCost || 0), 0);
-      budgetStats.totalActual = resourceAssignments.reduce((sum, r) => sum + (r.actualCost || 0), 0);
+      budgetStats.totalActual = resourceCosts.reduce((sum, r) => sum + (r.totalCost || 0), 0);
       budgetStats.variance = budgetStats.totalEstimated - budgetStats.totalActual;
     } catch (error) {
-      console.warn('Could not fetch resource assignment costs:', error);
+      console.warn('Could not fetch resource costs:', error);
     }
 
     // REAL Model Statistics

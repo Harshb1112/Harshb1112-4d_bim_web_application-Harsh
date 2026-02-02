@@ -968,7 +968,7 @@ export default function SettingsPage() {
                       <div className="flex gap-2">
                         <Input
                           id="global-api-key"
-                          type={showApiKey ? 'text' : 'password'}
+                          type={showApiKey && !isMaskedKey ? 'text' : 'password'}
                           placeholder={aiProvider === 'openai' ? 'sk-proj-...' : 'sk-ant-...'}
                           value={apiKey}
                           onChange={(e) => {
@@ -985,26 +985,48 @@ export default function SettingsPage() {
                             }
                           }}
                           className="font-mono text-sm"
+                          disabled={isMaskedKey}
                         />
-                        <Button 
-                          type="button"
-                          variant="outline"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                        >
-                          {showApiKey ? 'Hide' : 'Show'}
-                        </Button>
+                        {!isMaskedKey ? (
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                          >
+                            {showApiKey ? 'Hide' : 'Show'}
+                          </Button>
+                        ) : (
+                          <Button 
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setApiKey('');
+                              toast.info('Enter new API key to update');
+                            }}
+                          >
+                            Change
+                          </Button>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Get your API key from{' '}
-                        <a
-                          href={aiProvider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.anthropic.com/'}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-600 hover:underline font-semibold"
-                        >
-                          {aiProvider === 'openai' ? 'OpenAI Platform' : 'Anthropic Console'}
-                        </a>
-                      </p>
+                      {isMaskedKey && (
+                        <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          API key is securely saved. Click "Change" to update it.
+                        </p>
+                      )}
+                      {!isMaskedKey && (
+                        <p className="text-xs text-muted-foreground">
+                          Get your API key from{' '}
+                          <a
+                            href={aiProvider === 'openai' ? 'https://platform.openai.com/api-keys' : 'https://console.anthropic.com/'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-purple-600 hover:underline font-semibold"
+                          >
+                            {aiProvider === 'openai' ? 'OpenAI Platform' : 'Anthropic Console'}
+                          </a>
+                        </p>
+                      )}
                     </div>
 
                     {/* Info Alert */}

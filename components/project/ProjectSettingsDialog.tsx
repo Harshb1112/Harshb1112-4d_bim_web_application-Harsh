@@ -34,6 +34,7 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate, userRo
   const [description, setDescription] = useState(project.description || '')
   const [startDate, setStartDate] = useState(project.startDate ? project.startDate.split('T')[0] : '')
   const [endDate, setEndDate] = useState(project.endDate ? project.endDate.split('T')[0] : '')
+  const [budget, setBudget] = useState(project.budget || 0)
   const [loading, setLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -46,6 +47,7 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate, userRo
       setDescription(project.description || '')
       setStartDate(project.startDate ? project.startDate.split('T')[0] : '')
       setEndDate(project.endDate ? project.endDate.split('T')[0] : '')
+      setBudget(project.budget || 0)
     }
   }, [project])
 
@@ -67,6 +69,7 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate, userRo
             description,
             startDate: startDate || null,
             endDate: endDate || null,
+            budget: parseFloat(budget.toString()) || 0,
           }),
         })
 
@@ -167,6 +170,21 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate, userRo
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="budget">Project Budget (₹)</Label>
+            <Input
+              id="budget"
+              type="number"
+              min="0"
+              step="1000"
+              value={budget}
+              onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
+              placeholder="Enter total project budget"
+            />
+            <p className="text-xs text-muted-foreground">
+              Set the total budget for this project to track spending
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

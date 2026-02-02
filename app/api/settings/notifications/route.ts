@@ -68,9 +68,19 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json(updatedUser)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to update notification settings:', error)
-    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 })
+    
+    // Better error messages for database connection issues
+    if (error.message?.includes("Can't reach database server")) {
+      return NextResponse.json({ 
+        error: 'Database connection failed. Please check if database is running.' 
+      }, { status: 503 })
+    }
+    
+    return NextResponse.json({ 
+      error: error.message || 'Failed to update settings' 
+    }, { status: 500 })
   } finally {
     await prisma.$disconnect()
   }

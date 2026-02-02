@@ -177,7 +177,23 @@ async function updateProject(
     }
 
     const body = await request.json()
-    const { name, description, startDate, endDate, autoBackupEnabled, autoBackupFrequency } = body
+    const { 
+      name, 
+      description, 
+      startDate, 
+      endDate, 
+      autoBackupEnabled, 
+      autoBackupFrequency,
+      totalBudget,
+      contingencyPercentage,
+      currency,
+      location,
+      city,
+      state,
+      country,
+      postalCode,
+      stakeholders
+    } = body
 
     // Build update data object dynamically
     const updateData: any = {}
@@ -195,6 +211,21 @@ async function updateProject(
     if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null
     if (autoBackupEnabled !== undefined) updateData.autoBackupEnabled = autoBackupEnabled
     if (autoBackupFrequency !== undefined) updateData.autoBackupFrequency = autoBackupFrequency
+    
+    // Budget fields
+    if (totalBudget !== undefined) updateData.totalBudget = totalBudget
+    if (contingencyPercentage !== undefined) updateData.contingencyPercentage = contingencyPercentage
+    
+    // Location fields
+    if (currency !== undefined) updateData.currency = currency
+    if (location !== undefined) updateData.location = location
+    if (city !== undefined) updateData.city = city
+    if (state !== undefined) updateData.state = state
+    if (country !== undefined) updateData.country = country
+    if (postalCode !== undefined) updateData.postalCode = postalCode
+    
+    // Stakeholders (JSON field)
+    if (stakeholders !== undefined) updateData.stakeholders = stakeholders
 
     const updatedProject = await withRetry(() => prisma.project.update({
       where: { id: projectId },
@@ -207,6 +238,15 @@ async function updateProject(
         endDate: true,
         autoBackupEnabled: true,
         autoBackupFrequency: true,
+        totalBudget: true,
+        contingencyPercentage: true,
+        currency: true,
+        location: true,
+        city: true,
+        state: true,
+        country: true,
+        postalCode: true,
+        stakeholders: true,
       },
     }))
 

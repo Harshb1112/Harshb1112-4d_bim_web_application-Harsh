@@ -43,7 +43,14 @@ export default function DashboardHeader({ user, onMenuClick }: DashboardHeaderPr
             
             {/* Right side logo */}
             <div className="hidden sm:flex items-center gap-3">
-              <Image src="/assets/bimboss-logo.png" alt="BimBoss Logo" width={140} height={120} />
+              <Image 
+                src="/assets/bimboss-logo.png" 
+                alt="BimBoss Logo" 
+                width={140} 
+                height={120}
+                priority
+                style={{ width: 'auto', height: 'auto' }}
+              />
             </div>
           </div>
         </div>

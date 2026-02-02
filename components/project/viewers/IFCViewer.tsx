@@ -30,6 +30,7 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
   const [progress, setProgress] = useState(0)
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
   const [selectedElementInfo, setSelectedElementInfo] = useState<{ type: string; id: number } | null>(null)
+  const [selectedObjectsCount, setSelectedObjectsCount] = useState(0)
 
   // Keep callback ref updated without triggering re-render
   useEffect(() => {
@@ -677,6 +678,7 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
 
         // Click handler for selection with multi-select support
         const selectedObjects = new Set<any>()
+        const selectedObjectsMap = new Map<number, any>() // expressID -> mesh
         
         // Box selection variables
         let isBoxSelecting = false
@@ -695,6 +697,28 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           return box
         }
         
+        // Helper to highlight selected object
+        const highlightObject = (obj: any) => {
+          if (!originalMaterials.has(obj.uuid)) {
+            originalMaterials.set(obj.uuid, obj.material.clone())
+          }
+          obj.material = new THREE.MeshPhongMaterial({
+            color: 0x00ff00,
+            emissive: 0x003300,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9
+          })
+        }
+        
+        // Helper to unhighlight object
+        const unhighlightObject = (obj: any) => {
+          const originalMat = originalMaterials.get(obj.uuid)
+          if (originalMat) {
+            obj.material = originalMat
+          }
+        }
+        
         const onMouseDown = (event: MouseEvent) => {
           // Only start box selection with Shift key
           if (event.shiftKey && event.button === 0) {
@@ -710,6 +734,7 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
             selectionBox.style.height = '0px'
             
             event.preventDefault()
+            event.stopPropagation()
           }
         }
         
@@ -746,15 +771,15 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
             // Clear previous selection if not holding Ctrl
             if (!event.ctrlKey && !event.metaKey) {
               selectedObjects.forEach(obj => {
-                const originalMat = originalMaterials.get(obj.uuid)
-                if (originalMat) {
-                  obj.material = originalMat
-                }
+                unhighlightObject(obj)
               })
               selectedObjects.clear()
+              selectedObjectsMap.clear()
+              setSelectedObjectsCount(0)
             }
             
             // Find all objects within the box
+            const newlySelected: any[] = []
             scene.traverse((obj: any) => {
               if (obj.isMesh && obj.name && obj.name.startsWith('IFC_') && obj.userData.expressID) {
                 // Project object position to screen space
@@ -763,37 +788,34 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
                 
                 // Check if within selection box
                 if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2) {
-                  if (!originalMaterials.has(obj.uuid)) {
-                    originalMaterials.set(obj.uuid, obj.material)
+                  if (!selectedObjectsMap.has(obj.userData.expressID)) {
+                    highlightObject(obj)
+                    selectedObjects.add(obj)
+                    selectedObjectsMap.set(obj.userData.expressID, obj)
+                    newlySelected.push(obj)
                   }
-                  
-                  // Highlight
-                  obj.material = new THREE.MeshPhongMaterial({
-                    color: 0x00ff00,
-                    emissive: 0x003300,
-                    side: THREE.DoubleSide
-                  })
-                  
-                  selectedObjects.add(obj)
                 }
               }
             })
             
+            console.log('[IFCViewer] Box selected:', newlySelected.length, 'new objects, total:', selectedObjects.size)
+            
+            // Update selection count for UI
+            setSelectedObjectsCount(selectedObjects.size)
+            
             // Update callback with all selected
             if (selectedObjects.size > 0 && onElementSelectRef.current) {
-              const selectedIds = Array.from(selectedObjects).map((obj: any) => `IFC_${obj.userData.expressID}`)
+              const selectedIds = Array.from(selectedObjectsMap.keys()).map(id => `IFC_${id}`)
               const firstObj: any = Array.from(selectedObjects)[0]
               onElementSelectRef.current(`IFC_${firstObj.userData.expressID}`, {
                 id: `IFC_${firstObj.userData.expressID}`,
                 expressID: firstObj.userData.expressID,
-                type: firstObj.userData.typeName,
+                type: firstObj.userData.typeName || 'Element',
                 name: firstObj.name,
                 userData: firstObj.userData,
                 allSelected: selectedIds
               })
             }
-            
-            console.log('[IFCViewer] Box selected:', selectedObjects.size, 'objects')
             
             // Remove selection box
             if (selectionBox && container.contains(selectionBox)) {
@@ -821,12 +843,11 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           // If not multi-select, clear previous selections
           if (!isMultiSelect) {
             selectedObjects.forEach(obj => {
-              const originalMat = originalMaterials.get(obj.uuid)
-              if (originalMat) {
-                obj.material = originalMat
-              }
+              unhighlightObject(obj)
             })
             selectedObjects.clear()
+            selectedObjectsMap.clear()
+            setSelectedObjectsCount(0)
           }
 
           // Find first mesh intersection
@@ -839,52 +860,47 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           }
 
           if (foundObject) {
+            const expressID = foundObject.userData.expressID
+            
             // Toggle selection if Ctrl is pressed and object already selected
-            if (isMultiSelect && selectedObjects.has(foundObject)) {
+            if (isMultiSelect && selectedObjectsMap.has(expressID)) {
               // Deselect
-              const originalMat = originalMaterials.get(foundObject.uuid)
-              if (originalMat) {
-                foundObject.material = originalMat
-              }
+              unhighlightObject(foundObject)
               selectedObjects.delete(foundObject)
+              selectedObjectsMap.delete(expressID)
+              setSelectedObjectsCount(selectedObjects.size)
+              console.log('[IFCViewer] Deselected:', expressID, 'Total:', selectedObjects.size)
             } else {
               // Select
-              if (!originalMaterials.has(foundObject.uuid)) {
-                originalMaterials.set(foundObject.uuid, foundObject.material)
-              }
-              
-              // Highlight
-              foundObject.material = new THREE.MeshPhongMaterial({
-                color: 0x00ff00,
-                emissive: 0x003300,
-                side: THREE.DoubleSide
-              })
-              
+              highlightObject(foundObject)
               selectedObjects.add(foundObject)
+              selectedObjectsMap.set(expressID, foundObject)
+              console.log('[IFCViewer] Selected:', expressID, 'Total:', selectedObjects.size)
             }
             
+            // Update selection count for UI
+            setSelectedObjectsCount(selectedObjects.size)
+            
             // Update selected element info
-            const elementId = `IFC_${foundObject.userData.expressID}`
+            const elementId = `IFC_${expressID}`
             setSelectedElement(elementId)
             setSelectedElementInfo({
               type: foundObject.userData.typeName || 'Element',
-              id: foundObject.userData.expressID
+              id: expressID
             })
             
             // Call callback with all selected elements
             if (onElementSelectRef.current) {
-              const selectedIds = Array.from(selectedObjects).map((obj: any) => `IFC_${obj.userData.expressID}`)
+              const selectedIds = Array.from(selectedObjectsMap.keys()).map(id => `IFC_${id}`)
               onElementSelectRef.current(elementId, {
                 id: elementId,
-                expressID: foundObject.userData.expressID,
-                type: foundObject.userData.typeName,
+                expressID: expressID,
+                type: foundObject.userData.typeName || 'Element',
                 name: foundObject.name,
                 userData: foundObject.userData,
-                allSelected: selectedIds
+                allSelected: selectedIds.length > 1 ? selectedIds : undefined
               })
             }
-            
-            console.log('[IFCViewer] Selected:', foundObject.userData, 'Total selected:', selectedObjects.size)
           } else if (!isMultiSelect) {
             // Clicked on empty space without Ctrl - clear selection
             setSelectedElement(null)
@@ -1018,8 +1034,20 @@ const IFCViewer = forwardRef<IFCViewerRef, IFCViewerProps>(({ model, onElementSe
           </div>
         )}
         
+        {/* Multi-select counter */}
+        {selectedObjectsCount > 1 && (
+          <div className="absolute top-3 right-3 bg-blue-600/95 backdrop-blur-sm text-white px-4 py-2 rounded-lg text-sm z-10 border border-blue-400 shadow-lg">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+              </svg>
+              <span className="font-semibold">{selectedObjectsCount} elements selected</span>
+            </div>
+          </div>
+        )}
+        
         <div className="absolute bottom-3 left-3 bg-gray-800/80 backdrop-blur-sm text-gray-300 px-3 py-2 rounded-lg text-xs z-10 border border-gray-700">
-          🖱️ Click to select • Scroll to zoom • Drag to rotate
+          🖱️ Click to select • Ctrl+Click for multi • Shift+Drag for box • Scroll to zoom
         </div>
       </div>
     </div>

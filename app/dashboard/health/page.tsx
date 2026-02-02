@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Activity, Database, Zap, FolderKanban, Bot, DollarSign, TrendingUp, AlertCircle, CheckCircle2, XCircle, RefreshCw, Download, Bell, BarChart3, Clock, Users, Wrench, PieChart, LineChart, Target, Flame, Award, AlertTriangle, Calendar, TrendingDown, Filter } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Activity, Database, Zap, FolderKanban, Bot, DollarSign, TrendingUp, AlertCircle, CheckCircle2, XCircle, RefreshCw, Download, Bell, BarChart3, Clock, Users, Wrench, PieChart, LineChart, Target, Flame, Award, AlertTriangle, Calendar, TrendingDown, Filter, Globe } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -62,6 +63,22 @@ export default function HealthPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<'all' | 'single'>('all')
   const [selectedProjectTasks, setSelectedProjectTasks] = useState<any[]>([])
+  const [selectedRegion, setSelectedRegion] = useState<'india' | 'usa' | 'uae' | 'uk' | 'europe'>('india')
+
+  // Real Exchange Rates (as of Dec 2024) - Base: INR
+  const EXCHANGE_RATES: Record<string, { rate: number; symbol: string; name: string }> = {
+    india: { rate: 1, symbol: '₹', name: 'INR' },
+    usa: { rate: 0.0112, symbol: '$', name: 'USD' },
+    uae: { rate: 0.0411, symbol: 'AED', name: 'AED' },
+    uk: { rate: 0.0089, symbol: '£', name: 'GBP' },
+    europe: { rate: 0.0107, symbol: '€', name: 'EUR' },
+  }
+
+  // Convert INR to selected currency
+  const convertCurrency = (inrAmount: number): number => {
+    const rate = EXCHANGE_RATES[selectedRegion].rate
+    return Math.round(inrAmount * rate * 100) / 100
+  }
 
   useEffect(() => {
     fetchHealthData()
@@ -127,12 +144,20 @@ export default function HealthPage() {
       }
 
       // Fetch AI credits info - REAL API STATUS
-      const aiRes = await fetch('/api/health/ai-credits')
+      const aiRes = await fetch('/api/health/ai-credits', { credentials: 'include' })
       if (aiRes.ok) {
         const data = await aiRes.json()
+        console.log('🤖 AI Credits Response:', data)
         setAICredits(data)
       } else {
-        console.error('Failed to fetch AI credits')
+        console.error('Failed to fetch AI credits:', aiRes.status)
+        // Set default state if API fails
+        setAICredits({
+          provider: 'openai',
+          hasKey: false,
+          estimatedCredits: 'Unable to fetch',
+          lastUsed: null
+        })
       }
 
       // Fetch REAL analytics data
@@ -256,11 +281,11 @@ export default function HealthPage() {
 
         // Budget Information
         budget: {
-          estimated: p.budget || 0,
+          estimated: p.totalBudget || p.budget || 0,
           spent: p.spent || 0,
-          remaining: (p.budget || 0) - (p.spent || 0),
-          percentSpent: p.budget > 0 
-            ? Math.round((p.spent / p.budget) * 100) 
+          remaining: (p.totalBudget || p.budget || 0) - (p.spent || 0),
+          percentSpent: (p.totalBudget || p.budget) > 0 
+            ? Math.round((p.spent / (p.totalBudget || p.budget)) * 100) 
             : 0
         },
 
@@ -482,7 +507,7 @@ export default function HealthPage() {
     }
     
     // Calculate from filtered projects
-    const totalBudget = projectsToAnalyze.reduce((sum, p) => sum + (p.budget || 0), 0)
+    const totalBudget = projectsToAnalyze.reduce((sum, p) => sum + (p.totalBudget || p.budget || 0), 0)
     const totalSpent = projectsToAnalyze.reduce((sum, p) => sum + (p.spent || 0), 0)
     const remaining = totalBudget - totalSpent
     const percentSpent = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
@@ -552,11 +577,24 @@ export default function HealthPage() {
   }
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount)
+    const convertedAmount = convertCurrency(amount)
+    const { symbol } = EXCHANGE_RATES[selectedRegion]
+    
+    if (selectedRegion === 'india') {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(convertedAmount)
+    } else if (selectedRegion === 'usa') {
+      return `${symbol}${convertedAmount.toLocaleString('en-US')}`
+    } else if (selectedRegion === 'uae') {
+      return `${symbol} ${convertedAmount.toLocaleString()}`
+    } else if (selectedRegion === 'uk') {
+      return `${symbol}${convertedAmount.toLocaleString('en-GB')}`
+    } else {
+      return `${symbol}${convertedAmount.toLocaleString('de-DE')}`
+    }
   }
 
   const SimpleBarChart = ({ data, label }: { data: { label: string; value: number; color: string }[]; label: string }) => {
@@ -656,6 +694,22 @@ export default function HealthPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Region Selector */}
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedRegion} onValueChange={(value: any) => setSelectedRegion(value)}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="india">🇮🇳 India (₹)</SelectItem>
+                <SelectItem value="usa">🇺🇸 USA ($)</SelectItem>
+                <SelectItem value="uae">🇦🇪 UAE (AED)</SelectItem>
+                <SelectItem value="uk">🇬🇧 UK (£)</SelectItem>
+                <SelectItem value="europe">🇪🇺 Europe (€)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -902,13 +956,34 @@ export default function HealthPage() {
       {aiCredits && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-purple-600" />
-              AI Credits Status
-            </CardTitle>
-            <CardDescription>
-              Monitor your {aiCredits.provider === 'claude' ? 'Claude' : 'OpenAI'} API usage
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-purple-600" />
+                  AI Credits Status
+                  {aiCredits.hasKey && (
+                    <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-300">
+                      Active
+                    </Badge>
+                  )}
+                  {!aiCredits.hasKey && aiCredits.estimatedCredits === 'Not configured' && (
+                    <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700 border-yellow-300">
+                      Not Configured
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  Monitor your {aiCredits.provider === 'claude' ? 'Claude' : 'OpenAI'} API usage
+                </CardDescription>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchHealthData}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -920,14 +995,20 @@ export default function HealthPage() {
                 <p className="text-sm text-gray-600 dark:text-gray-400">API Key Status</p>
                 <p className="text-xl font-bold">
                   {aiCredits.hasKey ? (
-                    <span className="text-green-600">✓ Configured</span>
+                    <span className="text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-5 w-5" />
+                      Configured
+                    </span>
                   ) : (
-                    <span className="text-red-600">✗ Not Set</span>
+                    <span className="text-red-600 flex items-center gap-1">
+                      <XCircle className="h-5 w-5" />
+                      Not Set
+                    </span>
                   )}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Estimated Credits</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Status</p>
                 <p className="text-xl font-bold">{aiCredits.estimatedCredits}</p>
               </div>
             </div>
@@ -936,21 +1017,35 @@ export default function HealthPage() {
                 Last used: {new Date(aiCredits.lastUsed).toLocaleString()}
               </p>
             )}
-            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
-              <DollarSign className="h-4 w-4 text-blue-600" />
-              <AlertDescription>
-                <a
-                  href={aiCredits.provider === 'claude' 
-                    ? 'https://console.anthropic.com/settings/billing' 
-                    : 'https://platform.openai.com/account/billing'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline font-semibold"
-                >
-                  Check actual credits on {aiCredits.provider === 'claude' ? 'Anthropic Console' : 'OpenAI Platform'} →
-                </a>
-              </AlertDescription>
-            </Alert>
+            {!aiCredits.hasKey && (
+              <Alert className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200">
+                <AlertCircle className="h-4 w-4 text-yellow-600" />
+                <AlertDescription>
+                  AI features are not configured. Go to{' '}
+                  <a href="/dashboard/settings" className="text-blue-600 hover:underline font-semibold">
+                    Settings → AI Configuration
+                  </a>
+                  {' '}to add your API key.
+                </AlertDescription>
+              </Alert>
+            )}
+            {aiCredits.hasKey && (
+              <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                <DollarSign className="h-4 w-4 text-blue-600" />
+                <AlertDescription>
+                  <a
+                    href={aiCredits.provider === 'claude' 
+                      ? 'https://console.anthropic.com/settings/billing' 
+                      : 'https://platform.openai.com/account/billing'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-semibold"
+                  >
+                    Check actual credits on {aiCredits.provider === 'claude' ? 'Anthropic Console' : 'OpenAI Platform'} →
+                  </a>
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       )}

@@ -46,6 +46,14 @@ export default function ElementSelectionToolbar({
     return acc
   }, {} as Record<string, number>)
 
+  // Mode descriptions
+  const modeDescriptions = {
+    single: 'Click elements one at a time',
+    box: 'Hold Shift + Drag to select multiple elements in a box',
+    lasso: 'Draw a freehand selection around elements',
+    layer: 'Select all elements of the same type/layer'
+  }
+
   return (
     <Card className="p-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -63,7 +71,7 @@ export default function ElementSelectionToolbar({
       </div>
 
       {/* Selection Mode Buttons */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Button
           variant={selectionMode === 'single' ? 'default' : 'outline'}
           size="sm"
@@ -80,7 +88,7 @@ export default function ElementSelectionToolbar({
           className="flex flex-col h-auto py-2"
         >
           <Box className="h-4 w-4 mb-1" />
-          <span className="text-xs">Box</span>
+          <span className="text-xs">Multi</span>
         </Button>
         <Button
           variant={selectionMode === 'lasso' ? 'default' : 'outline'}
@@ -100,6 +108,20 @@ export default function ElementSelectionToolbar({
           <Layers className="h-4 w-4 mb-1" />
           <span className="text-xs">Layer</span>
         </Button>
+      </div>
+
+      {/* Mode Instructions */}
+      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <p className="text-xs text-gray-600">
+          <strong>{selectionMode.charAt(0).toUpperCase() + selectionMode.slice(1)} Mode:</strong>
+          <br />
+          {modeDescriptions[selectionMode]}
+        </p>
+        {selectionMode === 'box' && (
+          <p className="text-xs text-blue-600 mt-1">
+            💡 Hold Ctrl/Cmd to add to selection
+          </p>
+        )}
       </div>
 
       {/* Selected Elements Summary */}
@@ -145,7 +167,10 @@ export default function ElementSelectionToolbar({
 
       {selectedElements.length === 0 && (
         <div className="text-center py-4 text-sm text-gray-500">
-          Select elements in the 3D viewer to create tasks
+          <p className="mb-2">Select elements in the 3D viewer</p>
+          <p className="text-xs text-gray-400">
+            Works with Autodesk, Speckle & IFC models
+          </p>
         </div>
       )}
     </Card>

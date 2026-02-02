@@ -23,7 +23,6 @@ model User {
   createdAt            DateTime           @default(now()) @map("created_at")
   profileImage         String?            @map("profile_image")
   aiEnabled            Boolean            @default(false) @map("ai_enabled")
-  aiProvider           String?            @map("ai_provider")
   aiApiKey             String?            @map("ai_api_key")
   dateFormat           String             @default("MM/DD/YYYY") @map("date_format")
   emailNotifications   Boolean            @default(true) @map("email_notifications")
@@ -34,9 +33,10 @@ model User {
   twoFactorEnabled     Boolean            @default(false) @map("two_factor_enabled")
   twoFactorSecret      String?            @map("two_factor_secret")
   weeklyDigest         Boolean            @default(false) @map("weekly_digest")
+  aiProvider           String?            @map("ai_provider")
+  deletionReminderSent Boolean            @default(false) @map("deletion_reminder_sent")
   deletionRequestedAt  DateTime?          @map("deletion_requested_at")
   deletionScheduledFor DateTime?          @map("deletion_scheduled_for")
-  deletionReminderSent Boolean            @default(false) @map("deletion_reminder_sent")
   activityLogs         ActivityLog[]
   apiKeys              ApiKey[]
   errorLogs            ErrorLog[]         @relation("ErrorReporter")
@@ -108,53 +108,55 @@ model LoginSession {
 }
 
 model Project {
-  id                  Int                 @id @default(autoincrement())
-  name                String
-  description         String?
-  startDate           DateTime?           @map("start_date")
-  endDate             DateTime?           @map("end_date")
-  createdById         Int?                @map("created_by")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  teamId              Int?                @map("team_id")
-  teamLeaderId        Int?                @map("team_leader_id")
-  speckleUrl          String?             @map("speckle_url")
-  image               String?             @map("project_image")
-  status              String              @default("active") @map("project_status")
-  latitude            Float?
-  location            String?
-  longitude           Float?
-  aiEnabled           Boolean             @default(false) @map("ai_enabled")
-  openaiApiKey        String?             @map("openai_api_key")
-  budget              Float?              @default(0)
-  autoBackupEnabled   Boolean             @default(true) @map("auto_backup_enabled")
-  autoBackupFrequency Int                 @default(24) @map("auto_backup_frequency")
-  lastAutoBackup      DateTime?           @map("last_auto_backup")
-  currency            String              @default("USD")
-  city                String?
-  state               String?
-  country             String?
-  postalCode          String?             @map("postal_code")
-  stakeholders        Json?
-  activityLogs        ActivityLog[]
-  dailyLogs           DailyLog[]
-  dailySiteCosts      DailySiteCost[]
-  dailySiteProgress   DailySiteProgress[]
-  errorLogs           ErrorLog[]
-  models              Model[]
-  projectBackups      ProjectBackup[]
-  projectFiles        ProjectFile[]
-  projectUsers        ProjectUser[]
-  createdBy           User?               @relation("ProjectCreator", fields: [createdById], references: [id])
-  team                Team?               @relation(fields: [teamId], references: [id])
-  teamLeader          User?               @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
-  resources           Resource[]
-  safetyIncidents     SafetyIncident[]
-  scheduleHealth      ScheduleHealth[]
-  siteCameras         SiteCamera[]
-  siteCaptures        SiteCapture[]
-  siteViewLogs        SiteViewLog[]
-  tasks               Task[]
-  toolboxTalks        ToolboxTalk[]
+  id                    Int                 @id @default(autoincrement())
+  name                  String
+  description           String?
+  startDate             DateTime?           @map("start_date")
+  endDate               DateTime?           @map("end_date")
+  createdById           Int?                @map("created_by")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  teamId                Int?                @map("team_id")
+  teamLeaderId          Int?                @map("team_leader_id")
+  speckleUrl            String?             @map("speckle_url")
+  image                 String?             @map("project_image")
+  status                String              @default("active") @map("project_status")
+  latitude              Float?
+  location              String?
+  longitude             Float?
+  aiEnabled             Boolean             @default(false) @map("ai_enabled")
+  openaiApiKey          String?             @map("openai_api_key")
+  budget                Float?              @default(0)
+  autoBackupEnabled     Boolean             @default(true) @map("auto_backup_enabled")
+  autoBackupFrequency   Int                 @default(24) @map("auto_backup_frequency")
+  lastAutoBackup        DateTime?           @map("last_auto_backup")
+  city                  String?
+  country               String?
+  currency              String              @default("INR")
+  postalCode            String?             @map("postal_code")
+  stakeholders          Json?
+  state                 String?
+  contingencyPercentage Float?              @default(10) @map("contingency_percentage")
+  totalBudget           Float?              @default(0) @map("total_budget")
+  activityLogs          ActivityLog[]
+  dailyLogs             DailyLog[]
+  dailySiteCosts        DailySiteCost[]
+  dailySiteProgress     DailySiteProgress[]
+  errorLogs             ErrorLog[]
+  models                Model[]
+  projectBackups        ProjectBackup[]
+  projectFiles          ProjectFile[]
+  projectUsers          ProjectUser[]
+  createdBy             User?               @relation("ProjectCreator", fields: [createdById], references: [id])
+  team                  Team?               @relation(fields: [teamId], references: [id])
+  teamLeader            User?               @relation("TeamLeadProjects", fields: [teamLeaderId], references: [id])
+  resources             Resource[]
+  safetyIncidents       SafetyIncident[]
+  scheduleHealth        ScheduleHealth[]
+  siteCameras           SiteCamera[]
+  siteCaptures          SiteCapture[]
+  siteViewLogs          SiteViewLog[]
+  tasks                 Task[]
+  toolboxTalks          ToolboxTalk[]
 
   @@map("projects")
 }
@@ -622,13 +624,13 @@ model DailyLog {
   temperatureHigh Float?   @map("temperature_high")
   crewCount       Int?     @map("crew_count")
   totalHours      Float?   @map("total_hours")
-  activities      String?  @db.Text
+  activities      String?
   deliveries      Json?    @db.Json
-  equipment       String?  @db.Text
+  equipment       String?
   visitors        Json?    @db.Json
-  issues          String?  @db.Text
-  delays          String?  @db.Text
-  notes           String?  @db.Text
+  issues          String?
+  delays          String?
+  notes           String?
   createdBy       Int      @map("created_by")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")

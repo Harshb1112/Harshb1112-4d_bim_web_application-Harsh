@@ -210,81 +210,79 @@ export async function POST(request: NextRequest) {
     console.log('[Smart AI] Task summary:', tasksSummary);
 
     // Prepare system prompt for smart analysis
-    const systemPrompt = `You are an expert construction resource planning AI. Analyze the project schedule and intelligently suggest resources needed.
+    const systemPrompt = `You are an expert construction resource planning AI. Analyze the project schedule and suggest resources needed.
 
-**PROJECT DETAILS:**
-- Name: ${projectName || 'Construction Project'}
-- Location: ${projectLocation || 'Not specified'} (${country})
-- Currency: ${currency} (${currencySymbol})
-- Total Tasks: ${tasks.length}
+**PROJECT:** ${projectName || 'Construction Project'} | Location: ${country} | Currency: ${currency}
 
-**TASKS TO ANALYZE:**
+**TASKS (${tasks.length}):**
 ${tasksSummary}
 
-**YOUR TASK:**
-Analyze each task and suggest appropriate resources (labor, equipment, materials) needed based on:
-1. Task name and description
-2. Task duration and complexity
-3. Construction industry best practices
-4. Regional market rates for ${country}
-
+**${country.toUpperCase()} RATES (${currency}):**
 ${rateGuide}
 
-**IMPORTANT RULES:**
-- Suggest realistic quantities based on task requirements
-- Use CURRENT ${country} construction rates for ${new Date().getFullYear()}
-- All rates must be in ${currency} (${currencySymbol})
-- Include reasoning for each resource suggestion
-- Link resources to specific tasks they're needed for
-- Consider task dependencies and overlaps
-- Be practical and cost-effective
-
-Return ONLY valid JSON array, no markdown:
+**OUTPUT FORMAT - Return ONLY valid JSON array:**
 [
   {
     "name": "Resource name",
     "type": "labor|equipment|material",
     "quantity": number,
-    "unit": "day|hour|piece|kg|ton|m3|sqm|sqft|bag|brass|cum|liter|cubic yard|board feet|sheet|lb",
-    "hourlyRate": number (optional),
-    "dailyRate": number (optional),
-    "unitRate": number (for materials),
+    "unit": "day|hour|piece|kg|ton|m3|bag|cum",
+    "dailyRate": number,
     "currency": "${currency}",
-    "duration": "duration string" (optional),
-    "reasoning": "Why this resource is needed",
-    "relatedTasks": ["task names this resource is needed for"]
+    "duration": "X days",
+    "reasoning": "Brief reason",
+    "relatedTasks": ["task1", "task2"]
   }
 ]
 
-Analyze carefully and provide comprehensive resource suggestions.`;
+**RULES:**
+- Use realistic ${country} rates for ${new Date().getFullYear()}
+- All rates in ${currency}
+- Be concise but comprehensive
+- Link resources to tasks
+- NO markdown, ONLY JSON array`;
 
     // Call AI with task analysis
     const responseText = await callAI(
       aiConfig, 
-      `Analyze these ${tasks.length} construction tasks and suggest all necessary resources with costs.`, 
+      `Analyze these ${tasks.length} tasks and suggest resources with ${currency} costs. Return ONLY JSON array, no explanation.`, 
       systemPrompt, 
-      2000 // Longer response for detailed analysis
+      10000 // Maximum tokens for comprehensive resource list
     );
     
     if (!responseText) {
       throw new Error('No response from AI');
     }
 
-    console.log('[Smart AI] Raw response:', responseText.substring(0, 500) + '...');
+    console.log('[Smart AI] Raw response length:', responseText.length);
+    console.log('[Smart AI] Raw response:', responseText);
 
     // Parse JSON response
     let resources;
     try {
       // Remove markdown code blocks if present
-      const cleanedResponse = responseText
+      let cleanedResponse = responseText
         .replace(/```json\n?/g, '')
         .replace(/```\n?/g, '')
         .trim();
       
+      // Check if response is truncated (doesn't end with ])
+      if (!cleanedResponse.endsWith(']')) {
+        console.warn('[Smart AI] Response appears truncated, attempting to fix...');
+        
+        // Find the last complete object
+        const lastCompleteObject = cleanedResponse.lastIndexOf('}');
+        if (lastCompleteObject !== -1) {
+          cleanedResponse = cleanedResponse.substring(0, lastCompleteObject + 1) + ']';
+          console.log('[Smart AI] Fixed truncated response');
+        }
+      }
+      
       resources = JSON.parse(cleanedResponse);
-    } catch (parseError) {
+    } catch (parseError: any) {
       console.error('[Smart AI] JSON parse error:', parseError);
-      throw new Error('Failed to parse AI response');
+      console.error('[Smart AI] Failed response:', responseText);
+      throw new Error(`Failed to parse AI response: ${parseError.message}`);
     }
 
     if (!Array.isArray(resources)) {

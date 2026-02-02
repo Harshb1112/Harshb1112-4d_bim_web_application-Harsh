@@ -187,7 +187,22 @@ async function parseExcelCSV(buffer: ArrayBuffer, textContent: string): Promise<
           if (headerRow[idx]) rowData[headerRow[idx]] = val
         })
         
-        const name = rowData['name'] || rowData['taskname'] || rowData['task'] || rowData['familyandtype']
+        // Try standard column names first
+        let name = rowData['name'] || rowData['taskname'] || rowData['task'] || rowData['familyandtype'] || rowData['title'] || rowData['description']
+        
+        // If no standard columns found, try to use the first non-empty text column
+        // This handles Revit schedule exports where the column name is the schedule name
+        if (!name) {
+          for (const key of headerRow) {
+            const value = rowData[key]
+            if (value && typeof value === 'string' && value.trim().length > 0) {
+              name = value
+              console.log(`[Excel Parser] XML Row ${i} using column '${key}' as name: ${name}`)
+              break
+            }
+          }
+        }
+        
         if (!name) continue
         
         let startDate = null, endDate = null
@@ -257,9 +272,24 @@ async function parseExcelCSV(buffer: ArrayBuffer, textContent: string): Promise<
 
     console.log(`[Excel Parser] Row ${rowNumber} data:`, rowData)
 
-    const name = rowData['name'] || rowData['taskname'] || rowData['task']
+    // Try standard column names first
+    let name = rowData['name'] || rowData['taskname'] || rowData['task'] || rowData['title'] || rowData['description']
+    
+    // If no standard columns found, try to use the first non-empty text column
+    // This handles Revit schedule exports where the column name is the schedule name
     if (!name) {
-      console.log(`[Excel Parser] Row ${rowNumber} skipped - no name found`)
+      for (const key of headerRow) {
+        const value = rowData[key]
+        if (value && typeof value === 'string' && value.trim().length > 0) {
+          name = value
+          console.log(`[Excel Parser] Row ${rowNumber} using column '${key}' as name: ${name}`)
+          break
+        }
+      }
+    }
+    
+    if (!name) {
+      console.log(`[Excel Parser] Row ${rowNumber} skipped - no name found in any column`)
       return
     }
 
@@ -337,7 +367,9 @@ export async function POST(request: NextRequest) {
     console.log('Parsed tasks:', { count: parsedTasks.length, fileType: fileName.split('.').pop() })
     
     if (parsedTasks.length === 0) {
-      return NextResponse.json({ error: 'No valid tasks found in file. Please check the file format.' }, { status: 400 })
+      return NextResponse.json({ 
+        error: 'No valid tasks found in file. Please ensure your file has a column with task names (e.g., "Name", "Task Name", "Task", or any text column with task descriptions).' 
+      }, { status: 400 })
     }
 
     let created = 0

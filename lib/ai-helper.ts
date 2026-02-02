@@ -9,20 +9,20 @@ export interface AIConfig {
   model?: string; // Optional: custom model name
 }
 
-// Available Claude models (in order of preference)
+// Available Claude models (in order of preference) with their max token limits
 const CLAUDE_MODELS = [
-  'claude-3-5-sonnet-20241022',  // Latest (might not be available on all tiers)
-  'claude-3-5-sonnet-20240620',  // Stable version
-  'claude-3-haiku-20240307',     // Fast and cheap (available on free tier)
-  'claude-3-sonnet-20240229',    // Fallback
-  'claude-3-opus-20240229',      // Most powerful
+  { name: 'claude-3-5-sonnet-20241022', maxTokens: 8192 },  // Latest
+  { name: 'claude-3-5-sonnet-20240620', maxTokens: 8192 },  // Stable version
+  { name: 'claude-3-haiku-20240307', maxTokens: 4096 },     // Fast and cheap (lower limit)
+  { name: 'claude-3-sonnet-20240229', maxTokens: 4096 },    // Fallback
+  { name: 'claude-3-opus-20240229', maxTokens: 4096 },      // Most powerful
 ];
 
-// Available OpenAI models
+// Available OpenAI models with their max token limits
 const OPENAI_MODELS = [
-  'gpt-4o-mini',
-  'gpt-4o',
-  'gpt-4-turbo',
+  { name: 'gpt-4o-mini', maxTokens: 16384 },
+  { name: 'gpt-4o', maxTokens: 16384 },
+  { name: 'gpt-4-turbo', maxTokens: 4096 },
 ];
 
 export interface AIErrorResponse {
@@ -151,12 +151,16 @@ export async function callAI(
       console.log('📡 Using Claude API...');
       
       // Try models in order until one works
-      const modelsToTry = config.model ? [config.model, ...CLAUDE_MODELS] : CLAUDE_MODELS;
+      const modelsToTry = config.model 
+        ? [{ name: config.model, maxTokens: 8192 }, ...CLAUDE_MODELS] 
+        : CLAUDE_MODELS;
       let lastError: any = null;
       
-      for (const model of modelsToTry) {
+      for (const modelConfig of modelsToTry) {
         try {
-          console.log(`📦 Trying Claude Model: ${model}`);
+          // Use the lower of requested tokens or model's max
+          const effectiveMaxTokens = Math.min(maxTokens, modelConfig.maxTokens);
+          console.log(`📦 Trying Claude Model: ${modelConfig.name} (max: ${effectiveMaxTokens} tokens)`);
           
           const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -166,8 +170,8 @@ export async function callAI(
               'anthropic-version': '2023-06-01'
             },
             body: JSON.stringify({
-              model: model,
-              max_tokens: maxTokens,
+              model: modelConfig.name,
+              max_tokens: effectiveMaxTokens,
               messages: [{
                 role: 'user',
                 content: systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
@@ -180,7 +184,7 @@ export async function callAI(
             
             // If model not found, try next model
             if (response.status === 404 && errorData.error?.type === 'not_found_error') {
-              console.log(`⚠️ Model ${model} not available, trying next...`);
+              console.log(`⚠️ Model ${modelConfig.name} not available, trying next...`);
               lastError = errorData;
               continue; // Try next model
             }
@@ -231,7 +235,7 @@ export async function callAI(
 
           // Success!
           const data = await response.json();
-          console.log(`✅ Claude response received using model: ${model}`);
+          console.log(`✅ Claude response received using model: ${modelConfig.name}`);
           return data.content[0].text;
           
         } catch (error: any) {
@@ -241,7 +245,7 @@ export async function callAI(
           }
           // Otherwise, save error and try next model
           lastError = error;
-          console.log(`⚠️ Error with model ${model}:`, error.message);
+          console.log(`⚠️ Error with model ${modelConfig.name}:`, error.message);
         }
       }
       
@@ -257,8 +261,13 @@ export async function callAI(
       console.log('📡 Using OpenAI API...');
       
       // Use custom model or default
-      const model = config.model || OPENAI_MODELS[0];
-      console.log(`📦 OpenAI Model: ${model}`);
+      const modelConfig = config.model 
+        ? { name: config.model, maxTokens: 16384 }
+        : OPENAI_MODELS[0];
+      
+      // Use the lower of requested tokens or model's max
+      const effectiveMaxTokens = Math.min(maxTokens, modelConfig.maxTokens);
+      console.log(`📦 OpenAI Model: ${modelConfig.name} (max: ${effectiveMaxTokens} tokens)`);
       
       const openai = new OpenAI({ apiKey: config.apiKey });
       const messages: any[] = [];
@@ -269,9 +278,9 @@ export async function callAI(
       messages.push({ role: 'user', content: prompt });
 
       const completion = await openai.chat.completions.create({
-        model: model,
+        model: modelConfig.name,
         messages,
-        max_tokens: maxTokens,
+        max_tokens: effectiveMaxTokens,
         temperature: 0.7
       });
 
@@ -377,12 +386,14 @@ export function handleAIError(error: any): { json: AIErrorResponse; status: numb
  * Get available models for a provider
  */
 export function getAvailableModels(provider: 'openai' | 'claude'): string[] {
-  return provider === 'claude' ? CLAUDE_MODELS : OPENAI_MODELS;
+  return provider === 'claude' 
+    ? CLAUDE_MODELS.map(m => m.name)
+    : OPENAI_MODELS.map(m => m.name);
 }
 
 /**
  * Get default model for a provider
  */
 export function getDefaultModel(provider: 'openai' | 'claude'): string {
-  return provider === 'claude' ? CLAUDE_MODELS[0] : OPENAI_MODELS[0];
+  return provider === 'claude' ? CLAUDE_MODELS[0].name : OPENAI_MODELS[0].name;
 }

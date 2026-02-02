@@ -101,8 +101,11 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
       setColorFilter: (filter) => {
         if (!filter.multiple) return
         
+        console.log(`🎨 [IFC Viewer] Applying colors to ${filter.multiple.length} elements`)
+        
         // Import THREE dynamically for color conversion
         import('three').then(THREE => {
+          let appliedCount = 0
           filter.multiple?.forEach(({ property, color, opacity }) => {
             const guid = property.value
             const mesh = meshMapRef.current.get(guid)
@@ -112,16 +115,25 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
                 originalMaterialsRef.current.set(guid, mesh.material.clone())
               }
               
-              // Apply new color
-              mesh.material.color = new THREE.Color(color)
+              // Create new material with color to ensure it's applied
+              const newMaterial = mesh.material.clone()
+              newMaterial.color = new THREE.Color(color)
               
               // Apply opacity if specified
               if (opacity !== undefined) {
-                mesh.material.transparent = opacity < 1
-                mesh.material.opacity = opacity
+                newMaterial.transparent = opacity < 1
+                newMaterial.opacity = opacity
+              } else {
+                newMaterial.transparent = false
+                newMaterial.opacity = 1
               }
+              
+              // Apply the new material
+              mesh.material = newMaterial
+              appliedCount++
             }
           })
+          console.log(`🎨 [IFC Viewer] Successfully applied colors to ${appliedCount} elements`)
         })
       },
 
@@ -169,13 +181,37 @@ const SimulationIFCViewer = forwardRef<SimulationViewerRef, SimulationIFCViewerP
           )
           camera.position.set(50, 50, 50)
 
-          // Renderer
-          const renderer = new THREE.WebGLRenderer({ antialias: true })
+          // Renderer with WebGL context recovery
+          const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            preserveDrawingBuffer: true, // Important for video recording
+            powerPreference: 'high-performance', // Use dedicated GPU
+            failIfMajorPerformanceCaveat: false // Don't fail on slow hardware
+          })
           renderer.setSize(container.clientWidth, container.clientHeight)
-          renderer.setPixelRatio(window.devicePixelRatio)
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // Limit to 2x for performance
           renderer.shadowMap.enabled = true
           container.appendChild(renderer.domElement)
           rendererRef.current = renderer
+
+          // WebGL Context Lost/Restored handlers
+          const canvas = renderer.domElement
+          canvas.addEventListener('webglcontextlost', (event) => {
+            event.preventDefault()
+            console.error('⚠️ WebGL context lost! Attempting recovery...')
+            setError('WebGL context lost. Attempting to recover...')
+            // Stop animation loop
+            if (animationFrameId) {
+              cancelAnimationFrame(animationFrameId)
+            }
+          }, false)
+
+          canvas.addEventListener('webglcontextrestored', () => {
+            console.log('✅ WebGL context restored!')
+            setError(null)
+            // Restart animation loop
+            animate()
+          }, false)
 
           // Set canvas ref for video recording
           if (viewerCanvasRef) {

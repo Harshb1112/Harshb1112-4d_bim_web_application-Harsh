@@ -45,6 +45,16 @@ const nextConfig = {
     unoptimized: false,
   },
 
+  // Optimize performance
+  poweredByHeader: false,
+  compress: true,
+  
+  // Reduce preload warnings
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 2,
+  },
+
   webpack: (config: { resolve: { alias: any; fallback: any; }; }, { isServer }: any) => {
     // Fix for Speckle packages using #lodash subpath imports
     config.resolve.alias = {

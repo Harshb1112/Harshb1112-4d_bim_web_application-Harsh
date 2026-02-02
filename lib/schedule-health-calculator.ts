@@ -263,66 +263,97 @@ function calculateCostScore(costs: any[], resources: any[]): number {
 function calculateEVMMetrics(tasks: any[], costs: any[], assignments: any[]) {
   const now = new Date();
   
-  // Calculate BAC (Budget at Completion) - sum of all resource costs planned
+  // Calculate BAC (Budget at Completion) - total project budget from costs
+  // This represents the total planned budget for the project
   const bac = costs.reduce((sum, cost) => sum + cost.totalCost, 0);
 
-  // Calculate PV (Planned Value) - what should have been done by now
+  // If no costs, return zeros
+  if (bac === 0 || tasks.length === 0) {
+    return {
+      spi: 0,
+      cpi: 0,
+      scheduleVariance: 0,
+      costVariance: 0,
+      bac: 0,
+      pv: 0,
+      ev: 0,
+      ac: 0,
+      eac: 0,
+      etc: 0,
+      vac: 0,
+      tcpi: 1
+    };
+  }
+
+  // Calculate total task progress
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
+  const totalProgress = tasks.reduce((sum: number, t: any) => sum + (t.progress || 0), 0);
+  const avgProgress = totalProgress / totalTasks / 100; // 0 to 1
+
+  // Calculate PV (Planned Value) - what should have been spent by now based on schedule
   let pv = 0;
+  let ev = 0;
+  let totalPlannedProgress = 0;
+  
   for (const task of tasks) {
     const startDate = task.startDate ? new Date(task.startDate) : null;
     const endDate = task.endDate ? new Date(task.endDate) : null;
 
-    if (startDate && endDate && now >= startDate) {
-      // Find costs associated with this task's resources
-      const taskAssignments = assignments.filter(a => a.taskId === task.id);
-      const taskResourceIds = taskAssignments.map(a => a.resourceId);
-      const taskCosts = costs.filter(c => taskResourceIds.includes(c.resourceId));
-      const taskBudget = taskCosts.reduce((sum, c) => sum + c.totalCost, 0);
-
+    if (startDate && endDate) {
       if (now >= endDate) {
-        pv += taskBudget; // Task should be complete
-      } else {
+        // Task should be complete
+        totalPlannedProgress += 1;
+      } else if (now >= startDate) {
         // Calculate planned progress based on time elapsed
         const totalDuration = endDate.getTime() - startDate.getTime();
         const elapsed = now.getTime() - startDate.getTime();
-        const plannedProgress = elapsed / totalDuration;
-        pv += taskBudget * plannedProgress;
+        const plannedProgress = Math.min(1, elapsed / totalDuration);
+        totalPlannedProgress += plannedProgress;
       }
+      // If task hasn't started, planned progress is 0
+    } else {
+      // No dates, assume should be complete
+      totalPlannedProgress += 1;
     }
   }
+  
+  // PV = BAC * (average planned progress across all tasks)
+  const avgPlannedProgress = totalTasks > 0 ? totalPlannedProgress / totalTasks : 0;
+  pv = bac * avgPlannedProgress;
 
-  // Calculate EV (Earned Value) - actual work completed
-  let ev = 0;
-  for (const task of tasks) {
-    const progress = (task.progress || 0) / 100;
-    
-    // Find costs associated with this task's resources
-    const taskAssignments = assignments.filter(a => a.taskId === task.id);
-    const taskResourceIds = taskAssignments.map(a => a.resourceId);
-    const taskCosts = costs.filter(c => taskResourceIds.includes(c.resourceId));
-    const taskBudget = taskCosts.reduce((sum, c) => sum + c.totalCost, 0);
-    
-    ev += taskBudget * progress;
-  }
+  // Calculate EV (Earned Value) - value of work actually completed
+  // EV = BAC * (actual progress)
+  ev = bac * avgProgress;
 
-  // Calculate AC (Actual Cost)
-  const ac = costs.reduce((sum, cost) => sum + cost.totalCost, 0);
+  // Calculate AC (Actual Cost) - For realistic calculation, use a percentage of BAC based on progress
+  // In real projects, AC would come from actual expenditure tracking
+  // For now, assume AC = BAC * (avgProgress + 10% overhead for incomplete work)
+  const ac = bac * Math.min(1, avgProgress * 1.1);
 
   // Calculate derived metrics
-  const spi = pv > 0 ? ev / pv : 0; // Schedule Performance Index
-  const cpi = ac > 0 ? ev / ac : 0; // Cost Performance Index
+  const spi = pv > 0 ? ev / pv : (ev > 0 ? 1 : 0); // Schedule Performance Index
+  const cpi = ac > 0 ? ev / ac : (ev > 0 ? 1 : 0); // Cost Performance Index
   const scheduleVariance = ev - pv;
   const costVariance = ev - ac;
 
   // Calculate forecasts
-  const eac = cpi > 0 ? bac / cpi : bac; // Estimate at Completion
-  const etc = eac - ac; // Estimate to Complete
+  const eac = cpi > 0 && cpi !== 1 ? bac / cpi : bac; // Estimate at Completion
+  const etc = Math.max(0, eac - ac); // Estimate to Complete
   const vac = bac - eac; // Variance at Completion
-  const tcpi = (bac - ev) / (bac - ac) || 1; // To-Complete Performance Index
+  const tcpi = (bac - ev) > 0 && (bac - ac) > 0 ? (bac - ev) / (bac - ac) : 1; // To-Complete Performance Index
+
+  console.log('📊 EVM Metrics:');
+  console.log('  BAC:', bac.toFixed(2));
+  console.log('  PV:', pv.toFixed(2), '(Planned:', (avgPlannedProgress * 100).toFixed(1), '%)');
+  console.log('  EV:', ev.toFixed(2), '(Actual:', (avgProgress * 100).toFixed(1), '%)');
+  console.log('  AC:', ac.toFixed(2));
+  console.log('  SPI:', spi.toFixed(2), spi >= 1 ? '✅ On/Ahead Schedule' : '⚠️ Behind Schedule');
+  console.log('  CPI:', cpi.toFixed(2), cpi >= 1 ? '✅ On/Under Budget' : '⚠️ Over Budget');
 
   return {
-    spi: Math.max(0, spi),
-    cpi: Math.max(0, cpi),
+    spi: Math.max(0, Math.min(2, spi)), // Cap at 2 for display
+    cpi: Math.max(0, Math.min(2, cpi)), // Cap at 2 for display
     scheduleVariance,
     costVariance,
     bac: Math.max(0, bac),
@@ -332,6 +363,6 @@ function calculateEVMMetrics(tasks: any[], costs: any[], assignments: any[]) {
     eac: Math.max(0, eac),
     etc: Math.max(0, etc),
     vac,
-    tcpi: Math.max(0, tcpi)
+    tcpi: Math.max(0, Math.min(5, tcpi)) // Cap TCPI at 5 for display
   };
 }

@@ -20,6 +20,9 @@ interface DeleteLinkBody {
 // GET all links for a project
 // ---------------------------------------------------
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const projectId = searchParams.get('projectId')
+  
   try {
     const token = getTokenFromRequest(request)
     if (!token) {
@@ -30,9 +33,6 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
-
-    const { searchParams } = new URL(request.url)
-    const projectId = searchParams.get('projectId')
 
     if (!projectId) {
       return NextResponse.json({ error: 'Project ID is required' }, { status: 400 })
@@ -75,6 +75,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ links })
   } catch (error) {
     console.error('Get links error:', error)
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      projectId: searchParams.get('projectId')
+    })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

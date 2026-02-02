@@ -43,6 +43,9 @@ const STATUS_COLORS = {
   PLANNED: {
     NOT_STARTED: '#CCCCCC', // Light Grey (Ghosted)
     IN_PROGRESS: '#3B82F6', // Blue
+    IN_PROGRESS_EARLY: '#FFEB3B', // Yellow - Early Progress (1-33%)
+    IN_PROGRESS_MID: '#FFA500', // Orange - Mid Progress (34-66%)
+    IN_PROGRESS_LATE: '#00BCD4', // Cyan - Late Progress (67-99%)
     IN_PROGRESS_PARTIAL: '#60A5FA', // Lighter Blue for partial progress
     COMPLETED: '#16A34A',   // Green
     CRITICAL: '#DC2626',    // Red for critical path
@@ -52,8 +55,12 @@ const STATUS_COLORS = {
     ON_TIME: '#16A34A',    // Green (completed on or near planned end)
     BEHIND: '#F97316',     // Orange (completed after planned end)
     IN_PROGRESS: '#3B82F6', // Blue
+    IN_PROGRESS_EARLY: '#FFEB3B', // Yellow - Early Progress (1-33%)
+    IN_PROGRESS_MID: '#FFA500', // Orange - Mid Progress (34-66%)
+    IN_PROGRESS_LATE: '#00BCD4', // Cyan - Late Progress (67-99%)
     IN_PROGRESS_PARTIAL: '#60A5FA', // Lighter Blue for partial progress
     NOT_STARTED: '#CCCCCC', // Light Grey (Ghosted)
+    COMPLETED: '#16A34A',   // Green - Completed
     COMPLETED_GHOST: '#6B7280', // Darker Grey for completed elements not in focus
     CRITICAL: '#DC2626',    // Red for critical path
   },
@@ -86,6 +93,25 @@ function interpolateColor(color1: string, color2: string, ratio: number): string
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
 }
 
+// Helper function to get color based on progress percentage
+function getProgressColor(progress: number, mode: 'planned' | 'actual', isCritical: boolean = false): string {
+  const colors = mode === 'planned' ? STATUS_COLORS.PLANNED : STATUS_COLORS.ACTUAL
+  
+  if (isCritical) return colors.CRITICAL
+  
+  if (progress === 0) {
+    return colors.NOT_STARTED // Gray - Not Started
+  } else if (progress >= 100) {
+    return colors.COMPLETED // Green - Completed
+  } else if (progress <= 33) {
+    return colors.IN_PROGRESS_EARLY // Yellow - Early Progress (1-33%)
+  } else if (progress <= 66) {
+    return colors.IN_PROGRESS_MID // Orange - Mid Progress (34-66%)
+  } else {
+    return colors.IN_PROGRESS_LATE // Cyan - Late Progress (67-99%)
+  }
+}
+
 export default function FourDSimulation({ project }: FourDSimulationProps) {
   const viewerRef = useRef<UnifiedSimulationViewerRef>(null)
   const viewerCanvasRef = useRef<HTMLCanvasElement | null>(null) // Ref to the viewer's canvas
@@ -105,7 +131,9 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   const [visualizationMode, setVisualizationMode] = useState<ProgressVisualizationMode>('element-count')
   const [recordingFormat, setRecordingFormat] = useState<'webm' | 'mp4'>('webm')
   const [recordingQuality, setRecordingQuality] = useState<'hd' | 'fullhd' | '4k'>('fullhd')
+  const [recordingMode, setRecordingMode] = useState<'current-view' | 'simulation-playback'>('simulation-playback')
   const [includeOverlay, setIncludeOverlay] = useState(true)
+  const [skipEmptyDays, setSkipEmptyDays] = useState(true) // NEW: Skip days with no changes
 
   const fetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -214,9 +242,23 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
 
     if (allDates.length === 0) return { start: new Date(), end: new Date() }
 
+    const earliestDate = new Date(Math.min(...allDates.map(d => d.getTime())))
+    const latestDate = new Date(Math.max(...allDates.map(d => d.getTime())))
+    
+    // CRITICAL FIX: Start timeline 7 days BEFORE first task
+    // This ensures we see empty model at the beginning
+    const startWithBuffer = addDays(earliestDate, -7)
+    
+    console.log('📅 [Project Timeframe]:', {
+      firstTaskStart: formatDate(earliestDate),
+      timelineStart: formatDate(startWithBuffer),
+      timelineEnd: formatDate(latestDate),
+      bufferDays: 7
+    })
+
     return {
-      start: new Date(Math.min(...allDates.map(d => d.getTime()))),
-      end: new Date(Math.max(...allDates.map(d => d.getTime()))),
+      start: startWithBuffer,
+      end: latestDate,
     }
   }, [tasks, links])
 
@@ -236,18 +278,48 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
 
   useEffect(() => {
-    if (!viewerRef.current || links.length === 0) return
+    if (!viewerRef.current || links.length === 0) {
+      console.log('⚠️ [4D Simulation] Viewer not ready or no links:', {
+        hasViewer: !!viewerRef.current,
+        linksCount: links.length
+      })
+      return
+    }
 
     const allElementGuids = links.map(link => link.element.guid)
     
+    console.log('🎬 [4D Simulation] ===== VISIBILITY UPDATE =====')
+    console.log('🎬 [4D Simulation] Current Date:', formatDate(currentDate))
+    console.log('🎬 [4D Simulation] Total Links:', links.length)
+    console.log('🎬 [4D Simulation] Mode:', mode)
+    console.log('🎬 [4D Simulation] Sample link GUIDs:', links.slice(0, 3).map(l => l.element.guid))
+    
+    // Check if we're on the final day
+    const isOnFinalDay = !isBefore(currentDate, projectTimeframe.end) && 
+                        !isAfter(currentDate, addDays(projectTimeframe.end, 1))
+    if (isOnFinalDay) {
+      console.log('🎨 [4D Simulation] ⭐ FINAL DAY DETECTED - Will use realistic materials for 100% complete tasks')
+    }
+    
     // TRUE 4D SIMULATION: 
-    // Hide ALL elements first (empty array = hide all in Autodesk viewer)
-    // Then show only the elements that should be visible based on timeline
+    // CRITICAL FIX: Hide ALL elements FIRST before processing timeline
+    // This ensures Day 1 starts with empty model
     try {
-      viewerRef.current.hideObjects([]) // Hide all elements
+      // Method 1: Try to hide all elements in viewer
+      viewerRef.current.hideObjects([])
+      if (isRecording) {
+        console.log(`🎬 [RECORDING] Step 1: Hiding ALL elements. Current date: ${formatDate(currentDate)}`)
+      } else {
+        console.log(`🎬 [4D Simulation] Step 1: Hiding ALL ${allElementGuids.length} elements`)
+      }
     } catch (e) {
-      // Fallback: hide only linked elements
+      // Method 2: Fallback - hide only linked elements
       viewerRef.current.hideObjects(allElementGuids)
+      if (isRecording) {
+        console.log(`🎬 [RECORDING] Step 1: Hiding ${allElementGuids.length} linked elements`)
+      } else {
+        console.log(`🎬 [4D Simulation] Step 1: Hiding ${allElementGuids.length} linked elements`)
+      }
     }
 
     const colorFilters: any[] = []
@@ -264,7 +336,8 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       linksByTask.get(link.task.id)!.push(link)
     })
 
-    // Process each task's elements with TIMELINE-BASED progress
+    // CRITICAL: Process each task to determine which elements should be visible
+    // Only elements whose tasks have started will be shown
     linksByTask.forEach((taskLinks, taskId) => {
       const firstLink = taskLinks[0]
       const task = firstLink.task
@@ -276,6 +349,14 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       const actualEnd = task.actualEndDate ? parseISO(task.actualEndDate) : null
       const isTaskCritical = criticalPathTasks.has(task.id) && showCriticalPath
 
+      console.log(`📋 [Task ${task.id}] "${task.name}":`, {
+        plannedStart: formatDate(plannedStart),
+        plannedEnd: formatDate(plannedEnd),
+        currentDate: formatDate(currentDate),
+        elementCount: taskLinks.length,
+        progress: task.progress
+      })
+
       if (mode === 'planned') {
         // Calculate TIMELINE-BASED progress (how much should be done by currentDate)
         const taskDuration = Math.max(1, (plannedEnd.getTime() - plannedStart.getTime()) / (1000 * 60 * 60 * 24))
@@ -284,11 +365,21 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         // Timeline progress: 0% before start, 0-100% during task, 100% after end
         let timelineProgress = 0
         if (isBefore(currentDate, plannedStart)) {
-          timelineProgress = 0 // Task hasn't started yet
+          timelineProgress = 0 // Task hasn't started yet - NO ELEMENTS VISIBLE
         } else if (isAfter(currentDate, plannedEnd)) {
-          timelineProgress = 100 // Task should be complete
+          timelineProgress = 100 // Task should be complete - ALL ELEMENTS VISIBLE
         } else {
           timelineProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
+        }
+        
+        // CRITICAL: Only show elements if timeline progress > 0
+        // This ensures Day 1 (before any task starts) shows empty model
+        if (timelineProgress === 0) {
+          // Before task start date - NO elements visible (skip this task)
+          if (isRecording) {
+            console.log(`🎬 [RECORDING] Task "${task.name}" not started yet (starts ${formatDate(plannedStart)})`)
+          }
+          return // Skip to next task
         }
         
         // Determine visibility and color based on timeline position
@@ -296,32 +387,33 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         let taskColor = STATUS_COLORS.PLANNED.NOT_STARTED
         const actualProgress = Number(task.progress || 0)
         
-        if (timelineProgress === 0) {
-          // Before task start date - NO elements visible
-          shouldShowElements = false
-        } else if (timelineProgress > 0 && timelineProgress < 100) {
+        // Check if we're on the final day of the project
+        const isOnFinalDay = !isBefore(currentDate, projectTimeframe.end) && 
+                            !isAfter(currentDate, addDays(projectTimeframe.end, 1))
+        
+        if (timelineProgress > 0 && timelineProgress < 100) {
           // During task - show elements progressively based on timeline
           shouldShowElements = true
           
-          // Color based on actual vs expected progress
-          if (actualProgress >= timelineProgress) {
-            taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.IN_PROGRESS
-          } else {
-            taskColor = '#F97316' // Orange - behind schedule
-          }
+          // REFINED COLOR SYSTEM: Color based on actual progress percentage
+          // 0% = Gray, 1-33% = Yellow, 34-66% = Orange, 67-99% = Cyan, 100% = Green
+          taskColor = getProgressColor(actualProgress, 'planned', isTaskCritical)
           
           // Track as active task
           if (!taskElementMap.has(task.id)) {
             taskElementMap.set(task.id, [])
             currentActiveTasks.push(task)
           }
-        } else {
-          // After task end date - show all elements as completed
+        } else if (timelineProgress >= 100) {
+          // After task end date - show all elements
           shouldShowElements = true
-          if (actualProgress >= 100) {
-            taskColor = isTaskCritical ? STATUS_COLORS.PLANNED.CRITICAL : STATUS_COLORS.PLANNED.COMPLETED
+          
+          // On final day with 100% completion, use realistic materials (no color override)
+          if (isOnFinalDay && actualProgress >= 100) {
+            taskColor = null // null - use original materials
           } else {
-            taskColor = '#F97316' // Orange - delayed (should be done but isn't)
+            // Otherwise use progress-based colors
+            taskColor = getProgressColor(actualProgress, 'planned', isTaskCritical)
           }
         }
         
@@ -337,19 +429,27 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
             // As timeline moves forward, more elements appear
             const elementsToShow = Math.ceil((timelineProgress / 100) * totalElements)
             
+            if (isRecording && elementsToShow > 0) {
+              console.log(`🎬 [RECORDING] Task "${task.name}": Showing ${elementsToShow}/${totalElements} elements (${timelineProgress.toFixed(1)}% timeline)`)
+            }
+            
             sortedLinks.forEach((link, index) => {
               if (index < elementsToShow) {
                 visibleGuids.push(link.element.guid)
-                colorFilters.push({ 
-                  property: { key: 'id', value: link.element.guid }, 
-                  color: taskColor 
-                })
+                
+                // Only apply color filter if not using realistic materials
+                if (taskColor !== null) {
+                  colorFilters.push({ 
+                    property: { key: 'id', value: link.element.guid }, 
+                    color: taskColor 
+                  })
+                }
                 
                 if (taskElementMap.has(task.id)) {
                   taskElementMap.get(task.id)!.push(link.element.guid)
                 }
               }
-              // Elements not yet reached by timeline stay HIDDEN (not ghosted)
+              // Elements not yet reached by timeline stay HIDDEN (not added to visibleGuids)
             })
           } else if (visualizationMode === 'opacity') {
             // MODE 2: Show all task elements with opacity based on timeline progress
@@ -404,20 +504,28 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         
         let timelineProgress = 0
         if (isBefore(currentDate, startDate)) {
-          timelineProgress = 0
+          timelineProgress = 0 // Task hasn't started yet - NO ELEMENTS VISIBLE
         } else if (isAfter(currentDate, endDate)) {
-          timelineProgress = 100
+          timelineProgress = 100 // Task complete - ALL ELEMENTS VISIBLE
         } else {
           timelineProgress = Math.min(100, Math.max(0, (daysPassed / taskDuration) * 100))
+        }
+        
+        // CRITICAL: Only show elements if timeline progress > 0
+        // This ensures Day 1 (before any task starts) shows empty model
+        if (timelineProgress === 0) {
+          // Before task start date - NO elements visible (skip this task)
+          if (isRecording) {
+            console.log(`🎬 [RECORDING] Task "${task.name}" not started yet (starts ${formatDate(startDate)})`)
+          }
+          return // Skip to next task
         }
         
         const actualProgress = Number(task.progress || 0)
         let shouldShowElements = false
         let taskColor = STATUS_COLORS.ACTUAL.NOT_STARTED
         
-        if (timelineProgress === 0) {
-          shouldShowElements = false
-        } else if (timelineProgress > 0 && timelineProgress < 100) {
+        if (timelineProgress > 0 && timelineProgress < 100) {
           shouldShowElements = true
           
           if (actualProgress >= timelineProgress) {
@@ -430,7 +538,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
             taskElementMap.set(task.id, [])
             currentActiveTasks.push(task)
           }
-        } else {
+        } else if (timelineProgress >= 100) {
           shouldShowElements = true
           if (actualProgress >= 100) {
             // Completed - check if ahead, on time, or behind
@@ -454,6 +562,10 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
           
           if (visualizationMode === 'element-count') {
             const elementsToShow = Math.ceil((timelineProgress / 100) * totalElements)
+            
+            if (isRecording && elementsToShow > 0) {
+              console.log(`🎬 [RECORDING] Task "${task.name}": Showing ${elementsToShow}/${totalElements} elements (${timelineProgress.toFixed(1)}% timeline)`)
+            }
             
             sortedLinks.forEach((link, index) => {
               if (index < elementsToShow) {
@@ -520,6 +632,17 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     // Only show elements that should be visible based on timeline
     if (visibleGuids.length > 0) {
       viewerRef.current.showObjects(visibleGuids)
+      if (isRecording) {
+        console.log(`🎬 [RECORDING] Showing ${visibleGuids.length} elements at ${formatDate(currentDate)}`)
+      } else {
+        console.log(`🎬 [4D Simulation] Showing ${visibleGuids.length} elements at ${formatDate(currentDate)}`)
+      }
+    } else {
+      if (isRecording) {
+        console.log(`🎬 [RECORDING] No elements visible at ${formatDate(currentDate)} (before construction start)`)
+      } else {
+        console.log(`🎬 [4D Simulation] No elements visible at ${formatDate(currentDate)} (before construction start)`)
+      }
     }
     
     // For opacity and gradient modes, we still only show elements that have started
@@ -527,30 +650,65 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
 
     // Apply color filters to visible elements
     if (colorFilters.length > 0) {
+      console.log(`🎨 [4D Simulation] Applying ${colorFilters.length} color filters`)
+      console.log(`🎨 [4D Simulation] Sample colors:`, colorFilters.slice(0, 3).map(f => ({ guid: f.property.value, color: f.color })))
       viewerRef.current.setColorFilter({
         property: 'id',
         multiple: colorFilters,
         default_color: STATUS_COLORS.PLANNED.NOT_STARTED,
       })
+    } else {
+      console.log(`🎨 [4D Simulation] No color filters to apply (final day with realistic materials)`)
     }
 
-  }, [currentDate, links, mode, criticalPathTasks, showCriticalPath, visualizationMode])
+  }, [currentDate, links, mode, criticalPathTasks, showCriticalPath, visualizationMode, isRecording])
 
   useEffect(() => {
     let interval: NodeJS.Timeout
     if (isPlaying) {
       interval = setInterval(() => {
         setCurrentDate(prevDate => {
-          const nextDay = addDays(prevDate, 1)
+          let nextDay = addDays(prevDate, 1)
+          
+          // SMART SKIP: Skip days with no task activity (optional)
+          if (skipEmptyDays && isRecording) {
+            // Find next day with task activity
+            let daysToSkip = 0
+            const maxSkip = 30 // Maximum days to skip at once
+            
+            while (daysToSkip < maxSkip && isBefore(nextDay, projectTimeframe.end)) {
+              // Check if any task is active on this day
+              const hasActivity = tasks.some(task => {
+                const taskStart = parseISO(task.startDate)
+                const taskEnd = parseISO(task.endDate)
+                return !isBefore(nextDay, taskStart) && !isAfter(nextDay, taskEnd)
+              })
+              
+              if (hasActivity) {
+                break // Found a day with activity
+              }
+              
+              // Skip this day
+              nextDay = addDays(nextDay, 1)
+              daysToSkip++
+            }
+            
+            if (daysToSkip > 0 && isRecording) {
+              console.log(`⏭️ [SMART SKIP] Skipped ${daysToSkip} empty days`)
+            }
+          }
+          
           if (isAfter(nextDay, projectTimeframe.end)) {
             setIsPlaying(false)
             
             // Auto-stop recording when simulation ends
             if (isRecording && videoRecorderRef.current) {
+              console.log('🎬 [AUTO-RECORD] Simulation reached end date, stopping recording')
+              console.log('🎬 [AUTO-RECORD] Captured full animation from start to finish')
               setTimeout(() => {
                 videoRecorderRef.current?.stop()
-                toast.success('🎬 Recording completed! Video will download shortly...')
-              }, 1000) // Small delay to capture final frame
+                toast.success('🎬 Animation recording completed! Full 3D model build captured. Video will download shortly...', { duration: 5000 })
+              }, 1500) // Increased delay to capture final frames properly
             }
             
             return projectTimeframe.end
@@ -560,7 +718,7 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       }, 1000 / playbackSpeed) // Adjust interval based on playback speed
     }
     return () => clearInterval(interval)
-  }, [isPlaying, projectTimeframe.end, playbackSpeed, isRecording])
+  }, [isPlaying, projectTimeframe.end, playbackSpeed, isRecording, skipEmptyDays, tasks])
 
   // Fetch and track real-time cost data
   const [totalProjectCost, setTotalProjectCost] = useState<number>(0)
@@ -595,7 +753,12 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
     if (isRecording && videoRecorderRef.current && includeOverlay) {
       const completedTasks = activeTasks.filter(t => t.progress >= 100 || t.status === 'completed').length
       const totalTasks = tasks.length
-      const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+      
+      // CRITICAL FIX: Calculate timeline-based progress instead of task completion
+      // This shows how much of the timeline has elapsed, not how many tasks are done
+      const totalDays = Math.max(1, (projectTimeframe.end.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24))
+      const daysPassed = (currentDate.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24)
+      const timelineProgress = Math.min(100, Math.max(0, Math.round((daysPassed / totalDays) * 100)))
       
       // Get current active task name
       const currentTask = activeTasks.length > 0 ? activeTasks[0].name : 'No active tasks'
@@ -610,13 +773,13 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
       videoRecorderRef.current.updateOverlayData({
         projectName: project.name,
         date: formatDate(currentDate),
-        progress: `${overallProgress}%`,
+        progress: `${timelineProgress}%`, // Timeline-based progress
         taskName: currentTask,
         completedTasks: `${completedTasks} / ${totalTasks}`,
         totalCost: formattedCost,
       })
     }
-  }, [currentDate, activeTasks, tasks, isRecording, includeOverlay, project.name, totalProjectCost])
+  }, [currentDate, activeTasks, tasks, isRecording, includeOverlay, project.name, totalProjectCost, projectTimeframe.start, projectTimeframe.end])
 
   const takeScreenshot = async () => {
     if (!viewerCanvasRef.current) {
@@ -645,14 +808,24 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
   }
 
   const startRecording = () => {
-    if (!videoRecorderRef.current) {
-      toast.error('Video recorder not initialized.')
+    if (recordingMode === 'current-view') {
+      startRecordingCurrentView()
+    } else {
+      startRecordingSimulationPlayback()
+    }
+  }
+
+  const startRecordingCurrentView = () => {
+    if (!videoRecorderRef.current || !viewerCanvasRef.current) {
+      toast.error('Video recorder or canvas not ready.')
       return
     }
 
-    // Reinitialize recorder with current settings
-    videoRecorderRef.current.dispose()
-    if (viewerCanvasRef.current) {
+    toast.info('Recording current view for 5 seconds...', { duration: 3000 })
+    
+    try {
+      // Reinitialize recorder
+      videoRecorderRef.current.dispose()
       videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current, {
         format: recordingFormat,
         quality: recordingQuality,
@@ -661,35 +834,149 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
         overlayData: {
           projectName: project.name,
           date: formatDate(currentDate),
-          progress: `0%`,
+          progress: `${Math.round((activeTasks.filter(t => t.progress >= 100).length / tasks.length) * 100)}%`,
+          taskName: activeTasks.length > 0 ? activeTasks[0].name : 'No active tasks',
+          completedTasks: `${activeTasks.filter(t => t.progress >= 100).length} / ${tasks.length}`,
+          totalCost: `₹${totalProjectCost.toLocaleString('en-IN')}`,
         }
       })
-    }
 
-    // Reset to start and begin recording
-    setCurrentDate(projectTimeframe.start)
-    setIsPlaying(false) // Pause first to ensure clean start
-    
-    // Small delay to ensure viewer updates
-    setTimeout(() => {
       setIsRecording(true)
-      setIsPlaying(true) // Start simulation playback
       
-      videoRecorderRef.current!.start((blob: Blob, format: string) => {
-        // This callback runs when recording stops
+      videoRecorderRef.current.start((blob: Blob, format: string) => {
         setIsRecording(false)
-        setIsPlaying(false)
         const extension = format === 'mp4' ? 'mp4' : 'webm'
         const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm'
         const fileSize = (blob.size / 1024 / 1024).toFixed(2)
-        downloadFile(blob, `4dbim_simulation_${recordingQuality}_${formatDate(new Date())}.${extension}`, mimeType)
-        toast.success(`Video recorded! Size: ${fileSize} MB - Quality: ${recordingQuality.toUpperCase()} ${format.toUpperCase()}`)
+        const fileName = `4D_CurrentView_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_${formatDate(currentDate).replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${extension}`
+        downloadFile(blob, fileName, mimeType)
+        toast.success(`✅ Current view recorded! Size: ${fileSize} MB`, { duration: 5000 })
+      }).catch((error: Error) => {
+        setIsRecording(false)
+        toast.error(`Failed to start recording: ${error.message}`)
       })
+
+      // Auto-stop after 5 seconds
+      setTimeout(() => {
+        if (videoRecorderRef.current?.isRecording()) {
+          videoRecorderRef.current.stop()
+        }
+      }, 5000)
       
-      const qualityText = recordingQuality === 'fullhd' ? 'Full HD (1920x1080)' : recordingQuality === '4k' ? '4K (3840x2160)' : 'HD (1280x720)'
-      const duration = Math.ceil((projectTimeframe.end.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24))
-      toast.info(`🎬 Recording started in ${qualityText} ${recordingFormat.toUpperCase()}. Duration: ~${duration} days. Simulation playing automatically...`)
-    }, 500)
+    } catch (error) {
+      console.error('Failed to record current view:', error)
+      toast.error(`Failed to record: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const startRecordingSimulationPlayback = () => {
+    if (!videoRecorderRef.current) {
+      toast.error('Video recorder not initialized.')
+      return
+    }
+
+    if (!viewerCanvasRef.current) {
+      toast.error('3D viewer canvas not ready. Please wait for model to load.')
+      return
+    }
+
+    // CRITICAL: Stop any playback first
+    setIsPlaying(false)
+    
+    const totalDays = Math.ceil((projectTimeframe.end.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24))
+    const estimatedDuration = Math.ceil(totalDays / playbackSpeed)
+    const qualityText = recordingQuality === 'fullhd' ? 'Full HD (1920x1080)' : recordingQuality === '4k' ? '4K (3840x2160)' : 'HD (1280x720)'
+    
+    console.log('🎬 [AUTO-RECORD] Starting full simulation recording')
+    console.log(`🎬 [AUTO-RECORD] Timeline: ${formatDate(projectTimeframe.start)} to ${formatDate(projectTimeframe.end)} (${totalDays} days)`)
+    console.log(`🎬 [AUTO-RECORD] Estimated duration: ${estimatedDuration} seconds at ${playbackSpeed}x speed`)
+    console.log(`🎬 [AUTO-RECORD] Quality: ${qualityText} ${recordingFormat.toUpperCase()}`)
+    console.log(`🎬 [AUTO-RECORD] Canvas dimensions: ${viewerCanvasRef.current.width}x${viewerCanvasRef.current.height}`)
+    
+    toast.info('Preparing recording... Resetting simulation to start', { duration: 3000 })
+    
+    // STEP 1: Reset to start date FIRST
+    setCurrentDate(projectTimeframe.start)
+    
+    // STEP 2: Wait for React state update and viewer to process the date change
+    setTimeout(() => {
+      console.log('🎬 [AUTO-RECORD] Date reset complete, hiding all elements')
+      toast.info('Hiding all elements...', { duration: 2000 })
+      
+      // STEP 3: Force hide ALL elements to ensure clean start
+      if (viewerRef.current) {
+        try {
+          const allElementGuids = links.map(link => link.element.guid)
+          viewerRef.current.hideObjects([])
+          if (allElementGuids.length > 0) {
+            viewerRef.current.hideObjects(allElementGuids)
+          }
+          console.log(`🎬 [AUTO-RECORD] All ${allElementGuids.length} elements hidden`)
+        } catch (e) {
+          console.warn('Could not hide all elements:', e)
+        }
+      }
+      
+      // STEP 4: Wait for viewer to fully render the empty state
+      setTimeout(() => {
+        console.log('🎬 [AUTO-RECORD] Initializing video recorder')
+        toast.info('Initializing video recorder...', { duration: 2000 })
+        
+        // STEP 5: Reinitialize recorder with fresh settings
+        try {
+          videoRecorderRef.current!.dispose()
+          if (viewerCanvasRef.current) {
+            videoRecorderRef.current = new VideoRecorder(viewerCanvasRef.current, {
+              format: recordingFormat,
+              quality: recordingQuality,
+              fps: 60,
+              includeOverlay,
+              overlayData: {
+                projectName: project.name,
+                date: formatDate(projectTimeframe.start),
+                progress: `0%`,
+                taskName: tasks.length > 0 ? tasks[0].name : 'Starting...',
+                completedTasks: `0 / ${tasks.length}`,
+                totalCost: '₹0',
+              }
+            })
+          }
+        } catch (error) {
+          console.error('Failed to initialize recorder:', error)
+          toast.error(`Failed to initialize recorder: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          return
+        }
+        
+        // STEP 6: Start recording
+        console.log('🎬 [AUTO-RECORD] Starting video capture')
+        setIsRecording(true)
+        
+        videoRecorderRef.current!.start((blob: Blob, format: string) => {
+          console.log('🎬 [AUTO-RECORD] Recording completed, preparing download')
+          setIsRecording(false)
+          setIsPlaying(false)
+          const extension = format === 'mp4' ? 'mp4' : 'webm'
+          const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm'
+          const fileSize = (blob.size / 1024 / 1024).toFixed(2)
+          const fileName = `4D_Simulation_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_${totalDays}days_${recordingQuality}_${Date.now()}.${extension}`
+          downloadFile(blob, fileName, mimeType)
+          toast.success(`✅ Full simulation recorded! ${totalDays} days in ${estimatedDuration}s | Size: ${fileSize} MB | Quality: ${recordingQuality.toUpperCase()} ${format.toUpperCase()}`, { duration: 10000 })
+        }).catch((error: Error) => {
+          console.error('Failed to start recording:', error)
+          setIsRecording(false)
+          toast.error(`Failed to start recording: ${error.message}`, { duration: 8000 })
+        })
+        
+        // STEP 7: Wait for recorder to start capturing frames
+        setTimeout(() => {
+          console.log('🎬 [AUTO-RECORD] Starting playback - animation will be recorded frame-by-frame')
+          console.log('🎬 [AUTO-RECORD] Recording LIVE 3D model animation as it builds step-by-step')
+          setIsPlaying(true)
+          
+          toast.success(`🎬 Recording ${totalDays} days of LIVE 3D animation in ${qualityText} ${recordingFormat.toUpperCase()}. Model will build progressively. Time: ~${estimatedDuration}s at ${playbackSpeed}x speed.`, { duration: 8000 })
+        }, 1500) // Increased delay to ensure recorder is fully ready
+      }, 700)
+    }, 1000)
   }
 
   const stopRecording = () => {
@@ -948,6 +1235,24 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
               {/* Recording Settings */}
               {!isRecording && (
                 <div className="space-y-2 p-2 bg-gray-50 rounded-md">
+                  {/* Recording Mode Selection */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-700">Recording Mode</label>
+                    <select
+                      value={recordingMode}
+                      onChange={(e) => setRecordingMode(e.target.value as 'current-view' | 'simulation-playback')}
+                      className="w-full h-8 text-xs border rounded-md px-2 bg-white"
+                    >
+                      <option value="current-view">📸 Record Current View (5 sec static)</option>
+                      <option value="simulation-playback">🎬 Record Full Animation (Step-by-step build)</option>
+                    </select>
+                    <p className="text-[10px] text-gray-500 italic">
+                      {recordingMode === 'current-view' 
+                        ? 'Records current date view for 5 seconds' 
+                        : 'Records LIVE 3D animation - model builds progressively from empty to complete'}
+                    </p>
+                  </div>
+                  
                   <div className="grid grid-cols-2 gap-2">
                     {/* Format Selection */}
                     <div className="space-y-1">
@@ -1004,37 +1309,82 @@ export default function FourDSimulation({ project }: FourDSimulationProps) {
                     </button>
                   </div>
 
+                  {/* Smart Skip Toggle - NEW */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-gray-700">Smart Skip Empty Days</label>
+                      <p className="text-[10px] text-gray-500">Skip days with no construction activity</p>
+                    </div>
+                    <button
+                      onClick={() => setSkipEmptyDays(!skipEmptyDays)}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        skipEmptyDays ? 'bg-green-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          skipEmptyDays ? 'translate-x-5' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
                   {includeOverlay && (
                     <div className="text-xs text-gray-500 italic">
                       Video will include project name, date, progress, and watermark
+                    </div>
+                  )}
+                  
+                  {skipEmptyDays && (
+                    <div className="text-xs text-green-600 italic">
+                      ⚡ 511 days → ~50-100 days (skips empty periods)
                     </div>
                   )}
                 </div>
               )}
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-3 gap-2">
-                <Button onClick={takeScreenshot} size="sm" disabled={isRecording || !viewerCanvasRef.current}>
-                  <Camera className="h-4 w-4 mr-1" />
-                  Screenshot
-                </Button>
-                {!isRecording ? (
-                  <>
-                    <Button onClick={startRecording} size="sm" disabled={!viewerCanvasRef.current}>
-                      <Video className="h-4 w-4 mr-1" />
-                      Record
-                    </Button>
-                    <Button onClick={startRecordingForServerExport} size="sm" variant="outline" disabled={!viewerCanvasRef.current || isExportingVideo}>
-                      {isExportingVideo ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Share2 className="h-4 w-4 mr-1" />}
-                      Export
-                    </Button>
-                  </>
-                ) : (
-                  <Button onClick={stopRecording} size="sm" className="col-span-2 bg-red-600 hover:bg-red-700">
-                    <StopCircle className="h-4 w-4 mr-1" />
-                    Stop Recording
-                  </Button>
+              <div className="space-y-2">
+                {isRecording && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+                    <div className="flex items-center gap-2 text-red-700 font-semibold">
+                      <div className="h-3 w-3 bg-red-600 rounded-full animate-pulse"></div>
+                      <span className="text-sm">Recording LIVE 3D Animation</span>
+                    </div>
+                    <div className="text-xs text-red-600">
+                      {Math.ceil((projectTimeframe.end.getTime() - projectTimeframe.start.getTime()) / (1000 * 60 * 60 * 24))} days timeline • 
+                      {recordingQuality === 'fullhd' ? ' Full HD' : recordingQuality === '4k' ? ' 4K' : ' HD'} {recordingFormat.toUpperCase()} • 
+                      {playbackSpeed}x speed
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Model building step-by-step • Will auto-stop at {formatDate(projectTimeframe.end)}
+                    </div>
+                  </div>
                 )}
+                
+                <div className="grid grid-cols-3 gap-2">
+                  <Button onClick={takeScreenshot} size="sm" disabled={isRecording || !viewerCanvasRef.current}>
+                    <Camera className="h-4 w-4 mr-1" />
+                    Screenshot
+                  </Button>
+                  {!isRecording ? (
+                    <>
+                      <Button onClick={startRecording} size="sm" disabled={!viewerCanvasRef.current} className="bg-red-600 hover:bg-red-700">
+                        <Video className="h-4 w-4 mr-1" />
+                        {recordingMode === 'current-view' ? 'Record View' : 'Auto-Record'}
+                      </Button>
+                      <Button onClick={startRecordingForServerExport} size="sm" variant="outline" disabled={!viewerCanvasRef.current || isExportingVideo}>
+                        {isExportingVideo ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Share2 className="h-4 w-4 mr-1" />}
+                        Export
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={stopRecording} size="sm" className="col-span-2 bg-red-600 hover:bg-red-700">
+                      <StopCircle className="h-4 w-4 mr-1" />
+                      Stop Recording
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

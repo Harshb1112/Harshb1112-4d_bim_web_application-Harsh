@@ -31,7 +31,7 @@ export class VideoRecorder {
       format: options.format || 'webm',
       quality: options.quality || 'fullhd',
       fps: options.fps || 60,
-      bitrate: options.bitrate || 10000000, // 10 Mbps for Full HD
+      bitrate: options.bitrate || 30000000, // 30 Mbps for Full HD (increased)
       includeOverlay: options.includeOverlay !== false,
       overlayData: options.overlayData || {}
     }
@@ -39,9 +39,9 @@ export class VideoRecorder {
 
   private getQualitySettings() {
     const qualities = {
-      hd: { width: 1280, height: 720, bitrate: 8000000 },      // 8 Mbps
-      fullhd: { width: 1920, height: 1080, bitrate: 20000000 }, // 20 Mbps (doubled)
-      '4k': { width: 3840, height: 2160, bitrate: 50000000 }    // 50 Mbps (doubled)
+      hd: { width: 1280, height: 720, bitrate: 12000000 },       // 12 Mbps for smooth animation
+      fullhd: { width: 1920, height: 1080, bitrate: 25000000 },  // 25 Mbps for high quality animation
+      '4k': { width: 3840, height: 2160, bitrate: 50000000 }     // 50 Mbps for 4K animation
     }
     return qualities[this.options.quality || 'fullhd']
   }
@@ -63,13 +63,33 @@ export class VideoRecorder {
     const width = this.overlayCanvas.width
     const height = this.overlayCanvas.height
 
-    // Clear previous frame
+    // CRITICAL: Clear previous frame COMPLETELY to ensure fresh capture
     ctx.clearRect(0, 0, width, height)
 
-    // Draw original canvas content (scaled to target resolution with high quality)
+    // CRITICAL FIX: Draw the LIVE 3D viewer canvas content
+    // This captures the actual animation frame-by-frame as the simulation plays
     ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(this.canvas, 0, 0, width, height)
+    ctx.imageSmoothingQuality = 'high' // High quality for smooth animation
+    
+    // Save context state
+    ctx.save()
+    
+    try {
+      // CRITICAL: Capture the CURRENT LIVE state of the 3D viewer canvas
+      // This ensures we record the actual animation as elements appear/disappear
+      if (this.canvas.width > 0 && this.canvas.height > 0) {
+        // Draw the LIVE canvas content - this captures the 3D animation
+        ctx.drawImage(this.canvas, 0, 0, width, height)
+      } else {
+        console.warn('⚠️ Canvas has zero dimensions, skipping frame')
+      }
+    } catch (e) {
+      // If canvas is not ready or WebGL context lost, skip this frame
+      console.warn('⚠️ Canvas not ready for capture:', e)
+    }
+    
+    // Restore context state
+    ctx.restore()
 
     if (this.options.includeOverlay && this.options.overlayData) {
       const data = this.options.overlayData
@@ -197,21 +217,77 @@ export class VideoRecorder {
         throw new Error('Failed to create overlay canvas')
       }
 
-      // Capture stream from overlay canvas (which includes original + text)
-      const stream = this.overlayCanvas.captureStream(this.options.fps || 60)
+      // Verify source canvas is ready
+      if (!this.canvas || this.canvas.width === 0 || this.canvas.height === 0) {
+        throw new Error('Source canvas is not ready or has invalid dimensions')
+      }
+
+      console.log(`🎬 Source canvas dimensions: ${this.canvas.width}x${this.canvas.height}`)
+      console.log(`🎬 Overlay canvas dimensions: ${this.overlayCanvas.width}x${this.overlayCanvas.height}`)
+
+      // Capture stream from overlay canvas at specified FPS
+      const fps = this.options.fps || 60
+      
+      // Check if captureStream is supported
+      if (typeof this.overlayCanvas.captureStream !== 'function') {
+        throw new Error('captureStream() is not supported in this browser. Please use Chrome, Edge, or Firefox.')
+      }
+      
+      const stream = this.overlayCanvas.captureStream(fps)
+      
+      // Verify stream has video tracks
+      const videoTracks = stream.getVideoTracks()
+      if (videoTracks.length === 0) {
+        throw new Error('No video tracks in captured stream')
+      }
+      
+      console.log(`🎬 Stream captured successfully with ${videoTracks.length} video track(s)`)
+      console.log(`🎬 Video track settings:`, videoTracks[0].getSettings())
+      
       this.stream = stream
       
-      // Start animation loop to update overlay
+      console.log(`🎬 Starting LIVE canvas capture at ${fps} FPS for animation recording`)
+      
+      // CRITICAL: Start continuous animation loop to capture LIVE 3D viewer updates
+      // This ensures we record the actual BIM model animation as it builds step-by-step
+      let frameCount = 0
+      let lastLogTime = Date.now()
+      let lastFrameTime = Date.now()
+      const targetFrameTime = 1000 / fps // Target time per frame in ms
+      
       const animate = () => {
-        this.drawOverlay()
+        const now = Date.now()
+        const elapsed = now - lastFrameTime
+        
+        // CRITICAL: Capture frame at target FPS rate
+        // This ensures smooth animation recording
+        if (elapsed >= targetFrameTime) {
+          // CRITICAL: Draw the CURRENT LIVE state of the 3D viewer canvas
+          // This captures the animation as elements appear/disappear during simulation
+          this.drawOverlay()
+          frameCount++
+          lastFrameTime = now - (elapsed % targetFrameTime) // Adjust for drift
+        }
+        
+        // Continue animation loop at maximum speed
         this.animationFrameId = requestAnimationFrame(animate)
+        
+        // Log every 2 seconds for monitoring
+        if (now - lastLogTime >= 2000) {
+          const actualFps = Math.round(frameCount / ((now - lastLogTime) / 1000))
+          console.log(`📹 Recording LIVE animation... Frame ${frameCount} (${actualFps} fps actual, target ${fps} fps)`)
+          frameCount = 0
+          lastLogTime = now
+        }
       }
+      
+      // Start animation loop immediately to begin capturing
       animate()
 
       return stream
     } catch (err) {
-      console.error('Error getting media stream:', err)
-      throw new Error('Failed to get media stream for recording.')
+      console.error('❌ Error getting media stream:', err)
+      throw new Error(`Failed to get media stream: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -219,7 +295,10 @@ export class VideoRecorder {
     const format = this.options.format || 'webm'
     
     if (format === 'mp4') {
-      // Try H.264 codec for MP4
+      // Try H.264 High Profile for best quality
+      if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.640028"')) {
+        return 'video/mp4; codecs="avc1.640028"' // H.264 High Profile Level 4.0
+      }
       if (MediaRecorder.isTypeSupported('video/mp4; codecs=h264')) {
         return 'video/mp4; codecs=h264'
       }
@@ -227,11 +306,14 @@ export class VideoRecorder {
         return 'video/mp4'
       }
       // Fallback to WebM if MP4 not supported
-      console.warn('MP4 not supported, falling back to WebM')
+      console.warn('MP4 not supported, falling back to WebM VP9')
       return 'video/webm; codecs=vp9'
     }
     
-    // WebM with VP9 (best quality)
+    // WebM with VP9 (best quality) - Profile 0 for better compatibility
+    if (MediaRecorder.isTypeSupported('video/webm; codecs="vp9,opus"')) {
+      return 'video/webm; codecs="vp9,opus"'
+    }
     if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
       return 'video/webm; codecs=vp9'
     }
@@ -248,52 +330,91 @@ export class VideoRecorder {
 
   public async start(onStopCallback: (blob: Blob, format: string) => void) {
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-      console.warn('Recording already in progress.')
+      console.warn('⚠️ Recording already in progress.')
       return
     }
 
     try {
+      console.log('🎬 [1/5] Getting media stream from canvas...')
       const stream = await this.getMediaStream()
+      
+      console.log('🎬 [2/5] Getting quality settings...')
       const quality = this.getQualitySettings()
+      
+      console.log('🎬 [3/5] Determining MIME type...')
       const mimeType = this.getMimeType()
+      console.log(`🎬 Selected MIME type: ${mimeType}`)
+      
+      // Verify MIME type is supported
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        throw new Error(`MIME type ${mimeType} is not supported by this browser`)
+      }
       
       this.recordedChunks = []
       
-      // Try to use higher quality settings
+      // Use optimized quality settings
       const recorderOptions: MediaRecorderOptions = {
         mimeType,
         videoBitsPerSecond: quality.bitrate,
       }
       
+      console.log('🎬 [4/5] Creating MediaRecorder...')
       this.mediaRecorder = new MediaRecorder(stream, recorderOptions)
 
-      console.log(`🎥 Recording started: ${mimeType} at ${quality.width}x${quality.height}, ${quality.bitrate / 1000000}Mbps, ${this.options.fps}fps`)
+      console.log(`🎥 [5/5] Recording started successfully!`)
+      console.log(`   Format: ${mimeType}`)
+      console.log(`   Resolution: ${quality.width}x${quality.height}`)
+      console.log(`   Bitrate: ${quality.bitrate / 1000000}Mbps`)
+      console.log(`   FPS: ${this.options.fps}`)
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           this.recordedChunks.push(event.data)
-          console.log(`📦 Chunk recorded: ${(event.data.size / 1024 / 1024).toFixed(2)} MB`)
+          const totalSize = this.recordedChunks.reduce((sum, chunk) => sum + chunk.size, 0)
+          console.log(`📦 Chunk ${this.recordedChunks.length}: ${(event.data.size / 1024 / 1024).toFixed(2)} MB (Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB)`)
         }
       }
 
       this.mediaRecorder.onstop = () => {
+        console.log('🎬 Recording stopped, creating video blob...')
         const format = this.options.format || 'webm'
         const blob = new Blob(this.recordedChunks, { 
           type: format === 'mp4' ? 'video/mp4' : 'video/webm' 
         })
+        console.log(`✅ Video blob created: ${(blob.size / 1024 / 1024).toFixed(2)} MB`)
         onStopCallback(blob, format)
         this.cleanupStream()
       }
 
-      this.mediaRecorder.onerror = (event) => {
-        console.error('MediaRecorder error:', event)
+      this.mediaRecorder.onerror = (event: any) => {
+        console.error('❌ MediaRecorder error:', event)
+        console.error('Error details:', event.error)
         this.cleanupStream()
       }
 
-      // Request data every 1 second for smoother recording
+      this.mediaRecorder.onstart = () => {
+        console.log('✅ MediaRecorder started successfully')
+      }
+
+      // Request data every 1 second for stable recording
+      console.log('🎬 Starting MediaRecorder with 1000ms timeslice...')
       this.mediaRecorder.start(1000)
+      
+      // Verify recording started
+      setTimeout(() => {
+        if (this.mediaRecorder?.state !== 'recording') {
+          console.error('❌ MediaRecorder failed to start. State:', this.mediaRecorder?.state)
+          throw new Error('MediaRecorder failed to start')
+        }
+        console.log('✅ MediaRecorder state verified: recording')
+      }, 100)
+      
     } catch (error) {
-      console.error('Failed to start recording:', error)
+      console.error('❌ Failed to start recording:', error)
+      if (error instanceof Error) {
+        console.error('Error message:', error.message)
+        console.error('Error stack:', error.stack)
+      }
       throw error
     }
   }

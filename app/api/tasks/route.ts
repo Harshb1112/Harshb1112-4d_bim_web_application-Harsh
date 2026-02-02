@@ -166,21 +166,38 @@ export async function POST(req: NextRequest) {
     // Create task with element links - OPTIMIZED for bulk operations
     console.log(`[Task Creation] Creating task with ${elementIds.length} element links...`)
     
-    // Step 1: Create all elements in bulk first (if they don't exist)
+    // Step 1: Create all elements individually (since guid is unique globally)
     if (elementIds.length > 0) {
-      console.log('[Task Creation] Step 1: Creating elements in bulk...')
-      const elementsToCreate = elementIds.map((elementId: string) => ({
-        guid: elementId,
-        modelId: model.id,
-        category: 'BIM Element'
-      }))
+      console.log('[Task Creation] Step 1: Creating/finding elements...')
       
-      // Use createMany with skipDuplicates to avoid conflicts
-      await withRetry(() => prisma.element.createMany({
-        data: elementsToCreate,
-        skipDuplicates: true
-      }))
-      console.log('[Task Creation] Elements created/verified')
+      try {
+        for (const elementId of elementIds) {
+          try {
+            // Try to find existing element first
+            const existing = await prisma.element.findUnique({
+              where: { guid: elementId }
+            })
+            
+            if (!existing) {
+              // Create new element
+              await prisma.element.create({
+                data: {
+                  guid: elementId,
+                  modelId: model.id,
+                  category: 'BIM Element'
+                }
+              })
+            }
+          } catch (err) {
+            // Element might already exist, continue
+            console.log('[Task Creation] Element exists or error:', elementId)
+          }
+        }
+        console.log('[Task Creation] Elements created/verified')
+      } catch (elementError) {
+        console.error('[Task Creation] Error creating elements:', elementError)
+        // Continue anyway - elements might already exist
+      }
     }
     
     // Step 2: Create the task
@@ -201,30 +218,43 @@ export async function POST(req: NextRequest) {
     }))
     console.log('[Task Creation] Task created:', task.id)
     
-    // Step 3: Create element links in bulk
+    // Step 3: Create element links
     if (elementIds.length > 0) {
-      console.log('[Task Creation] Step 3: Creating element links in bulk...')
+      console.log('[Task Creation] Step 3: Creating element links...')
       
-      // Get all element IDs from database
-      const elements = await withRetry(() => prisma.element.findMany({
-        where: {
-          guid: { in: elementIds }
-        },
-        select: { id: true, guid: true }
-      }))
-      
-      // Create element links in bulk
-      const elementLinksToCreate = elements.map(element => ({
-        taskId: task.id,
-        elementId: element.id,
-        linkType: 'construction',
-        status: 'planned'
-      }))
-      
-      await withRetry(() => prisma.elementTaskLink.createMany({
-        data: elementLinksToCreate
-      }))
-      console.log(`[Task Creation] Created ${elementLinksToCreate.length} element links`)
+      try {
+        // Get all element IDs from database
+        const elements = await withRetry(() => prisma.element.findMany({
+          where: {
+            guid: { in: elementIds }
+          },
+          select: { id: true, guid: true }
+        }))
+        
+        console.log(`[Task Creation] Found ${elements.length} elements in database`)
+        
+        // Create element links one by one
+        let linksCreated = 0
+        for (const element of elements) {
+          try {
+            await withRetry(() => prisma.elementTaskLink.create({
+              data: {
+                taskId: task.id,
+                elementId: element.id,
+                linkType: 'construction',
+                status: 'planned'
+              }
+            }))
+            linksCreated++
+          } catch (err) {
+            console.error('[Task Creation] Error creating link for element:', element.guid, err)
+          }
+        }
+        console.log(`[Task Creation] Created ${linksCreated} element links`)
+      } catch (linkError) {
+        console.error('[Task Creation] Error creating element links:', linkError)
+        // Continue anyway - task is created
+      }
     }
     
     // Step 4: Fetch the complete task with all relations

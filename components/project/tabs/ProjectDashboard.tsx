@@ -3,7 +3,8 @@
 import { useMemo, useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { TrendingUp, CheckSquare, DollarSign, Users, Calendar, Activity, Clock } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { TrendingUp, CheckSquare, DollarSign, Users, Calendar, Activity, Clock, IndianRupee, Euro, PoundSterling, Globe } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 
 interface ProjectDashboardProps {
@@ -12,6 +13,52 @@ interface ProjectDashboardProps {
 
 export default function ProjectDashboard({ project }: ProjectDashboardProps) {
   const [costData, setCostData] = useState({ totalCost: 0, byType: {} as Record<string, number> })
+  const [selectedRegion, setSelectedRegion] = useState<'india' | 'usa' | 'uae' | 'uk' | 'europe'>('india')
+
+  // Real Exchange Rates (as of Dec 2024) - Base: INR
+  const EXCHANGE_RATES: Record<string, { rate: number; symbol: string; name: string }> = {
+    india: { rate: 1, symbol: '₹', name: 'INR' },
+    usa: { rate: 0.0112, symbol: '$', name: 'USD' },
+    uae: { rate: 0.0411, symbol: 'AED', name: 'AED' },
+    uk: { rate: 0.0089, symbol: '£', name: 'GBP' },
+    europe: { rate: 0.0107, symbol: '€', name: 'EUR' },
+  }
+
+  // Convert INR to selected currency
+  const convertCurrency = (inrAmount: number): number => {
+    const rate = EXCHANGE_RATES[selectedRegion].rate
+    return Math.round(inrAmount * rate * 100) / 100
+  }
+
+  // Format currency with proper symbol
+  const formatCurrency = (n: number) => {
+    const { symbol } = EXCHANGE_RATES[selectedRegion]
+    if (selectedRegion === 'india') return `${symbol}${n.toLocaleString('en-IN')}`
+    if (selectedRegion === 'usa') return `${symbol}${n.toLocaleString('en-US')}`
+    if (selectedRegion === 'uae') return `${symbol} ${n.toLocaleString()}`
+    if (selectedRegion === 'uk') return `${symbol}${n.toLocaleString('en-GB')}`
+    return `${symbol}${n.toLocaleString('de-DE')}`
+  }
+
+  // Get currency icon based on selected region
+  const getCurrencyIcon = () => {
+    switch (selectedRegion) {
+      case 'india':
+        return IndianRupee
+      case 'usa':
+        return DollarSign
+      case 'uae':
+        return DollarSign
+      case 'uk':
+        return PoundSterling
+      case 'europe':
+        return Euro
+      default:
+        return DollarSign
+    }
+  }
+
+  const CurrencyIcon = getCurrencyIcon()
 
   // Fetch resource costs
   useEffect(() => {
@@ -91,6 +138,29 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
 
   return (
     <div className="space-y-6">
+      {/* Region Selector */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Project Dashboard</h2>
+          <p className="text-sm text-muted-foreground">Overview of project progress and costs</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Globe className="h-4 w-4 text-muted-foreground" />
+          <Select value={selectedRegion} onValueChange={(value: any) => setSelectedRegion(value)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="india">🇮🇳 India (₹)</SelectItem>
+              <SelectItem value="usa">🇺🇸 USA ($)</SelectItem>
+              <SelectItem value="uae">🇦🇪 UAE (AED)</SelectItem>
+              <SelectItem value="uk">🇬🇧 UK (£)</SelectItem>
+              <SelectItem value="europe">🇪🇺 Europe (€)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Stats Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Overall Progress */}
@@ -133,13 +203,13 @@ export default function ProjectDashboard({ project }: ProjectDashboardProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CurrencyIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{costData.totalCost.toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold">{formatCurrency(convertCurrency(costData.totalCost))}</div>
             <div className="flex gap-3 mt-2 text-xs text-muted-foreground">
-              {costData.byType.labor ? <span>Labor: ₹{costData.byType.labor.toLocaleString('en-IN')}</span> : null}
-              {costData.byType.material ? <span>Material: ₹{costData.byType.material.toLocaleString('en-IN')}</span> : null}
+              {costData.byType.labor ? <span>Labor: {formatCurrency(convertCurrency(costData.byType.labor))}</span> : null}
+              {costData.byType.material ? <span>Material: {formatCurrency(convertCurrency(costData.byType.material))}</span> : null}
             </div>
           </CardContent>
         </Card>

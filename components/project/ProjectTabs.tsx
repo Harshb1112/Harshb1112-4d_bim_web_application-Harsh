@@ -106,8 +106,21 @@ export default function ProjectTabs({ project, currentUserRole, currentUserId, u
     console.log('Element selected:', elementId, element)
   }
 
-  function handleProjectUpdate(): void {
-    throw new Error('Function not implemented.')
+  async function handleProjectUpdate(): Promise<void> {
+    // Refresh project data after settings update
+    try {
+      const response = await fetch(`/api/projects/${project.id}`, {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        // Update project state if needed
+        console.log('Project updated:', data.project)
+        // You can add state update here if you have project state management
+      }
+    } catch (error) {
+      console.error('Failed to refresh project:', error)
+    }
   }
 
   return (

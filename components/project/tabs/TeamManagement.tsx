@@ -58,17 +58,24 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
         if (response.ok) {
           const data = await response.json()
           const fetchedTeams = data.teams || []
+          console.log('Fetched teams:', fetchedTeams)
           setTeams(fetchedTeams)
           
-          // Auto-select first team or project's team
-          if (fetchedTeams.length > 0) {
-            const teamToSelect = initialProject.teamId 
-              ? fetchedTeams.find((t: any) => t.id === initialProject.teamId)?.id.toString()
-              : fetchedTeams[0].id.toString()
-            
-            if (teamToSelect) {
-              setSelectedTeamId(teamToSelect)
-            }
+          // If project has a team, use that
+          if (initialProject.teamId) {
+            setSelectedTeamId(initialProject.teamId.toString())
+            console.log('Using project team ID:', initialProject.teamId)
+          } 
+          // If project has team object with members, use that
+          else if (initialProject.team?.id) {
+            setSelectedTeamId(initialProject.team.id.toString())
+            setTeamMembers(initialProject.team.members || [])
+            console.log('Using project team object:', initialProject.team)
+          }
+          // Auto-select first team if available
+          else if (fetchedTeams.length > 0) {
+            setSelectedTeamId(fetchedTeams[0].id.toString())
+            console.log('Auto-selected first team:', fetchedTeams[0])
           }
         }
       } catch (error) {
@@ -76,19 +83,22 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
       }
     }
     fetchData()
-  }, [initialProject.teamId])
+  }, [initialProject.teamId, initialProject.team])
 
   // Fetch team members when team is selected OR teams change
   useEffect(() => {
+    console.log('🔍 Team selection changed:', { selectedTeamId, teamsCount: teams.length })
     if (selectedTeamId && teams.length > 0) {
       fetchTeamMembers(selectedTeamId)
     }
   }, [selectedTeamId, teams])
 
   const fetchTeamMembers = async (teamId: string) => {
+    console.log('📋 Fetching members for team ID:', teamId)
     const team = teams.find(t => t.id.toString() === teamId)
+    console.log('📋 Team found:', team ? `${team.name} with ${team.members?.length || 0} members` : 'NOT FOUND')
     if (team && team.members) {
-      console.log('Team members found:', team.members)
+      console.log('✅ Team members found:', team.members)
       
       // Sort members by role priority: Admin > Manager > Team Leader > Member
       const roleOrder: { [key: string]: number } = {
@@ -531,7 +541,15 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
             {selectedTeamId ? (
               <div className="space-y-4">
                 {teamMembers.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No members in this team yet.</p>
+                  <div className="text-center py-12">
+                    <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500 font-medium mb-2">No members in this team yet</p>
+                    <p className="text-sm text-gray-400 mb-4">
+                      {(currentUserRole === 'admin' || currentUserRole === 'manager') 
+                        ? 'Click "Invite Member" to add team members' 
+                        : 'Contact your admin to add team members'}
+                    </p>
+                  </div>
                 ) : (
                   teamMembers.map((member: any) => (
                     <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
@@ -592,7 +610,31 @@ export default function TeamManagement({ project: initialProject }: TeamManageme
                 )}
               </div>
             ) : (
-              <p className="text-center text-gray-500 py-8">Please select a team to view members.</p>
+              <div className="text-center py-12">
+                <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 font-medium mb-2">
+                  {teams.length === 0 ? 'No teams available' : 'Please select a team'}
+                </p>
+                <p className="text-sm text-gray-400 mb-4">
+                  {teams.length === 0 
+                    ? (currentUserRole === 'admin' 
+                        ? 'Create a team first to manage members' 
+                        : 'Contact your admin to create a team')
+                    : 'Select a team from the dropdown above to view members'}
+                </p>
+                {teams.length === 0 && currentUserRole === 'admin' && (
+                  <Button 
+                    onClick={() => {
+                      // Navigate to teams page or show create team dialog
+                      window.location.href = '/dashboard?tab=teams'
+                    }}
+                    className="mt-2"
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Create Team
+                  </Button>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

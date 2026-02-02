@@ -58,8 +58,24 @@ export async function POST(request: NextRequest) {
     let createdTeamId = teamId ? parseInt(teamId) : null
     
     if (userRole === 'team_leader' && !createdTeamId) {
-      const teamName = newTeamName?.trim() || `${fullName}'s Team`
-      const teamCode = teamName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+      const baseTeamName = newTeamName?.trim() || `${fullName}'s Team`
+      let teamName = baseTeamName
+      let teamCode = teamName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+      
+      // Check if team name already exists and add suffix if needed
+      let suffix = 1
+      let existingTeam = await prisma.team.findFirst({
+        where: { name: teamName }
+      })
+      
+      while (existingTeam) {
+        teamName = `${baseTeamName} ${suffix}`
+        teamCode = teamName.substring(0, 3).toUpperCase() + Math.floor(Math.random() * 1000)
+        existingTeam = await prisma.team.findFirst({
+          where: { name: teamName }
+        })
+        suffix++
+      }
       
       const team = await prisma.team.create({
         data: {

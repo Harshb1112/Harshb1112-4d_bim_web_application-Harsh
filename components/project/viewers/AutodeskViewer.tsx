@@ -30,6 +30,7 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<number | null>(null)
   const [viewerInitialized, setViewerInitialized] = useState(false)
+  const [selectedCount, setSelectedCount] = useState(0)
   
   // Keep the callback ref updated without triggering re-render
   useEffect(() => {
@@ -286,19 +287,72 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                 }
 
                 // Add selection event - use ref to avoid re-renders
+                let selectedDbIds = new Set<number>()
+                
                 viewer.addEventListener(
                   Autodesk.Viewing.SELECTION_CHANGED_EVENT,
                   (event: any) => {
                     const selection = event.dbIdArray
-                    if (selection && selection.length > 0) {
+                    
+                    if (!selection || selection.length === 0) {
+                      selectedDbIds.clear()
+                      setSelectedCount(0)
+                      return
+                    }
+                    
+                    // Update selected set
+                    selectedDbIds = new Set(selection)
+                    setSelectedCount(selection.length)
+                    
+                    console.log('[AutodeskViewer] Selection changed:', selection.length, 'elements')
+                    
+                    // Handle multi-selection
+                    if (selection.length > 1) {
+                      // Multi-select: get all selected IDs
+                      const allSelectedIds: string[] = []
+                      const externalIdMapping = viewer.model.getExternalIdMapping ? viewer.model.getExternalIdMapping() : null
+                      
+                      selection.forEach((dbId: number) => {
+                        const externalId = externalIdMapping && Object.keys(externalIdMapping).length > 0
+                          ? Object.keys(externalIdMapping).find(key => externalIdMapping[key] === dbId)
+                          : null
+                        allSelectedIds.push(externalId || dbId.toString())
+                      })
+                      
+                      // Get properties of first element for display
+                      const firstDbId = selection[0]
+                      viewer.getProperties(firstDbId, (props: any) => {
+                        const externalId = externalIdMapping && Object.keys(externalIdMapping).length > 0
+                          ? Object.keys(externalIdMapping).find(key => externalIdMapping[key] === firstDbId)
+                          : null
+                        
+                        const elementData = {
+                          ...props,
+                          dbId: firstDbId,
+                          externalId: externalId || props.externalId,
+                          name: props.name,
+                          allSelected: allSelectedIds
+                        }
+                        
+                        console.log('[AutodeskViewer] Multi-select:', allSelectedIds.length, 'elements')
+                        
+                        if (onElementSelectRef.current) {
+                          onElementSelectRef.current(
+                            externalId || firstDbId.toString(), 
+                            elementData
+                          )
+                        }
+                      })
+                    } else {
+                      // Single selection
                       const dbId = selection[0]
                       if (viewer && viewer.getProperties) {
                         viewer.getProperties(dbId, (props: any) => {
                           // Get external ID (GUID) from the model
-                          const externalId = viewer.model.getExternalIdMapping ? 
-                            Object.keys(viewer.model.getExternalIdMapping()).find(
-                              key => viewer.model.getExternalIdMapping()[key] === dbId
-                            ) : null
+                          const externalIdMapping = viewer.model.getExternalIdMapping ? viewer.model.getExternalIdMapping() : null
+                          const externalId = externalIdMapping && Object.keys(externalIdMapping).length > 0
+                            ? Object.keys(externalIdMapping).find(key => externalIdMapping[key] === dbId)
+                            : null
                           
                           const elementData = {
                             ...props,
@@ -307,7 +361,7 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                             name: props.name
                           }
                           
-                          console.log('Element selected:', elementData)
+                          console.log('[AutodeskViewer] Element selected:', elementData)
                           
                           if (onElementSelectRef.current) {
                             // Pass externalId as the first parameter (GUID)
@@ -319,6 +373,14 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
                         })
                       }
                     }
+                  }
+                )
+                
+                // Add custom multi-select with Ctrl+Click
+                viewer.addEventListener(
+                  Autodesk.Viewing.AGGREGATE_SELECTION_CHANGED_EVENT,
+                  (event: any) => {
+                    console.log('[AutodeskViewer] Aggregate selection changed:', event)
                   }
                 )
               }).catch((err: any) => {
@@ -419,6 +481,22 @@ const AutodeskViewer = forwardRef<AutodeskViewerRef, AutodeskViewerProps>(({ mod
             </div>
           </div>
         )}
+        
+        {/* Multi-select counter */}
+        {selectedCount > 1 && (
+          <div className="absolute top-3 right-3 bg-orange-600/95 backdrop-blur-sm text-white px-4 py-2 rounded-lg text-sm z-10 border border-orange-400 shadow-lg">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+              </svg>
+              <span className="font-semibold">{selectedCount} elements selected</span>
+            </div>
+          </div>
+        )}
+        
+        <div className="absolute bottom-3 left-3 bg-gray-800/80 backdrop-blur-sm text-gray-300 px-3 py-2 rounded-lg text-xs z-10 border border-gray-700">
+          🖱️ Click to select • Ctrl+Click for multi • Scroll to zoom • Drag to rotate
+        </div>
       </div>
     </div>
   )

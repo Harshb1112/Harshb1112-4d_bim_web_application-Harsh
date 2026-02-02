@@ -28,7 +28,16 @@ export async function GET(request: NextRequest) {
               }
             }
           },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        budget: true,
+        totalBudget: true,
+        contingencyPercentage: true,
+        currency: true,
+        startDate: true,
+        endDate: true,
+        createdAt: true,
         tasks: {
           select: {
             id: true,
@@ -64,25 +73,25 @@ export async function GET(request: NextRequest) {
             t.endDate && new Date(t.endDate) < new Date() && t.status !== 'completed'
           ).length;
 
-          // REAL cost calculations from ResourceAssignment
-          let totalEstimatedCost = 0;
+          // REAL cost calculations
+          // Use totalBudget (new field) or fallback to budget (old field)
+          let projectBudget = project.totalBudget || project.budget || 0;
           let totalActualCost = 0;
 
           try {
-            const resourceAssignments = await prisma.resourceAssignment.findMany({
-              where: { 
-                task: {
+            // Get actual costs from resource costs table
+            const resourceCosts = await prisma.resourceCost.findMany({
+              where: {
+                resource: {
                   projectId: project.id
                 }
               },
               select: {
-                estimatedCost: true,
-                actualCost: true
+                totalCost: true
               }
             });
 
-            totalEstimatedCost = resourceAssignments.reduce((sum, r) => sum + (r.estimatedCost || 0), 0);
-            totalActualCost = resourceAssignments.reduce((sum, r) => sum + (r.actualCost || 0), 0);
+            totalActualCost = resourceCosts.reduce((sum, r) => sum + (r.totalCost || 0), 0);
           } catch (error) {
             console.warn(`Could not fetch costs for project ${project.id}`);
           }
@@ -110,7 +119,10 @@ export async function GET(request: NextRequest) {
             tasksCompleted,
             tasksInProgress,
             tasksOverdue,
-            budget: totalEstimatedCost,
+            budget: projectBudget,
+            totalBudget: projectBudget, // Add this for consistency
+            contingencyPercentage: project.contingencyPercentage || 10,
+            currency: project.currency || 'INR',
             spent: totalActualCost,
             startDate: projectStartDate?.toISOString(),
             endDate: projectEndDate?.toISOString(),
@@ -133,7 +145,10 @@ export async function GET(request: NextRequest) {
             tasksCompleted: project.tasks.filter(t => t.status === 'completed').length,
             tasksInProgress: project.tasks.filter(t => t.status === 'in_progress').length,
             tasksOverdue: 0,
-            budget: 0,
+            budget: project.totalBudget || project.budget || 0,
+            totalBudget: project.totalBudget || project.budget || 0,
+            contingencyPercentage: project.contingencyPercentage || 10,
+            currency: project.currency || 'INR',
             spent: 0,
             startDate: project.createdAt.toISOString(),
             endDate: null,

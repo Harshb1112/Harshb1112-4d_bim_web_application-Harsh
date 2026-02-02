@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
-import { Plus, Trash2, Edit, Users, Wrench, Package, Building2, DollarSign, Calendar as CalendarIcon, Upload, Sparkles, FileSpreadsheet, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit, Users, Wrench, Package, Building2, DollarSign, Calendar as CalendarIcon, Upload, Sparkles, FileSpreadsheet, Loader2, IndianRupee, Euro, PoundSterling } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Resource {
@@ -64,6 +64,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
   const [costByType, setCostByType] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [filterType, setFilterType] = useState('all')
+  const [projectTasks, setProjectTasks] = useState<any[]>(project.tasks || []) // Local state for tasks
   
   // Dialog states
   const [resourceDialogOpen, setResourceDialogOpen] = useState(false)
@@ -273,9 +274,43 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
   const MARKET_RATES = MARKET_RATES_BY_REGION[selectedRegion]
   const currentCurrency = selectedRegion === 'india' ? '₹' : selectedRegion === 'usa' ? '$' : selectedRegion === 'uae' ? 'AED' : selectedRegion === 'uk' ? '£' : '€'
 
+  // Get currency icon based on selected region
+  const getCurrencyIcon = () => {
+    switch (selectedRegion) {
+      case 'india':
+        return IndianRupee
+      case 'usa':
+        return DollarSign
+      case 'uae':
+        return DollarSign // AED uses dollar-like symbol
+      case 'uk':
+        return PoundSterling
+      case 'europe':
+        return Euro
+      default:
+        return DollarSign
+    }
+  }
+
+  const CurrencyIcon = getCurrencyIcon()
+
   useEffect(() => {
     fetchAll()
+    fetchProjectTasks() // Fetch tasks on mount
   }, [project.id])
+
+  // Fetch project tasks dynamically
+  const fetchProjectTasks = async () => {
+    try {
+      const res = await fetch(`/api/tasks?projectId=${project.id}`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setProjectTasks(data.tasks || [])
+      }
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error)
+    }
+  }
 
   // Show notification when region changes with exchange rate info
   useEffect(() => {
@@ -319,6 +354,8 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
       const res = await fetch(`/api/resources/costs?projectId=${project.id}`, { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
+        console.log('📊 Fetched costs:', data.costs?.length, 'entries');
+        console.log('Cost IDs:', data.costs?.map((c: any) => c.id));
         setCosts(data.costs || [])
         setTotalCost(data.totalCost || 0)
         setCostByType(data.byType || {})
@@ -681,7 +718,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
     
     try {
       // Filter only selected tasks
-      const selectedTasks = project.tasks.filter((task: any) => selectedTaskIds.includes(task.id))
+      const selectedTasks = projectTasks.filter((task: any) => selectedTaskIds.includes(task.id))
       
       // Prepare task data for AI analysis
       const tasksSummary = selectedTasks.map((task: any) => ({
@@ -783,9 +820,45 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
               description: resource.reasoning || `AI suggested for: ${resource.relatedTasks?.join(', ') || 'selected tasks'}`
             })
           })
+          
           if (res.ok) {
+            const data = await res.json()
+            const newResource = data.resource
             created++
             createdResourceNames.push(resource.name)
+            
+            // Automatically create initial cost entry for this resource
+            try {
+              console.log(`💰 Creating cost entry for ${resource.name}...`);
+              
+              const costPayload = {
+                resourceId: newResource.id,
+                date: new Date().toISOString().split('T')[0],
+                hours: resource.type === 'labor' ? (resource.quantity || 1) * 8 : null,
+                quantity: resource.type !== 'labor' ? (resource.quantity || 1) : null,
+                unitCost: resource.dailyRate || resource.hourlyRate || resource.unitRate || 0,
+                notes: `Initial cost calculation from AI generation`
+              };
+              
+              console.log('Cost payload:', costPayload);
+              
+              const costRes = await fetch('/api/resources/costs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(costPayload)
+              });
+              
+              if (costRes.ok) {
+                const costData = await costRes.json();
+                console.log(`✅ Created cost entry for ${resource.name}:`, costData);
+              } else {
+                const errorData = await costRes.json();
+                console.error(`❌ Failed to create cost for ${resource.name}:`, errorData);
+              }
+            } catch (costError) {
+              console.error(`❌ Error creating cost entry for ${resource.name}:`, costError);
+            }
           }
         } catch (error) {
           console.error('Failed to create:', resource.name)
@@ -859,11 +932,56 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
 
   const handleDeleteCost = async (id: number) => {
     if (!confirm('Delete this cost entry?')) return
+    
+    console.log('🗑️ Deleting cost ID:', id);
+    
+    // Optimistic update - remove from UI immediately
+    const originalCosts = [...costs];
+    setCosts(costs.filter(c => c.id !== id));
+    
     try {
-      const res = await fetch(`/api/resources/costs/${id}`, { method: 'DELETE', credentials: 'include' })
-      if (!res.ok) throw new Error('Failed')
-      toast.success('Cost deleted!'); fetchCosts()
-    } catch { toast.error('Failed to delete cost') }
+      const res = await fetch(`/api/resources/costs/${id}`, { 
+        method: 'DELETE', 
+        credentials: 'include' 
+      });
+      
+      console.log('Delete response status:', res.status);
+      
+      if (!res.ok) {
+        // If delete fails, check if it's 404 (already deleted)
+        if (res.status === 404) {
+          // Already deleted or doesn't exist - that's fine, keep it removed from UI
+          console.log('✅ Cost already deleted or not found - removed from UI');
+          toast.success('Cost removed!');
+          fetchCosts(); // Refresh to sync with database
+          return;
+        }
+        
+        // For other errors, restore the original list
+        let errorMessage = 'Failed to delete';
+        try {
+          const error = await res.json();
+          console.error('Delete failed:', error);
+          errorMessage = error.error || errorMessage;
+        } catch (parseError) {
+          console.error('Could not parse error response');
+          errorMessage = `Delete failed with status ${res.status}`;
+        }
+        
+        // Restore original costs on error
+        setCosts(originalCosts);
+        throw new Error(errorMessage);
+      }
+      
+      const result = await res.json();
+      console.log('Delete successful:', result);
+      
+      toast.success('Cost deleted!'); 
+      fetchCosts(); // Refresh to get updated totals
+    } catch (error: any) { 
+      console.error('Delete cost error:', error);
+      toast.error(error.message || 'Failed to delete cost');
+    }
   }
 
   const getTypeIcon = (t: string) => {
@@ -1161,7 +1279,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                           </div>
                         </div>
 
-                        {project.tasks && project.tasks.length > 0 ? (
+                        {projectTasks && projectTasks.length > 0 ? (
                           <>
                             <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
                               <div className="flex items-center justify-between mb-3">
@@ -1171,7 +1289,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                                     type="button"
                                     variant="outline" 
                                     size="sm"
-                                    onClick={() => setSelectedTaskIds(project.tasks.map((t: any) => t.id))}
+                                    onClick={() => setSelectedTaskIds(projectTasks.map((t: any) => t.id))}
                                   >
                                     Select All
                                   </Button>
@@ -1183,10 +1301,19 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                                   >
                                     Clear All
                                   </Button>
+                                  <Button 
+                                    type="button"
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => fetchProjectTasks()}
+                                    title="Refresh task list"
+                                  >
+                                    🔄 Refresh
+                                  </Button>
                                 </div>
                               </div>
                               <div className="max-h-[300px] overflow-y-auto space-y-2">
-                                {project.tasks.map((task: any) => (
+                                {projectTasks.map((task: any) => (
                                   <div 
                                     key={task.id} 
                                     className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
@@ -1291,14 +1418,14 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
                       <Select value={selectedTaskId} onValueChange={setSelectedTaskId}>
                         <SelectTrigger><SelectValue placeholder="Select task" /></SelectTrigger>
                         <SelectContent>
-                          {(project.tasks && project.tasks.length > 0) ? (
-                            project.tasks.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)
+                          {(projectTasks && projectTasks.length > 0) ? (
+                            projectTasks.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)
                           ) : (
                             <div className="p-2 text-sm text-muted-foreground text-center">No tasks found. Create tasks in Schedule tab first.</div>
                           )}
                         </SelectContent>
                       </Select>
-                      {(!project.tasks || project.tasks.length === 0) && (
+                      {(!projectTasks || projectTasks.length === 0) && (
                         <p className="text-xs text-amber-600">⚠️ Go to Schedule tab and create tasks first</p>
                       )}
                     </div>
@@ -1420,7 +1547,7 @@ export default function ResourceManagement({ project, currentUserRole = 'viewer'
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <CurrencyIcon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent><div className="text-2xl font-bold">{formatCurrency(convertCurrency(totalCost))}</div></CardContent>
             </Card>

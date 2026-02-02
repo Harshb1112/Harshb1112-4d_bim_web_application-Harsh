@@ -146,13 +146,13 @@ export default function SimulationControl({
             value={[playbackSpeed]}
             onValueChange={(value) => setPlaybackSpeed(value[0])}
             min={0.5}
-            max={5}
+            max={20}
             step={0.5}
             className="w-full"
           />
           <div className="flex justify-between text-xs text-gray-500">
             <span>0.5x (Slow)</span>
-            <span>5x (Fast)</span>
+            <span>20x (Very Fast)</span>
           </div>
         </div>
 
