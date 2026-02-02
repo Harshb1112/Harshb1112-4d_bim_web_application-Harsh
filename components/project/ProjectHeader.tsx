@@ -33,7 +33,6 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
   const [description, setDescription] = useState(project.description || '');
   const [startDate, setStartDate] = useState(project.startDate ? project.startDate.split('T')[0] : '');
   const [endDate, setEndDate] = useState(project.endDate ? project.endDate.split('T')[0] : '');
-  const [budget, setBudget] = useState(project.budget || 0);
   const [loading, setLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -64,8 +63,7 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
           name, 
           description, 
           startDate: startDate || null, 
-          endDate: endDate || null,
-          budget: parseFloat(budget.toString()) || 0
+          endDate: endDate || null
         }),
       });
       const data = await response.json();
@@ -217,20 +215,6 @@ export default function ProjectHeader({ project, user }: ProjectHeaderProps) {
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-            </div>
-            <div className="space-y-2">
-              <Label>Project Budget (₹)</Label>
-              <Input 
-                type="number" 
-                min="0" 
-                step="1000"
-                value={budget} 
-                onChange={(e) => setBudget(parseFloat(e.target.value) || 0)} 
-                placeholder="Enter total project budget"
-              />
-              <p className="text-xs text-muted-foreground">
-                Set the total budget to track spending in Health Dashboard
-              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

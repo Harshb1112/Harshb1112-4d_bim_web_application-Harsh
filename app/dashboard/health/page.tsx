@@ -24,6 +24,9 @@ interface ProjectHealth {
   tasksOverdue: number
   tasksInProgress?: number
   budget?: number
+  totalBudget?: number
+  contingencyPercentage?: number
+  currency?: string
   spent?: number
   startDate?: string
   endDate?: string
@@ -42,6 +45,9 @@ interface AICredits {
   hasKey: boolean
   estimatedCredits: string
   lastUsed: string | null
+  keyPreview?: string
+  status?: string
+  billingUrl?: string
 }
 
 export default function HealthPage() {
@@ -129,9 +135,10 @@ export default function HealthPage() {
       const projectsRes = await fetch('/api/health/projects')
       if (projectsRes.ok) {
         const data = await projectsRes.json()
+        console.log('📊 Projects Health Data:', data.projects)
         setProjects(data.projects || [])
       } else {
-        console.error('Failed to fetch projects health')
+        console.error('Failed to fetch projects health:', projectsRes.status)
       }
 
       // Fetch system health - REAL STATUS
@@ -167,7 +174,7 @@ export default function HealthPage() {
         setAnalytics(data.analytics)
         console.log('✅ REAL analytics data loaded:', data.analytics)
       } else {
-        console.error('Failed to fetch analytics')
+        console.error('Failed to fetch analytics:', analyticsRes.status)
       }
 
       // Fetch tasks for selected project if in single mode
@@ -495,24 +502,60 @@ export default function HealthPage() {
       ? projects.filter(p => p.id === selectedProjectId)
       : projects;
 
+    console.log('💰 Budget Stats Calculation:', {
+      viewMode,
+      projectsCount: projectsToAnalyze.length,
+      hasAnalytics: !!analytics?.budget,
+      projects: projectsToAnalyze.map(p => ({
+        id: p.id,
+        name: p.name,
+        totalBudget: p.totalBudget,
+        budget: p.budget,
+        contingencyPercentage: p.contingencyPercentage,
+        spent: p.spent
+      }))
+    });
+
     if (analytics?.budget && viewMode === 'all') {
-      return {
-        totalBudget: analytics.budget.totalEstimated,
-        totalSpent: analytics.budget.totalActual,
-        remaining: analytics.budget.variance,
-        percentSpent: analytics.budget.totalEstimated > 0 
-          ? (analytics.budget.totalActual / analytics.budget.totalEstimated) * 100 
+      // Calculate contingency from projects - ROUND to whole numbers
+      const totalBudgetWithContingency = Math.round(projectsToAnalyze.reduce((sum, p) => sum + (p.totalBudget || p.budget || 0), 0))
+      const totalContingency = Math.round(projectsToAnalyze.reduce((sum, p) => {
+        const budget = p.totalBudget || p.budget || 0
+        const contingencyPercent = p.contingencyPercentage || 0
+        return sum + (budget * contingencyPercent / 100)
+      }, 0))
+      const workingBudget = totalBudgetWithContingency - totalContingency
+      
+      const result = {
+        totalBudget: totalBudgetWithContingency,
+        contingency: totalContingency,
+        workingBudget: workingBudget,
+        totalSpent: Math.round(analytics.budget.totalActual),
+        remaining: workingBudget - Math.round(analytics.budget.totalActual),
+        percentSpent: workingBudget > 0 
+          ? (Math.round(analytics.budget.totalActual) / workingBudget) * 100 
           : 0
-      }
+      };
+      
+      console.log('💰 Budget Stats (from analytics):', result);
+      return result;
     }
     
-    // Calculate from filtered projects
-    const totalBudget = projectsToAnalyze.reduce((sum, p) => sum + (p.totalBudget || p.budget || 0), 0)
-    const totalSpent = projectsToAnalyze.reduce((sum, p) => sum + (p.spent || 0), 0)
-    const remaining = totalBudget - totalSpent
-    const percentSpent = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
+    // Calculate from filtered projects - ROUND to whole numbers
+    const totalBudget = Math.round(projectsToAnalyze.reduce((sum, p) => sum + (p.totalBudget || p.budget || 0), 0))
+    const contingency = Math.round(projectsToAnalyze.reduce((sum, p) => {
+      const budget = p.totalBudget || p.budget || 0
+      const contingencyPercent = p.contingencyPercentage || 0
+      return sum + (budget * contingencyPercent / 100)
+    }, 0))
+    const workingBudget = totalBudget - contingency
+    const totalSpent = Math.round(projectsToAnalyze.reduce((sum, p) => sum + (p.spent || 0), 0))
+    const remaining = workingBudget - totalSpent
+    const percentSpent = workingBudget > 0 ? (totalSpent / workingBudget) * 100 : 0
     
-    return { totalBudget, totalSpent, remaining, percentSpent }
+    const result = { totalBudget, contingency, workingBudget, totalSpent, remaining, percentSpent };
+    console.log('💰 Budget Stats (from projects):', result);
+    return result;
   }
 
   const getSchedulePerformance = () => {
@@ -1321,33 +1364,50 @@ export default function HealthPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Total Budget</p>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-sm text-gray-600 font-medium">Total Budget</p>
                     <p className="text-2xl font-bold text-blue-900">
                       {formatCurrency(getBudgetStats().totalBudget)}
                     </p>
+                    <p className="text-xs text-gray-500 mt-1">Approved budget</p>
                   </div>
-                  <div className="text-center p-4 bg-orange-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Total Spent</p>
+                  <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-sm text-gray-600 font-medium">Contingency</p>
                     <p className="text-2xl font-bold text-orange-900">
+                      {formatCurrency(getBudgetStats().contingency)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Reserved amount</p>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                    <p className="text-sm text-gray-600 font-medium">Working Budget</p>
+                    <p className="text-2xl font-bold text-green-900">
+                      {formatCurrency(getBudgetStats().workingBudget)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Available to spend</p>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <p className="text-sm text-gray-600 font-medium">Total Spent</p>
+                    <p className="text-2xl font-bold text-purple-900">
                       {formatCurrency(getBudgetStats().totalSpent)}
                     </p>
+                    <p className="text-xs text-gray-500 mt-1">Actual cost</p>
                   </div>
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Remaining</p>
-                    <p className="text-2xl font-bold text-green-900">
+                  <div className="text-center p-4 bg-teal-50 rounded-lg border border-teal-200">
+                    <p className="text-sm text-gray-600 font-medium">Remaining</p>
+                    <p className={`text-2xl font-bold ${getBudgetStats().remaining >= 0 ? 'text-teal-900' : 'text-red-600'}`}>
                       {formatCurrency(getBudgetStats().remaining)}
                     </p>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Spent %</p>
-                    <p className="text-2xl font-bold text-purple-900">
-                      {getBudgetStats().percentSpent.toFixed(1)}%
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">{getBudgetStats().percentSpent.toFixed(1)}% spent</p>
                   </div>
                 </div>
-                <Progress value={getBudgetStats().percentSpent} className="mt-4" />
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600">Budget Utilization</span>
+                    <span className="font-semibold">{getBudgetStats().percentSpent.toFixed(1)}% of Working Budget</span>
+                  </div>
+                  <Progress value={getBudgetStats().percentSpent} className="h-3" />
+                </div>
               </CardContent>
             </Card>
           </div>

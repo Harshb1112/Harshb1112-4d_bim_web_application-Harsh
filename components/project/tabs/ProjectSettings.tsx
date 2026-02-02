@@ -255,21 +255,21 @@ export default function ProjectSettings({ project, onUpdate }: ProjectSettingsPr
                     <span className="text-gray-600 dark:text-gray-400">Total Budget:</span>
                     <span className="font-semibold">
                       {CURRENCIES.find(c => c.code === formData.currency)?.symbol}
-                      {formData.totalBudget.toLocaleString()}
+                      {Math.round(formData.totalBudget).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600 dark:text-gray-400">Contingency ({formData.contingencyPercentage}%):</span>
                     <span className="font-semibold text-orange-600">
                       {CURRENCIES.find(c => c.code === formData.currency)?.symbol}
-                      {(formData.totalBudget * formData.contingencyPercentage / 100).toLocaleString()}
+                      {Math.round(formData.totalBudget * formData.contingencyPercentage / 100).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
                     <span className="text-gray-600 dark:text-gray-400">Working Budget:</span>
                     <span className="font-bold text-green-600">
                       {CURRENCIES.find(c => c.code === formData.currency)?.symbol}
-                      {(formData.totalBudget - (formData.totalBudget * formData.contingencyPercentage / 100)).toLocaleString()}
+                      {Math.round(formData.totalBudget - (formData.totalBudget * formData.contingencyPercentage / 100)).toLocaleString()}
                     </span>
                   </div>
                 </div>

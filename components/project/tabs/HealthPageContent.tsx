@@ -24,8 +24,8 @@ export default function HealthPageContent({ projectId }: HealthPageContentProps)
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [projectInfo, setProjectInfo] = useState<ProjectInfo>({ currency: 'USD', name: '' });
-  const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo>({ currency: 'INR', name: '' });
+  const [displayCurrency, setDisplayCurrency] = useState<string>('INR');
 
   useEffect(() => {
     fetchData();
@@ -41,7 +41,7 @@ export default function HealthPageContent({ projectId }: HealthPageContentProps)
       });
       if (projectRes.ok) {
         const projectData = await projectRes.json();
-        const projCurrency = projectData.currency || 'USD';
+        const projCurrency = projectData.currency || 'INR'; // Default to INR instead of USD
         setProjectInfo({
           currency: projCurrency,
           name: projectData.name || ''
@@ -157,16 +157,16 @@ export default function HealthPageContent({ projectId }: HealthPageContentProps)
 
   const status = getHealthStatus(health?.overallScore || 10);
 
-  // Available currencies for dropdown
+  // Available currencies for dropdown - India first
   const currencies = [
-    { code: 'INR', name: 'India (₹)', symbol: '₹' },
-    { code: 'USD', name: 'USA ($)', symbol: '$' },
-    { code: 'EUR', name: 'Europe (€)', symbol: '€' },
-    { code: 'GBP', name: 'UK (£)', symbol: '£' },
-    { code: 'AED', name: 'UAE (د.إ)', symbol: 'د.إ' },
-    { code: 'SAR', name: 'Saudi (ر.س)', symbol: 'ر.س' },
-    { code: 'AUD', name: 'Australia (A$)', symbol: 'A$' },
-    { code: 'CAD', name: 'Canada (C$)', symbol: 'C$' },
+    { code: 'INR', name: '🇮🇳 India (₹)', symbol: '₹' },
+    { code: 'USD', name: '🇺🇸 USA ($)', symbol: '$' },
+    { code: 'EUR', name: '🇪🇺 Europe (€)', symbol: '€' },
+    { code: 'GBP', name: '🇬🇧 UK (£)', symbol: '£' },
+    { code: 'AED', name: '🇦🇪 UAE (د.إ)', symbol: 'د.إ' },
+    { code: 'SAR', name: '🇸🇦 Saudi (ر.س)', symbol: 'ر.س' },
+    { code: 'AUD', name: '🇦🇺 Australia (A$)', symbol: 'A$' },
+    { code: 'CAD', name: '🇨🇦 Canada (C$)', symbol: 'C$' },
   ];
 
   return (

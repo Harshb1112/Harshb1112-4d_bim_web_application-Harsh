@@ -171,21 +171,6 @@ export default function ProjectSettingsDialog({ project, onProjectUpdate, userRo
               rows={3}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="budget">Project Budget (₹)</Label>
-            <Input
-              id="budget"
-              type="number"
-              min="0"
-              step="1000"
-              value={budget}
-              onChange={(e) => setBudget(parseFloat(e.target.value) || 0)}
-              placeholder="Enter total project budget"
-            />
-            <p className="text-xs text-muted-foreground">
-              Set the total budget for this project to track spending
-            </p>
-          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="startDate">Start Date</Label>
