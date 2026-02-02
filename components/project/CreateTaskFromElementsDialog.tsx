@@ -237,7 +237,14 @@ export default function CreateTaskFromElementsDialog({
       }
 
       const result = await response.json()
-      toast.success(`Task created with ${selectedElements.length} linked elements!`)
+      
+      // Show success message with background processing info
+      if (result.message) {
+        toast.success(result.message, { duration: 5000 })
+      } else {
+        toast.success(`Task created with ${selectedElements.length} linked elements!`)
+      }
+      
       onOpenChange(false)
       onTaskCreated?.()
     } catch (error) {

@@ -46,7 +46,8 @@ export default function DashboardHeader({ user, onMenuClick }: DashboardHeaderPr
               <Image 
                 src="/assets/bimboss-logo.png" 
                 alt="BimBoss Logo" 
-                width={140} 
+                width={140}
+                priority 
                 height={120}
                 priority
                 style={{ width: 'auto', height: 'auto' }}

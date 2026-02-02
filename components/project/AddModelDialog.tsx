@@ -50,6 +50,41 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
   const [uploadingForUrn, setUploadingForUrn] = useState(false)
   const [translationStatus, setTranslationStatus] = useState("")
 
+  // Check for OAuth callback success
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('autodesk_auth') === 'success') {
+        toast.success('Autodesk account connected successfully!')
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname)
+        
+        // Restore dialog state if available
+        const savedState = sessionStorage.getItem('addModelDialog_state')
+        if (savedState) {
+          try {
+            const state = JSON.parse(savedState)
+            // Only restore if less than 5 minutes old
+            if (Date.now() - state.timestamp < 5 * 60 * 1000) {
+              setModelName(state.modelName || '')
+              setBimSource(state.bimSource || 'acc')
+              setIsOpen(true)
+              setShowAutodeskBrowser(true)
+              // Refresh hubs list
+              setTimeout(() => initAutodeskBrowser(), 500)
+            }
+            sessionStorage.removeItem('addModelDialog_state')
+          } catch (e) {
+            console.error('Failed to restore dialog state:', e)
+          }
+        }
+      } else if (params.get('autodesk_auth') === 'error') {
+        toast.error(params.get('error') || 'Failed to connect Autodesk account')
+        window.history.replaceState({}, '', window.location.pathname)
+        sessionStorage.removeItem('addModelDialog_state')
+      }
+    }
+  }, [])
 
   const resetForm = () => {
     setModelName("")
@@ -511,9 +546,23 @@ export default function AddModelDialog({ projectId, onModelAdded }: AddModelDial
                       <div className="border-t mt-1 pt-1">
                         <button
                           type="button"
-                          onClick={() => {
-                            window.open('https://acc.autodesk.com/', '_blank')
-                            toast.info('Opening Autodesk Construction Cloud. Please sign in or create a new account.')
+                          onClick={async () => {
+                            try {
+                              // Save current state before redirect
+                              sessionStorage.setItem('addModelDialog_state', JSON.stringify({
+                                modelName,
+                                bimSource,
+                                projectId,
+                                timestamp: Date.now()
+                              }))
+                              
+                              toast.info('Redirecting to Autodesk login...')
+                              // Trigger OAuth flow to add new account
+                              const authUrl = `/api/autodesk/auth?source=${bimSource}&projectId=${projectId}`
+                              window.location.href = authUrl
+                            } catch (error) {
+                              toast.error('Failed to initiate authentication')
+                            }
                           }}
                           className="w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center gap-2"
                         >
